@@ -435,6 +435,9 @@
       config:
         allowParallelInProgress: true
 
+    - id: todo-reconcile-driver
+      name: '@deepseek-ai/dsh-todo-reconcile-driver'
+
     # Persisted same-session goals reach the model and the slash menu here; the
     # domain, driver, and `/goal` command are above.
     - id: tool-goal

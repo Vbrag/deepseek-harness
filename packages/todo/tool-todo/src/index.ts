@@ -117,21 +117,19 @@ const todosProjectionSchema: ZodType<TodoItem[] | null> = zod.union([
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const allowParallel = config.allowParallelInProgress
-  // Standing-plan fold: latest whole todo/write list, cleared by the next
-  // turn/start (turn/end keeps the finished checklist visible); null before the
-  // first write or after a later turn begins; every other event returns the
-  // same state reference.
+  // Standing-plan fold: the latest whole todo/write list persists across turns
+  // and resumed sessions until an explicit empty write clears it; null before
+  // the first write; every other event returns the same state reference.
   await ctx.sessionProjections.register<'todos', TodoItem[] | null>({
     key: 'todos',
     stateSchema: todosProjectionSchema,
     init: () => null,
     apply: (state, event) => {
       if (event.type === 'todo/write') return event.data.todos
-      if (event.type === 'turn/start') return null
       return state
     },
     wire: { viewSchema: todosProjectionSchema, view: state => state, summary: false },
-    stateVersion: 2,
+    stateVersion: 3,
   })
   ctx.tools.register(defineTool({
     name: 'todo_write',

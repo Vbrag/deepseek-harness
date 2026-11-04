@@ -115,6 +115,18 @@ describe('dsh-tool-todo', () => {
     ])
   })
 
+  it('accepts an explicit empty list as the model-facing clear path', async () => {
+    const ctx = await setup(true)
+    const agent = agentWithSession('clear')
+    await callTodo(ctx, { todos: [{ content: 'a', status: 'completed' }] }, { agent })
+    const result = await callTodo(ctx, { todos: [] }, { agent })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected todo_write success')
+    expect(result.value).toEqual({ todos: [], counts: { pending: 0, inProgress: 0, completed: 0 } })
+    expect(text(result)).toContain('0 pending, 0 in progress, 0 completed')
+    expect(agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos).toEqual([])
+  })
+
   it('rejects a malformed status before execute runs (registry arg-validation)', async () => {
     const ctx = await setup(true)
     const result = await callTodo(ctx, { todos: [{ content: 'x', status: 'doing' }] })

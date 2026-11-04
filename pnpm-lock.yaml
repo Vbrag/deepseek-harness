@@ -471,6 +471,9 @@ importers:
       '@deepseek-ai/dsh-tmux-context':
         specifier: workspace:*
         version: link:../../packages/context/tmux-context
+      '@deepseek-ai/dsh-todo-reconcile-driver':
+        specifier: workspace:*
+        version: link:../../packages/todo/todo-reconcile-driver
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:*
         version: link:../../packages/llm/token-meter
@@ -2599,6 +2602,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:*
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-todo-reconcile-driver':
+        specifier: workspace:*
+        version: link:../../todo/todo-reconcile-driver
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:*
         version: link:../../llm/token-meter
@@ -3260,6 +3266,9 @@ importers:
       '@deepseek-ai/dsh-time-context':
         specifier: workspace:*
         version: link:../../context/time-context
+      '@deepseek-ai/dsh-todo-reconcile-driver':
+        specifier: workspace:*
+        version: link:../../todo/todo-reconcile-driver
       '@deepseek-ai/dsh-tool-ask-user':
         specifier: workspace:*
         version: link:../../interaction/tool-ask-user
@@ -16982,6 +16991,39 @@ importers:
         specifier: workspace:*
         version: link:../../core/tools
 
+  packages/todo/todo-reconcile-driver:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-loop':
+        specifier: workspace:*
+        version: link:../../core/agent-loop
+      '@deepseek-ai/dsh-agent-loop-testkit':
+        specifier: workspace:*
+        version: link:../../test-support/agent-loop-testkit
+      '@deepseek-ai/dsh-goal':
+        specifier: workspace:*
+        version: link:../../goal/goal
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@deepseek-ai/dsh-session-projection':
+        specifier: workspace:*
+        version: link:../../session/session-projection
+      '@deepseek-ai/dsh-subagent':
+        specifier: workspace:*
+        version: link:../../subagent/subagent
+      '@deepseek-ai/dsh-tool-todo':
+        specifier: workspace:*
+        version: link:../tool-todo
+
   packages/todo/tool-todo:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -18019,6 +18061,9 @@ importers:
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:*
         version: link:../../packages/util/timeout
+      '@deepseek-ai/dsh-todo-reconcile-driver':
+        specifier: workspace:*
+        version: link:../../packages/todo/todo-reconcile-driver
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:*
         version: link:../../packages/llm/token-meter

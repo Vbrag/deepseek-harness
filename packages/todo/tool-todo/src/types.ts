@@ -29,7 +29,11 @@ export interface TodoItem {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    /** Whole-list snapshot; latest write wins on replay. Log-only UI state; never derived history. */
+    /**
+     * Whole-list snapshot; latest write wins on replay, and the list persists
+     * across turns and resumed sessions until an explicit empty write clears
+     * it. Log-only UI state; never derived history.
+     */
     'todo/write': { todos: TodoItem[] }
   }
 }
@@ -39,9 +43,11 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     /**
      * The agent's current whole todo list (the latest `todo/write` snapshot),
      * or `null` before the first write. Whole-value rule: every `todo/write`
-     * carries the complete replacement list, so the fold is last-wins.
-     * Excluded from Session summary payloads, with `null` kept outside the
-     * exclusion mark so the pre-first-write value stays expressible.
+     * carries the complete replacement list, so the fold is last-wins. The
+     * list persists across turns and resumed sessions until an explicit empty
+     * write (`todo_write(todos: [])`) clears it. Excluded from Session summary
+     * payloads, with `null` kept outside the exclusion mark so the
+     * pre-first-write value stays expressible.
      */
     todos: SessionProjectionSummaryExcluded<TodoItem[]> | null
   }

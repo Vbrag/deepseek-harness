@@ -84,7 +84,7 @@ describe('todos projection provider', () => {
     expect(projections?.asOfSeq).toBe(session.seq - 1)
   })
 
-  it('clears the standing plan on the next turn/start (turn/end keeps it)', async () => {
+  it('persists the list across turns and resumed sessions until an explicit empty write clears it', async () => {
     const bench = await harness(true)
     const session = bench.session
     seedMessage(session)
@@ -93,10 +93,16 @@ describe('todos projection provider', () => {
     session.append('todo/write', { todos: list })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect((await bench.tailProjections())?.values.todos).toEqual(list)
+    // The next turn/start must NOT wipe the standing plan.
     session.append('turn/start', { turn: 2 })
-    const cleared = await bench.tailProjections()
-    expect(cleared?.values.todos).toBeNull()
-    expect(cleared?.asOfSeq).toBe(session.seq - 1)
+    let projections = await bench.tailProjections()
+    expect(projections?.values.todos).toEqual(list)
+    expect(projections?.asOfSeq).toBe(session.seq - 1)
+    // An explicit empty write is the only clear path.
+    session.append('todo/write', { todos: [] })
+    projections = await bench.tailProjections()
+    expect(projections?.values.todos).toEqual([])
+    expect(projections?.asOfSeq).toBe(session.seq - 1)
   })
 
   it('has no todos key when tool-todo is not composed', async () => {
