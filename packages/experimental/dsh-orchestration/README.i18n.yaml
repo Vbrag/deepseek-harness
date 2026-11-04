@@ -1,0 +1,88 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/dsh-orchestration/README.md
+/:
+  en: 6d4ae13d015a3c04
+  zh: 44df513b277abe5f
+/deepseek-ai-dsh-experimental-orchestration:
+  en: 55848500d7b9dbba
+  zh: 845723fefb41c851
+/deepseek-ai-dsh-experimental-orchestration/summary:
+  en: bb54a79b964e0ed9
+  zh: 5f62dc413610152c
+/deepseek-ai-dsh-experimental-orchestration/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-experimental-orchestration/use-this-package:
+  en: 6d24293cb51d911b
+  zh: d6d90500886e83b5
+/deepseek-ai-dsh-experimental-orchestration/use-this-package/when-to-choose-it:
+  en: 149ffa85b38e180f
+  zh: ecd0d6437e7c002c
+/deepseek-ai-dsh-experimental-orchestration/use-this-package/configure-the-pool-and-limits:
+  en: 932d11a14eef46aa
+  zh: 8d58a655b0b782bf
+/deepseek-ai-dsh-experimental-orchestration/use-this-package/select-the-session-mode:
+  en: b315749d4389df90
+  zh: 1b2f1cc38131130c
+/deepseek-ai-dsh-experimental-orchestration/use-this-package/run-an-orchestration:
+  en: 07ea8a1d991b34f9
+  zh: 7dba66f1e09782bc
+/deepseek-ai-dsh-experimental-orchestration/use-this-package/what-success-and-failure-look-like:
+  en: 0c11b9787bbb48cc
+  zh: a985fe7f656c6b69
+/deepseek-ai-dsh-experimental-orchestration/understand-the-implementation:
+  en: 6a18034f1ccc247a
+  zh: ad9d59f12d2fea30
+/deepseek-ai-dsh-experimental-orchestration/understand-the-implementation/design-philosophy:
+  en: 932f1bd298ddfb54
+  zh: a58fccdfa3d4b596
+/deepseek-ai-dsh-experimental-orchestration/understand-the-implementation/source-map:
+  en: a0e0fd39a206870b
+  zh: 0ea6f95e5a8c4ab6
+/deepseek-ai-dsh-experimental-orchestration/understand-the-implementation/route-selection-and-failover:
+  en: 42597f26be26bde7
+  zh: 6bb48cd4b21cda62
+/deepseek-ai-dsh-experimental-orchestration/understand-the-implementation/budget-and-cancellation:
+  en: 8e98ab35cee83460
+  zh: fa09d231c1359041
+/deepseek-ai-dsh-experimental-orchestration/further-exploration:
+  en: c630f16f59fd5df4
+  zh: 833a42c31dc075eb
+/deepseek-ai-dsh-experimental-orchestration/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-orchestration/model-experience/coordinator-planning:
+  en: 28df8c72ae352cf6
+  zh: 28cca1458a8a188e
+/deepseek-ai-dsh-experimental-orchestration/model-experience/coordinator-planning/what-the-model-sees:
+  en: de7637d55b5171b8
+  zh: 79d673d7de1611a1
+/deepseek-ai-dsh-experimental-orchestration/model-experience/coordinator-planning/token-effect:
+  en: 09befca5e8ec52d5
+  zh: 90c41f03a920d26e
+/deepseek-ai-dsh-experimental-orchestration/model-experience/coordinator-planning/kv-cache-effect:
+  en: ad24509a6790a82a
+  zh: 25ef3985f4610a41
+/deepseek-ai-dsh-experimental-orchestration/model-experience/worker-attempts:
+  en: b19ae118f5f8c44a
+  zh: 9247fe43eccf7526
+/deepseek-ai-dsh-experimental-orchestration/model-experience/worker-attempts/what-the-model-sees:
+  en: 37b4671cda1d0655
+  zh: f50b5ec2d7478ed5
+/deepseek-ai-dsh-experimental-orchestration/model-experience/worker-attempts/token-effect:
+  en: d1737c36a267ddfa
+  zh: 5202a0958ba137ab
+/deepseek-ai-dsh-experimental-orchestration/model-experience/worker-attempts/kv-cache-effect:
+  en: e42961d4ebd462dc
+  zh: 3c67aea31d290cb0
+/deepseek-ai-dsh-experimental-orchestration/known-limitations-and-deferred-work:
+  en: 691e9a7e84e1ab83
+  zh: 1083d5a45085cfa2
+/deepseek-ai-dsh-experimental-orchestration/known-limitations-and-deferred-work/dev-note:
+  en: 498e4cf9fe5741a7
+  zh: d2877493bb4ffa8f
+/deepseek-ai-dsh-experimental-orchestration/known-limitations-and-deferred-work/dev-note/promotion:
+  en: 8131ac9de9a1a31f
+  zh: f9d8221cf0197449

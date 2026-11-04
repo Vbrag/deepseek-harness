@@ -1,0 +1,13 @@
+# Bilingual-pair consistency record for orchestration.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/orchestration.md
+/orchestration:
+  en: d2a107f42b9b4e60
+  zh: cb18a280052b58cb
+/orchestration/model-pool:
+  en: ed3d57f3e37138a5
+  zh: addf2c3d4162a105
+/orchestration/plan-and-outcome:
+  en: 15dcdb1b74ce0017
+  zh: 2ffcd85e94d83306

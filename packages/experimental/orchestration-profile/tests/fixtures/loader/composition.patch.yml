@@ -1,0 +1,27 @@
+- insert:
+    - id: orchestration-mock-llm
+      name: './orchestration-mock-llm.ts'
+
+    - id: orchestration
+      name: '@deepseek-ai/dsh-experimental-orchestration'
+
+    - id: tool-orchestration
+      name: '@deepseek-ai/dsh-experimental-tool-orchestration'
+      config:
+        pool:
+          - provider: orchestration-mock
+            model: gwdg.glm-5.3-flash
+          - provider: orchestration-mock
+            model: gwdg.qwen3-coder-next
+
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: sandbox-policy
+  inject: []
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.cwd()

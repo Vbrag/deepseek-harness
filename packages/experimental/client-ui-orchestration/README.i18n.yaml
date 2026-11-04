@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/client-ui-orchestration/README.md
+/:
+  en: d129cca6436da465
+  zh: 76a25962d3501b6b
+/deepseek-ai-dsh-experimental-client-ui-orchestration:
+  en: 4a04610e1c7ad5e5
+  zh: 666ae0a4742fefcd
+/deepseek-ai-dsh-experimental-client-ui-orchestration/summary:
+  en: 2e49154f6b7af3d5
+  zh: d0777aaedebd75a8
+/deepseek-ai-dsh-experimental-client-ui-orchestration/table-of-contents:
+  en: b563e4ec4727d0de
+  zh: 44ebe7ceeda3dff6
+/deepseek-ai-dsh-experimental-client-ui-orchestration/use-this-package:
+  en: e21ca507387332a9
+  zh: eb8e56ed6f7891bd
+/deepseek-ai-dsh-experimental-client-ui-orchestration/use-this-package/select-the-session-mode:
+  en: 7ce038af51936cf3
+  zh: 9d904d990546c330
+/deepseek-ai-dsh-experimental-client-ui-orchestration/use-this-package/pick-the-model-pool:
+  en: c1b2dbcc2aac3aec
+  zh: cc5c44bf9badc587
+/deepseek-ai-dsh-experimental-client-ui-orchestration/understand-the-implementation:
+  en: 282ccdef34591452
+  zh: e15319ffac85bfb4
+/deepseek-ai-dsh-experimental-client-ui-orchestration/further-exploration:
+  en: c10f871f51a6434d
+  zh: 2186d0ed72d227ce
+/deepseek-ai-dsh-experimental-client-ui-orchestration/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-client-ui-orchestration/model-experience/pool-selection:
+  en: e8ce7ae892497596
+  zh: bd2eabb78b59511a
+/deepseek-ai-dsh-experimental-client-ui-orchestration/model-experience/pool-selection/what-the-model-sees:
+  en: c28fb8e584c9faf7
+  zh: 20bb3bcad82a698b
+/deepseek-ai-dsh-experimental-client-ui-orchestration/model-experience/pool-selection/token-effect:
+  en: 29396ced0ab7a60b
+  zh: 41995bd327cba143
+/deepseek-ai-dsh-experimental-client-ui-orchestration/model-experience/pool-selection/kv-cache-effect:
+  en: 0c821db950d19d62
+  zh: b2b9f0d3370fb43d
+/deepseek-ai-dsh-experimental-client-ui-orchestration/known-limitations-and-deferred-work:
+  en: 7835d18b28de59f9
+  zh: 5eb46fc0793b497a
+/deepseek-ai-dsh-experimental-client-ui-orchestration/known-limitations-and-deferred-work/dev-note:
+  en: 498e4cf9fe5741a7
+  zh: ff17b056d96b18f3
+/deepseek-ai-dsh-experimental-client-ui-orchestration/known-limitations-and-deferred-work/dev-note/promotion:
+  en: 2df62afdb4f7c0b3
+  zh: 964b5d182dbd5012

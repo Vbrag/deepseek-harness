@@ -7,6 +7,41 @@
       "source": "packages/compaction/compaction-image-offload/src/projection.ts"
     },
     {
+      "doc": "docs/subsystems/orchestration.md",
+      "symbol": "PoolRoute",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/orchestration.md",
+      "symbol": "OrchestrationStepId",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/orchestration.md",
+      "symbol": "PlannedStep",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/orchestration.md",
+      "symbol": "WorkerAttempt",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/orchestration.md",
+      "symbol": "StepOutcome",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/orchestration.md",
+      "symbol": "OrchestrationResult",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/orchestration.md",
+      "symbol": "TaskDomain",
+      "source": "packages/experimental/dsh-orchestration/src/capabilities.ts"
+    },
+    {
       "doc": "docs/subsystems/core.md",
       "symbol": "Branded",
       "source": "packages/util/brand/src/index.ts"

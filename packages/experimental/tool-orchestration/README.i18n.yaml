@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/tool-orchestration/README.md
+/:
+  en: b04e86fb9d4fa75d
+  zh: 07af9ae286d81bfa
+/deepseek-ai-dsh-experimental-tool-orchestration:
+  en: d74d418dedae59d3
+  zh: 9bb9b1bb5ff041a0
+/deepseek-ai-dsh-experimental-tool-orchestration/summary:
+  en: 7e6b4ffae2511ae2
+  zh: da5b8bb64456b6e8
+/deepseek-ai-dsh-experimental-tool-orchestration/table-of-contents:
+  en: d7fbbba70852c433
+  zh: b1d8d953f9d82d8a
+/deepseek-ai-dsh-experimental-tool-orchestration/use-this-package:
+  en: 5493aec6705130f9
+  zh: 9aaae32b51f84686
+/deepseek-ai-dsh-experimental-tool-orchestration/use-this-package/the-tool:
+  en: 4fa67ff852ff4085
+  zh: 10f9d807fae76a24
+/deepseek-ai-dsh-experimental-tool-orchestration/use-this-package/what-success-and-failure-look-like:
+  en: 58de13fa5b2d6d46
+  zh: 797590cc201a4048
+/deepseek-ai-dsh-experimental-tool-orchestration/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-tool-orchestration/model-experience/run-orchestration:
+  en: f69a7e5973385d1f
+  zh: f69a7e5973385d1f
+/deepseek-ai-dsh-experimental-tool-orchestration/model-experience/run-orchestration/what-the-model-sees:
+  en: 886da7fc4dad37a8
+  zh: 48e891c1bc04cacb
+/deepseek-ai-dsh-experimental-tool-orchestration/model-experience/run-orchestration/token-effect:
+  en: 6aa4f459ca525b71
+  zh: cfc4e2b25f818123
+/deepseek-ai-dsh-experimental-tool-orchestration/model-experience/run-orchestration/kv-cache-effect:
+  en: 080ef447f435640c
+  zh: d18b819aeac15a86
+/deepseek-ai-dsh-experimental-tool-orchestration/known-limitations-and-deferred-work:
+  en: 6b739ea7f08b512f
+  zh: b4a0013a01aa804f
+/deepseek-ai-dsh-experimental-tool-orchestration/known-limitations-and-deferred-work/dev-note:
+  en: 498e4cf9fe5741a7
+  zh: 4d131e4db9e217b2
+/deepseek-ai-dsh-experimental-tool-orchestration/known-limitations-and-deferred-work/dev-note/promotion:
+  en: ab772d64be3ac9d3
+  zh: 8600ee1196735949
