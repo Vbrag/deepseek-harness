@@ -119,7 +119,11 @@ function guidance(blockedAfter: number): string {
     + 'resume to rearm it. Mark complete only when the objective is actually achieved. Mark '
     + `blocked only after the same blocking condition persists for at least ${blockedAfter} `
     + 'consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, '
-    + 'or useful remaining work is not blocked.'
+    + 'or useful remaining work is not blocked. '
+    + 'Running out of automatic rounds pauses the goal; a paused goal is not blocked, so do not '
+    + 'report blocked for it. A complete or blocked goal is terminal and cannot be resumed; mark '
+    + 'the objective achieved with complete, otherwise edit the objective or max_goal_rounds and '
+    + 'let the user resume.'
 }
 
 /** Validate config even when apply is called directly outside Loader normalization. */
@@ -242,7 +246,9 @@ export function apply(ctx: Context, config: Config): void {
         required: true,
         enum: UPDATE_ACTIONS,
         description: 'edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed '
-          + 'during an automatic continuation of this goal; blocked is rejected before the configured minimum round count.',
+          + 'during an automatic continuation of this goal; blocked is rejected before the configured minimum round count. '
+          + 'A goal that used every round is paused (not blocked): resume on it is rejected until you first raise '
+          + 'max_goal_rounds with edit. A complete or blocked goal is terminal and cannot be resumed.',
       },
       objective: { type: 'string', description: 'Replacement objective; valid only with action edit.' },
       max_goal_rounds: { type: 'number', description: 'Replacement cap; valid only with action edit.' },

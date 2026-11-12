@@ -180,10 +180,12 @@ export function apply(ctx: Context): void {
       if (!readyAfterCheckpoint(state)) return
     }
     if (goal.roundsStarted >= goal.maxGoalRounds) {
-      ctx.goals.block(agent, goalRef(goal), {
-        code: 'round-limit',
-        message: `Goal reached its configured limit of ${goal.maxGoalRounds} rounds.`,
-      })
+      // Exhausting the round budget is not a blocker: the goal simply ran out
+      // of automatic continuation rounds and awaits a human decision to raise
+      // the cap and resume. Pause (disarmed) instead of block so the durable
+      // phase stays truthful — the model-visible reason is conveyed by the
+      // round-projection's budget relationship, not a fabricated blocker.
+      ctx.goals.pause(agent, goalRef(goal))
       return
     }
 

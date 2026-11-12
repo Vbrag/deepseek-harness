@@ -14,6 +14,7 @@ export const zh = {
   'action.resume': '恢复目标',
   'action.edit': '编辑目标',
   'action.clear': '清除目标',
+  'reason.budgetExhausted': 'Round 预算已耗尽：请提高 maxGoalRounds 后恢复。',
 } satisfies Record<string, string>
 
 /** The goal namespace key union. */
@@ -33,6 +34,7 @@ export const en = {
   'action.resume': 'Resume goal',
   'action.edit': 'Edit goal',
   'action.clear': 'Clear goal',
+  'reason.budgetExhausted': 'Round budget exhausted: raise maxGoalRounds to resume.',
 } satisfies Record<GoalKey, string>
 
 /** Japanese copy, checked against the English keys. */
@@ -49,6 +51,7 @@ export const ja = {
   'action.resume': '目標を再開',
   'action.edit': '目標を編集',
   'action.clear': '目標をクリア',
+  'reason.budgetExhausted': 'Round 予算を使い切りました：maxGoalRounds を上げて再開してください。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -65,6 +68,7 @@ export const es = {
   'action.resume': 'Reanudar objetivo',
   'action.edit': 'Editar objetivo',
   'action.clear': 'Objetivo claro',
+  'reason.budgetExhausted': 'Presupuesto de rondas agotado: suba maxGoalRounds para reanudar.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -81,6 +85,7 @@ export const fr = {
   'action.resume': "Reprendre l'objectif",
   'action.edit': "Modifier l'objectif",
   'action.clear': 'Objectif clair',
+  'reason.budgetExhausted': 'Budget de rounds épuisé : augmentez maxGoalRounds pour reprendre.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -97,6 +102,7 @@ export const de = {
   'action.resume': 'Ziel fortsetzen',
   'action.edit': 'Ziel bearbeiten',
   'action.clear': 'Klares Ziel',
+  'reason.budgetExhausted': 'Rundenbudget erschöpft: maxGoalRounds erhöhen, um fortzufahren.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -113,6 +119,7 @@ export const ru = {
   'action.resume': 'Возобновить цель',
   'action.edit': 'Изменить цель',
   'action.clear': 'Четкая цель',
+  'reason.budgetExhausted': 'Бюджет раундов исчерпан: увеличьте maxGoalRounds, чтобы продолжить.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -129,4 +136,5 @@ export const pt = {
   'action.resume': 'Retomar meta',
   'action.edit': 'Editar meta',
   'action.clear': 'Objetivo claro',
+  'reason.budgetExhausted': 'Orçamento de rodadas esgotado: aumente maxGoalRounds para retomar.',
 } satisfies Record<keyof typeof en, string>

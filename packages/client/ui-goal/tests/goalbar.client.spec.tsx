@@ -170,6 +170,21 @@ describe('GoalBar', () => {
     expect(actions.onResume).toHaveBeenCalledTimes(1)
   })
 
+  it('paused goal at its round cap shows the budget-exhausted reason as the strip tooltip', () => {
+    const actions = makeActions()
+    const goal = makeGoal({ phase: 'paused', maxGoalRounds: 4 })
+    render(<GoalBar goal={goal} roundsStarted={4} {...actions} t={t} />)
+    expect(screen.getByText('已暂停的目标')).toBeTruthy()
+    expect(screen.getByText('已暂停的目标').closest('[title]')?.getAttribute('title'))
+      .toBe('Round 预算已耗尽：请提高 maxGoalRounds 后恢复。')
+  })
+
+  it('paused goal below its round cap carries no budget tooltip', () => {
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal({ phase: 'paused', maxGoalRounds: 4 })} roundsStarted={2} {...actions} t={t} />)
+    expect(screen.getByText('已暂停的目标').closest('[title]')).toBeNull()
+  })
+
   it('portals an action tooltip out of the strip, where the input card cannot cover it', () => {
     vi.useFakeTimers()
     try {

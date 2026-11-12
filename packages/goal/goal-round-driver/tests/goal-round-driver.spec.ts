@@ -196,13 +196,12 @@ describe('same-session goal driving', () => {
     const test = await harness([textResponse('round one'), textResponse('round two')])
     const created = test.ctx.goals.create(test.agent, { objective: 'finish twice', maxGoalRounds: 2 })
 
-    const final = await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    const final = await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
 
+    // Exhausting the round budget pauses (not blocks) the goal: it ran out of
+    // automatic rounds and awaits a human decision, so there is no blocker reason.
     expect(final).toMatchObject({ id: created.id, roundsStarted: 2, activation: 'disarmed' })
-    expect(final?.blockedReason).toEqual({
-      code: 'round-limit',
-      message: 'Goal reached its configured limit of 2 rounds.',
-    })
+    expect(final?.blockedReason).toBeUndefined()
     expect(test.adapter.requests).toHaveLength(2)
     const rounds: number[] = []
     for (const event of test.agent.session.snapshotEvents()) {
@@ -236,7 +235,7 @@ describe('same-session goal driving', () => {
     expect(adapter.requests).toHaveLength(0)
 
     ctx.goals.resume(agent, created)
-    await waitForGoal(ctx, agent, goal => goal?.phase === 'blocked')
+    await waitForGoal(ctx, agent, goal => goal?.phase === 'paused')
     expect(adapter.requests).toHaveLength(1)
   })
 
@@ -381,10 +380,9 @@ describe('same-session goal driving', () => {
     // idle handler must not re-pause this freshly resumed goal.
     test.ctx.goals.resume(test.agent, { id: paused.id, revision: paused.revision })
 
-    const goal = await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    const goal = await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
 
-    expect(goal).toMatchObject({ phase: 'blocked', roundsStarted: 2 })
-    expect(goal?.blockedReason?.code).toBe('round-limit')
+    expect(goal).toMatchObject({ phase: 'paused', roundsStarted: 2 })
     expect(test.adapter.requests).toHaveLength(2)
   })
 
@@ -422,7 +420,7 @@ describe('same-session goal driving', () => {
     test.ctx.goals.create(test.agent, { objective: 'continue after the human', maxGoalRounds: 1 })
     test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'human goes first' }], source: { kind: 'user' } }))
 
-    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
 
     expect(test.adapter.requests).toHaveLength(2)
     expect(requestText(test.adapter.requests[0]!)).toContain('human goes first')
@@ -442,7 +440,7 @@ describe('same-session goal driving', () => {
     })
     test.ctx.goals.create(test.agent, { objective: 'yield to nested human input', maxGoalRounds: 1 })
 
-    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
 
     expect(test.adapter.requests).toHaveLength(2)
     expect(requestText(test.adapter.requests[0]!)).toContain('human joined the pending batch')
@@ -462,7 +460,7 @@ describe('same-session goal driving', () => {
     })
     test.ctx.goals.create(test.agent, { objective: 'old objective', maxGoalRounds: 1 })
 
-    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
 
     expect(goal).toMatchObject({ revision: 3, objective: 'new objective', roundsStarted: 1 })
     const admitted = test.agent.session.snapshotEvents().find(event => event.type === 'user/message'
@@ -486,7 +484,7 @@ describe('same-session goal driving', () => {
     })
     test.ctx.goals.create(test.agent, { objective: 'edit during pre-step', maxGoalRounds: 1 })
 
-    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
 
     expect(goal).toMatchObject({ objective: 'edited downstream', roundsStarted: 1 })
     expect(test.adapter.requests).toHaveLength(1)
@@ -553,7 +551,7 @@ describe('same-session goal driving', () => {
     })
     test.ctx.goals.create(test.agent, { objective: 'stale before admission', maxGoalRounds: 1 })
 
-    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
     stopInserted()
 
     expect(goal).toMatchObject({ objective: 'revised after claim', roundsStarted: 1 })
@@ -604,9 +602,9 @@ describe('same-session goal driving', () => {
     test.ctx.on('session/flush', () => { flushes.push(test.adapter.requests.length) })
     test.ctx.goals.create(test.agent, { objective: 'checkpoint between rounds', maxGoalRounds: 2 })
 
-    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
 
-    expect(goal?.blockedReason?.code).toBe('round-limit')
+    expect(goal?.blockedReason).toBeUndefined()
     expect(goal?.roundsStarted).toBe(2)
     expect(test.adapter.requests).toHaveLength(2)
     // A flush was observed after round one settled and before round two
@@ -644,11 +642,11 @@ describe('same-session goal driving', () => {
     })
     test.ctx.goals.create(test.agent, { objective: 'survive a transient failure', maxGoalRounds: 1 })
 
-    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
 
-    // The retry turn's completed outcome settles the round: round-limit, not
-    // the failed original turn's turn-error.
-    expect(goal?.blockedReason?.code).toBe('round-limit')
+    // The retry turn's completed outcome settles the round, then the exhausted
+    // budget pauses the goal (no blocker reason for a budget stop).
+    expect(goal?.blockedReason).toBeUndefined()
     expect(goal?.roundsStarted).toBe(1)
     expect(test.adapter.requests).toHaveLength(2)
   })
@@ -717,8 +715,8 @@ describe('same-session goal driving', () => {
     test.ctx.goals.create(test.agent, { objective: 'ignore foreign retries', maxGoalRounds: 1 })
     test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'human work' }], source: { kind: 'user' } }))
 
-    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
-    expect(goal?.blockedReason?.code).toBe('round-limit')
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
+    expect(goal?.blockedReason).toBeUndefined()
     expect(goal?.roundsStarted).toBe(1)
   })
 
@@ -765,10 +763,10 @@ describe('same-session goal driving', () => {
 
   it('contains a mutation failure inside the scheduler loop and fails closed', async () => {
     const test = await harness([textResponse('the only round')])
-    // The only ctx.goals.block call in a completing one-round run is the
-    // driver's round-limit stop, so the mock fails exactly that drive pass.
-    vi.spyOn(test.ctx.goals, 'block').mockImplementationOnce(() => {
-      throw new Error('round-limit block failed')
+    // The only ctx.goals.pause call in a completing one-round run is the
+    // driver's budget-exhausted stop, so the mock fails exactly that drive pass.
+    vi.spyOn(test.ctx.goals, 'pause').mockImplementationOnce(() => {
+      throw new Error('round-limit pause failed')
     })
     test.ctx.goals.create(test.agent, { objective: 'contain a driver failure', maxGoalRounds: 1 })
 
@@ -820,7 +818,7 @@ describe('same-session goal driving', () => {
     })
     test.ctx.goals.create(test.agent, { objective: 'retry stale pre-step', maxGoalRounds: 1 })
 
-    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
 
     expect(test.adapter.requests).toHaveLength(1)
   })
@@ -1055,7 +1053,7 @@ describe('same-session goal driving', () => {
     expect(test.adapter.requests).toHaveLength(0)
 
     test.ctx.goals.resume(test.agent, created)
-    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
     expect(test.adapter.requests).toHaveLength(1)
   })
 

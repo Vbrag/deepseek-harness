@@ -24,6 +24,8 @@ export interface GoalBarProps extends GoalBarActions {
   goal: GoalSnapshot | null | undefined
   /** Process-local continuation activation; absent while the live read is pending. */
   activation?: GoalActivation
+  /** Admitted continuation rounds for the current goal; lets a paused goal at its cap read as budget-exhausted. */
+  roundsStarted?: number
 }
 
 /** Strip label keys per visible phase; complete goals render nothing. */
@@ -39,7 +41,7 @@ function activeLabel(activation: GoalActivation | undefined, t: TranslateNS<'goa
   return t(PHASE_LABELS.active)
 }
 
-export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, t }: GoalBarProps & PropsLocale<'goal'>) {
+export function GoalBar({ goal, activation, roundsStarted, onEdit, onPause, onResume, onClear, t }: GoalBarProps & PropsLocale<'goal'>) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
@@ -126,7 +128,14 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
     )
   }
 
-  const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
+  // A paused goal whose admitted rounds exhausted the cap reads as budget
+  // exhaustion, not a blocker: the driver pauses (rather than blocks) at the
+  // cap, so surface that reason as the strip tooltip.
+  const title = goal.phase === 'blocked'
+    ? goal.blockedReason?.message
+    : goal.phase === 'paused' && roundsStarted !== undefined && roundsStarted >= goal.maxGoalRounds
+      ? t('reason.budgetExhausted')
+      : undefined
   const label = goal.phase === 'active' ? activeLabel(activation, t) : t(PHASE_LABELS[goal.phase])
   const showResume = goal.phase !== 'active' || activation === 'disarmed'
   return (
@@ -195,6 +204,7 @@ export function GoalDock({
     <GoalBar
       goal={goal}
       {...activation === undefined ? {} : { activation }}
+      {...projection === null || projection === undefined ? {} : { roundsStarted: projection.roundsStarted }}
       onEdit={onEdit}
       onPause={onPause}
       onResume={onResume}
