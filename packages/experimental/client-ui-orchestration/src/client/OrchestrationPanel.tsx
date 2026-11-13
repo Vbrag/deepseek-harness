@@ -1,9 +1,9 @@
 /** Orchestration settings page: pick the multi-model pool from the provider capability catalog and save it to the Host. */
 import { useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { PoolRoute } from '@deepseek-ai/dsh-experimental-orchestration/types'
-import type { ModelCapability, TaskDomain } from '@deepseek-ai/dsh-experimental-orchestration/src/capabilities.ts'
-import { PADERBORN_CATALOG } from '@deepseek-ai/dsh-experimental-orchestration/src/capabilities.ts'
+import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { ModelCapability, TaskDomain } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
+import { PADERBORN_CATALOG } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 import { NS, type OrchestrationKey } from './locales.ts'
 import css from './OrchestrationPanel.module.css'
 

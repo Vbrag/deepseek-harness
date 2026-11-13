@@ -1,7 +1,7 @@
 /** Browser entry registering the Orchestration settings page: mounts the Host's Remote and the settings section over it. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import orchestrationsRemote from '@deepseek-ai/dsh-experimental-orchestration/remote'
+import orchestrationsRemote from '@deepseek-ai/dsh-orchestration/remote'
 import { mountOrchestration } from './mount.ts'
 
 export { inject } from './mount.ts'

@@ -12,7 +12,13 @@ import type { SubagentActivation, SubagentResult } from '@deepseek-ai/dsh-subage
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import OrchestrationService, { orchestrationProjectionDefinition } from '../src/index.ts'
-import type { OrchestrationConfig, OrchestrationProjection, OrchestrationUnitState } from '../src/types.ts'
+import type { OrchestrationConfig, OrchestrationProjection, OrchestrationUnitState, PlannedStep } from '../src/types.ts'
+import type { CapabilityRoute } from '../src/plan.ts'
+
+/** The service's private `plan` seam, surfaced with its real signature for the guard tests. */
+interface PlanSpy {
+  plan(parent: Agent, task: string, routes: readonly CapabilityRoute[], signal: AbortSignal): Promise<PlannedStep[]>
+}
 
 const parent = {
   id: 'parent-agent',
@@ -45,7 +51,12 @@ function asyncIterable(gen: Generator<StreamChunk>): AsyncIterable<StreamChunk> 
 }
 
 function activation(childId: string, result: SubagentResult): SubagentActivation {
-  return { childId: SessionId(childId), result: Promise.resolve(result), dispose: () => Promise.resolve() }
+  return {
+    childId: SessionId(childId),
+    name: childId,
+    result: Promise.resolve(result),
+    dispose: () => Promise.resolve(),
+  }
 }
 
 async function setup(overrides: OrchestrationConfig = {}) {
@@ -448,7 +459,7 @@ describe('OrchestrationService run', () => {
   it.each([
     new Error('start failed'),
     new SubagentError('delegation denied', 'UNAUTHORIZED'),
-    new SubagentError('depth limit reached', 'MAX_DEPTH_EXCEEDED'),
+    new SubagentError('depth limit reached', 'DEPTH_EXCEEDED'),
   ])('does not route around a rejected worker creation: %s', async (error) => {
     const { ctx, subagents } = await setup({ maxAttemptsPerStep: 2 })
     subagents.startActivation.mockRejectedValueOnce(error)
@@ -596,7 +607,7 @@ describe('OrchestrationService run', () => {
 
   it('rejects when the coordinator returns no steps', async () => {
     const { ctx, service } = await setup()
-    vi.spyOn(service as unknown as { plan(...args: never[]): Promise<unknown> }, 'plan').mockResolvedValue([])
+    vi.spyOn(service as never as PlanSpy, 'plan').mockResolvedValue([])
     await expect(ctx.orchestrations.run(parent, 'task', [...POOL], new AbortController().signal))
       .rejects.toThrow('coordinator returned an empty plan')
   })
@@ -619,14 +630,14 @@ describe('OrchestrationService run', () => {
 
   it('guards plan against an empty pool', async () => {
     const { service } = await setup()
-    await expect((service as unknown as { plan(parent: never, task: string, routes: readonly never[], signal: AbortSignal): Promise<unknown> }).plan(parent, 'task', [], new AbortController().signal))
+    await expect((service as never as PlanSpy).plan(parent, 'task', [], new AbortController().signal))
       .rejects.toThrow('orchestration pool is empty')
   })
 
   it('fails loud when the parent agent has no selected model', async () => {
     const { service } = await setup()
     const noSelection = { id: 'parent-no-model', model: { current: () => undefined } } as never
-    await expect((service as unknown as { plan(parent: never, task: string, routes: readonly never[], signal: AbortSignal): Promise<unknown> }).plan(noSelection, 'task', [{} as never], new AbortController().signal))
+    await expect((service as never as PlanSpy).plan(noSelection, 'task', [{} as never], new AbortController().signal))
       .rejects.toThrow('parent agent "parent-no-model" has no selected provider/model')
   })
 })

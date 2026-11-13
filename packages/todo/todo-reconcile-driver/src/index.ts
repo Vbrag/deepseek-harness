@@ -169,7 +169,7 @@ export function apply(ctx: Context): void {
     // A reconcile started while descendants progress would only wait for them.
     const subagents = ctx.get('subagents')
     if (subagents !== undefined) {
-      await Promise.race([subagents.waitForChildren(agent), unloading.promise])
+      await Promise.race([subagents.waitForTreeWork(agent), unloading.promise])
       if (!readyAfterCheckpoint(state)) return
     }
 

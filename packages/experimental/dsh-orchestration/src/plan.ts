@@ -6,7 +6,7 @@
  * context requirements. Pure and deterministic so it can be unit-tested
  * directly.
  *
- * @module @deepseek-ai/dsh-experimental-orchestration/plan
+ * @module @deepseek-ai/dsh-orchestration/plan
  */
 
 import { bestCapabilityMatch, capabilityOf, capabilitySimilarity, domainScore, underRateBudget } from './capabilities.ts'

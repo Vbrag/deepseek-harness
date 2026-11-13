@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-experimental-client-ui-orchestration",
+  "name": "@deepseek-ai/dsh-client-ui-orchestration",
   "description": "Orchestration Mode settings page: pick the multi-model pool from the provider catalog with capability badges",
-  "version": "0.1.0-alpha.0",
+  "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
   },
@@ -27,10 +27,13 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "locale/*.json",
     "lib/index.js",
     "lib/client.js",
-    "locale/*.json",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/types/**/*.d.ts.map",
+    "lib/**/*.js.map",
+    "src"
   ],
   "dsh": {
     "client": {
@@ -52,7 +55,7 @@
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-api-remotes": "workspace:*",
     "@deepseek-ai/dsh-commands": "workspace:*",
-    "@deepseek-ai/dsh-experimental-orchestration": "workspace:*",
+    "@deepseek-ai/dsh-orchestration": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
     "@deepseek-ai/dsh-client-ui-session": "workspace:*",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",

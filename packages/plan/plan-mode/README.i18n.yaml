@@ -27,7 +27,7 @@
   en: 2d300cdb883352ec
   zh: 5a81be005b3716d3
 /deepseek-ai-dsh-plan-mode/use-this-package/the-reviewed-exit:
-  en: dbf12997d2359e81
+  en: fb70e30b5cce1f4e
   zh: 120a91554d2154f4
 /deepseek-ai-dsh-plan-mode/use-this-package/observing-plan-state:
   en: b44e92bc38406015
@@ -45,14 +45,14 @@
   en: a7bf35c2a9da52bc
   zh: dea9f4b3a41f1a6d
 /deepseek-ai-dsh-plan-mode/understand-the-implementation/the-exit-tool:
-  en: 7736aea9e4934fa8
-  zh: a595e477f54a199e
+  en: 60ff4b939bc00f12
+  zh: 369a815ede463840
 /deepseek-ai-dsh-plan-mode/understand-the-implementation/session-projection-unit:
-  en: 396d66816890f715
-  zh: fab5d67c027b33f5
+  en: 6765795517de7646
+  zh: 82733b824550e594
 /deepseek-ai-dsh-plan-mode/understand-the-implementation/source-map:
-  en: fa97e858495a8105
-  zh: 8be1fbd7e420ff8a
+  en: 7652cb216185fd60
+  zh: 38717e3a06d0effa
 /deepseek-ai-dsh-plan-mode/further-exploration:
   en: 5008d6d632002f49
   zh: 65184d489ecdcec0
@@ -90,17 +90,17 @@
   en: 9622e96bdc01276d
   zh: 53801e68a49f3d1d
 /deepseek-ai-dsh-plan-mode/model-experience/exit-tool-schema-and-review-exchange/what-the-model-sees:
-  en: 1b978a7b6eecdffe
-  zh: 338000d1bf8dd4a9
+  en: 74e160714ad1d575
+  zh: 988e0edbd37ad764
 /deepseek-ai-dsh-plan-mode/model-experience/exit-tool-schema-and-review-exchange/token-effect:
-  en: 5ef9db72f91e4a8c
+  en: 937c0a828bfe4133
   zh: 6e96335cc3eb5976
 /deepseek-ai-dsh-plan-mode/model-experience/exit-tool-schema-and-review-exchange/kv-cache-effect:
   en: a9eb70ad541fcfd7
   zh: 9c06d39341fc52b1
 /deepseek-ai-dsh-plan-mode/known-limitations-and-deferred-work:
-  en: a87aabfede0087fd
-  zh: 201e9b3766980005
+  en: 945c0b109844a34f
+  zh: 326ef77e7d0b4a1c
 /deepseek-ai-dsh-plan-mode/known-limitations-and-deferred-work/dev-note:
   en: 7de02cd33a767bd6
   zh: d9e54003f230f725

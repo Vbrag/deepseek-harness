@@ -3,7 +3,7 @@
  * the capability-aware plan the coordinator produces, and the settled outcome
  * of one orchestrated run.
  *
- * @module @deepseek-ai/dsh-experimental-orchestration/types
+ * @module @deepseek-ai/dsh-orchestration/types
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'

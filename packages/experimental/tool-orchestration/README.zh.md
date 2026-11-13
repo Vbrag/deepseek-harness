@@ -3,13 +3,13 @@ description: "面向模型的 run_orchestration 工具，基于可选的 Orchest
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-tool-orchestration
+# @deepseek-ai/dsh-tool-orchestration
 
 [English](README.md) | 中文
 
 ## 概述
 
-`dsh-experimental-tool-orchestration` 向模型提供一个 `run_orchestration` 工具。在挂载了 `@deepseek-ai/dsh-experimental-orchestration` 的情况下，该工具将一个目标拆分为独立的并行子任务，并在配置的模型池上运行它们；任一个子任务失败时，会使用模型池中下一条符合条件的路线重新开始，而不是让整个运行失败。本包为实验性质。
+`dsh-tool-orchestration` 向模型提供一个 `run_orchestration` 工具。在挂载了 `@deepseek-ai/dsh-orchestration` 的情况下，该工具将一个目标拆分为独立的并行子任务，并在配置的模型池上运行它们；任一个子任务失败时，会使用模型池中下一条符合条件的路线重新开始，而不是让整个运行失败。本包为实验性质。
 
 ## 目录
 
@@ -25,8 +25,8 @@ kind: "package-reference"
 同时挂载 Orchestration 服务与本工具插件：
 
 ```yaml
-- name: '@deepseek-ai/dsh-experimental-orchestration'
-- name: '@deepseek-ai/dsh-experimental-tool-orchestration'
+- name: '@deepseek-ai/dsh-orchestration'
+- name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
       - provider: deepseek-official

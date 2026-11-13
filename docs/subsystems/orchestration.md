@@ -158,17 +158,34 @@ setMode(agent: Agent, active: boolean): void
 select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'noop'
 
 /**
- * The currently selected multi-model pool, set by the GUI panel or a caller.
+ * The currently selected multi-model pool, read live by orchestration runs.
  * @returns the selected provider/model routes; may be empty.
  */
 @Remote('getPool') getPool(): readonly PoolRoute[]
 
 /**
- * Replace the selected multi-model pool. An empty pool clears the selection;
- * later runs then fail loud rather than silently running nothing.
+ * Replace the selected multi-model pool in memory only, without persisting.
+ * An empty pool clears the selection; later runs then fail loud rather than
+ * silently running nothing. This is the non-persisted setter used by the
+ * headless `tool-orchestration` seed; the GUI panel persists a selection
+ * through {@link OrchestrationService.persistPool}.
  * @param pool - provider/model routes to select.
  */
 @Remote('setPool') setPool(pool: readonly PoolRoute[]): void
+
+/**
+ * Persist a replacement pool to Host settings (`orchestration.pool` in the
+ * profile), restoring it after restart. The pool is always applied in memory
+ * so the selection takes effect immediately; the profile write is best-effort
+ * and a refused write (a settings conflict, a profile override, or a layered
+ * entry the config editor cannot rewrite) is logged as a warning and keeps
+ * the pool live for the session without blocking the selection. When the
+ * settings service is absent (settings-less boots), the pool is applied in
+ * memory with a warning so the call still lands.
+ * @param pool - provider/model routes to select.
+ * @returns true when the pool was applied (always, after an in-memory apply).
+ */
+@Remote('persistPool') async persistPool(pool: readonly PoolRoute[]): Promise<boolean>
 
 /**
  * Split a task into a plan with the coordinator and run every step as a

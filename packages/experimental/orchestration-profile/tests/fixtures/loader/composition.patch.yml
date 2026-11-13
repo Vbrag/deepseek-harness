@@ -3,10 +3,10 @@
       name: './orchestration-mock-llm.ts'
 
     - id: orchestration
-      name: '@deepseek-ai/dsh-experimental-orchestration'
+      name: '@deepseek-ai/dsh-orchestration'
 
     - id: tool-orchestration
-      name: '@deepseek-ai/dsh-experimental-tool-orchestration'
+      name: '@deepseek-ai/dsh-tool-orchestration'
       config:
         pool:
           - provider: orchestration-mock

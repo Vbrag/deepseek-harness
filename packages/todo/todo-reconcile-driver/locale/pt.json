@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Conciliação da lista de tarefas",
+    "description": "Concilia a lista de tarefas persistida ao retomar, com proteção contra corridas."
+  }
+}

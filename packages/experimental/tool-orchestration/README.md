@@ -3,13 +3,13 @@ description: "Model-facing run_orchestration tool over the opt-in Orchestration 
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-tool-orchestration
+# @deepseek-ai/dsh-tool-orchestration
 
 English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-experimental-tool-orchestration` exposes one `run_orchestration` tool to the model. With `@deepseek-ai/dsh-experimental-orchestration` mounted, the tool splits a goal into independent parallel sub-tasks and runs them across the configured model pool, restarting any failed sub-task on the next eligible model route instead of failing the whole run. The package is experimental.
+`dsh-tool-orchestration` exposes one `run_orchestration` tool to the model. With `@deepseek-ai/dsh-orchestration` mounted, the tool splits a goal into independent parallel sub-tasks and runs them across the configured model pool, restarting any failed sub-task on the next eligible model route instead of failing the whole run. The package is experimental.
 
 ## Table of Contents
 
@@ -25,8 +25,8 @@ English | [中文](README.zh.md)
 Mount both the Orchestration service and this tool plugin:
 
 ```yaml
-- name: '@deepseek-ai/dsh-experimental-orchestration'
-- name: '@deepseek-ai/dsh-experimental-tool-orchestration'
+- name: '@deepseek-ai/dsh-orchestration'
+- name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
       - provider: deepseek-official

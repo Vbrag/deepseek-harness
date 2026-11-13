@@ -3,7 +3,7 @@
  * single read-only model call over the parent's current route. The call is
  * not logged to a Session; neither this call nor its plan is durable.
  *
- * @module @deepseek-ai/dsh-experimental-orchestration/coordinator
+ * @module @deepseek-ai/dsh-orchestration/coordinator
  */
 
 import type { Context } from '@deepseek-ai/cordis'

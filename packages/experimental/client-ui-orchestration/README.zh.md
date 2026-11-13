@@ -3,7 +3,7 @@ description: "使用并排查实验性 Web Orchestration 设置面板：从提�
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-client-ui-orchestration
+# @deepseek-ai/dsh-client-ui-orchestration
 
 [English](README.md) | 中文
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-通过 [`@deepseek-ai/dsh-experimental-orchestration-profile`](../orchestration-profile/README.zh.md) 启用本包。这个组合包同时提供 Orchestration 服务、工具与本 Web 面板。Web Client loader 挂载 `/client` export；root Host export 不执行行为，本包也没有用户配置字段。
+通过 [`@deepseek-ai/dsh-orchestration-profile`](../orchestration-profile/README.zh.md) 启用本包。这个组合包同时提供 Orchestration 服务、工具与本 Web 面板。Web Client loader 挂载 `/client` export；root Host export 不执行行为，本包也没有用户配置字段。
 
 ### 选择会话模式
 

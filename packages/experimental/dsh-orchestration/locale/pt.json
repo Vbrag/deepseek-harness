@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Orquestração",
+    "description": "Divide uma tarefa em subagentes paralelos executados sobre um conjunto de modelos selecionado, com failover de rota limitado."
+  }
+}

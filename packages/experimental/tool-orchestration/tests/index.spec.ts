@@ -1,23 +1,28 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { OrchestrationResult } from '@deepseek-ai/dsh-experimental-orchestration'
+import type { OrchestrationResult } from '@deepseek-ai/dsh-orchestration'
 import { apply, Config, EMPTY_POOL_ERROR, MODE_INACTIVE_ERROR, inject, name } from '../src/index.ts'
 
 type Exec = { agent?: Agent; signal: AbortSignal }
 type Pool = { provider: string; model: string }
+
+/** The minimal tool surface the plugin ships: an execute body plus a JSON-output renderer. */
+type InstalledTool = {
+  execute: (args: unknown, exec: Exec) => Promise<unknown>
+  output: { render: (a: unknown, v: unknown) => unknown[] }
+}
 
 const SIGNAL = new AbortController().signal
 
 /** A minimal Agent exposing only `ctx.tools.register`, capturing one tool. */
 function fakeAgent(id: string) {
   let disposed = false
-  const holder = { tool: undefined as { execute: (args: unknown, exec: Exec) => Promise<unknown> } | undefined }
+  const holder = { tool: undefined as InstalledTool | undefined }
   const agent = {
     id,
     ctx: {
       tools: {
-        register: vi.fn((tool: { execute: (args: unknown, exec: Exec) => Promise<unknown> }) => {
+        register: vi.fn((tool: InstalledTool) => {
           holder.tool = tool
           return () => { disposed = true }
         }),
@@ -25,7 +30,7 @@ function fakeAgent(id: string) {
     },
   }
   return {
-    agent: agent as unknown as Agent,
+    agent: agent as never,
     tool: () => holder.tool,
     register: agent.ctx.tools.register as ReturnType<typeof vi.fn>,
     get disposed() { return disposed },
@@ -47,7 +52,7 @@ function fakeContext(agents: Agent[], seed: { provider: string; model: string }[
     effect: vi.fn((callback: () => () => void) => { teardown = callback() }),
   }
   return {
-    ctx: ctx as unknown as Context,
+    ctx: ctx as never,
     run: ctx.orchestrations.run as ReturnType<typeof vi.fn>,
     setPool,
     getPool,
@@ -228,7 +233,7 @@ describe('tool-orchestration function plugin', () => {
     const { agent } = installTool([{ provider: 'p1', model: 'm1' }])
     const tool = agent.tool()!
     const value = { succeeded: true, steps: [], failovers: 0, failedSteps: 0 }
-    const rendered = (tool as unknown as { output: { render: (a: unknown, v: unknown) => unknown[] } }).output.render({}, value)
+    const rendered = tool.output.render({}, value)
     expect(rendered).toEqual([{ type: 'text', text: JSON.stringify(value) }])
   })
 

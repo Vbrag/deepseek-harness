@@ -96,7 +96,7 @@ function seedPersistedPlan(ctx: Context, agent: Agent, todos: TodoItem[], object
 function reconcileMessages(agent: Agent): UserMessage[] {
   return agent.session.snapshotEvents()
     .filter(event => event.type === 'user/message' && event.data.source.kind === 'todo-reconcile')
-    .map(event => event.data as unknown as UserMessage)
+    .map(event => event.data as UserMessage)
 }
 
 describe('todo-reconcile prompt rendering', () => {

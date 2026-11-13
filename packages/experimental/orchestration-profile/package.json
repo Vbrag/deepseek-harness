@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-experimental-orchestration-profile",
+  "name": "@deepseek-ai/dsh-orchestration-profile",
   "description": "Orchestration Mode in one experimental bundle: split a task into parallel subagents over a selected multi-model pool with bounded route failover",
-  "version": "0.1.0-alpha.0",
+  "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
   },
@@ -25,7 +25,10 @@
   "files": [
     "lib/index.js",
     "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/types/**/*.d.ts.map",
+    "lib/**/*.js.map",
+    "src"
   ],
   "license": "MIT",
   "dsh": {
@@ -34,9 +37,9 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-experimental-client-ui-orchestration": "workspace:*",
-    "@deepseek-ai/dsh-experimental-orchestration": "workspace:*",
-    "@deepseek-ai/dsh-experimental-tool-orchestration": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-orchestration": "workspace:*",
+    "@deepseek-ai/dsh-orchestration": "workspace:*",
+    "@deepseek-ai/dsh-tool-orchestration": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"
@@ -47,7 +50,7 @@
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-app-boot": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-experimental-orchestration": "workspace:*",
+    "@deepseek-ai/dsh-orchestration": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-loader-smoke": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",

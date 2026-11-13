@@ -7,10 +7,10 @@
 
 - insert:
     - id: orchestration
-      name: '@deepseek-ai/dsh-experimental-orchestration'
+      name: '@deepseek-ai/dsh-orchestration'
 
     - id: tool-orchestration
-      name: '@deepseek-ai/dsh-experimental-tool-orchestration'
+      name: '@deepseek-ai/dsh-tool-orchestration'
 
     - id: ui-orchestration
-      name: '@deepseek-ai/dsh-experimental-client-ui-orchestration'
+      name: '@deepseek-ai/dsh-client-ui-orchestration'

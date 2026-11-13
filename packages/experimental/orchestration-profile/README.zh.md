@@ -3,13 +3,13 @@ description: "可选的 Orchestration Mode 实验性配置文件包：将单个�
 kind: "package-bundle"
 ---
 
-# @deepseek-ai/dsh-experimental-orchestration-profile
+# @deepseek-ai/dsh-orchestration-profile
 
 [English](README.md) | 中文
 
 ## 概述
 
-`dsh-experimental-orchestration-profile` 是一个可选的配置层，用一个包启用 **Orchestration Mode**。在 `dsh-base` 之后应用即可挂载 Orchestration 服务及其 `run_orchestration` 工具，并配以所选的多模型模型池；这样会话可以把一个目标拆分为跨多种模型的独立并行子任务，并在任一子任务失败时使用下一条符合条件的模型路线重新开始，而不是让整个运行失败。本包为实验性质，仅在显式启用时随包提供，绝不会出现在默认包中。
+`dsh-orchestration-profile` 是一个可选的配置层，用一个包启用 **Orchestration Mode**。在 `dsh-base` 之后应用即可挂载 Orchestration 服务及其 `run_orchestration` 工具，并配以所选的多模型模型池；这样会话可以把一个目标拆分为跨多种模型的独立并行子任务，并在任一子任务失败时使用下一条符合条件的模型路线重新开始，而不是让整个运行失败。本包为实验性质，仅在显式启用时随包提供，绝不会出现在默认包中。
 
 ## 目录
 
@@ -26,7 +26,7 @@ kind: "package-bundle"
 
 ```yaml
 - id: tool-orchestration
-  name: '@deepseek-ai/dsh-experimental-tool-orchestration'
+  name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
       - provider: deepseek-official
@@ -50,7 +50,7 @@ kind: "package-bundle"
 
 #### 模型所见
 
-本包随 profile 的其他部分一起挂载 `run_orchestration` 工具及其 Orchestration 服务。面向模型的工具 schema、子任务提示与结果属于 `@deepseek-ai/dsh-experimental-tool-orchestration` 与 `@deepseek-ai/dsh-experimental-orchestration`；配置文件层本身不贡献任何提示或工具文本。
+本包随 profile 的其他部分一起挂载 `run_orchestration` 工具及其 Orchestration 服务。面向模型的工具 schema、子任务提示与结果属于 `@deepseek-ai/dsh-tool-orchestration` 与 `@deepseek-ai/dsh-orchestration`；配置文件层本身不贡献任何提示或工具文本。
 
 #### Token 影响
 

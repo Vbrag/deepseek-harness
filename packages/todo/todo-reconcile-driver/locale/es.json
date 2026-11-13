@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Conciliación de lista de tareas",
+    "description": "Concilia la lista de tareas persistida al reanudar, con protección ante condiciones de carrera."
+  }
+}

@@ -3,13 +3,13 @@ description: "Decompose one task into parallel subagents over a selected multi-m
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-orchestration
+# @deepseek-ai/dsh-orchestration
 
 English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-experimental-orchestration` adds an `orchestrations` service that turns one raw task into a plan of independent sub-steps, then runs those steps in parallel as spawn subagents, each assigned a model route from a caller-selected pool. When a worker ends in a failure, an error, or the token limit, the run does not stop: the step is restarted on the next eligible pool route within a bounded attempt budget. The package is experimental and has no stability promise.
+`dsh-orchestration` adds an `orchestrations` service that turns one raw task into a plan of independent sub-steps, then runs those steps in parallel as spawn subagents, each assigned a model route from a caller-selected pool. When a worker ends in a failure, an error, or the token limit, the run does not stop: the step is restarted on the next eligible pool route within a bounded attempt budget. The package is experimental and has no stability promise.
 
 ## Table of Contents
 
@@ -42,7 +42,7 @@ The service accepts validated deployment limits in its configuration:
 | `workerTimeoutMs` | `120,000` | Abandon an attempt that runs longer than this, then fail over |
 | `defaultToOrchestrator` | `false` | Default orchestration mode for a session with no explicit `/orchestration` selection; the `run_orchestration` tool refuses to delegate outside it |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-experimental-orchestration) is the exhaustive source for every accepted field and its JSDoc.
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-orchestration) is the exhaustive source for every accepted field and its JSDoc.
 
 ### Select the session mode
 
@@ -53,7 +53,7 @@ Orchestration is a per-session mode. A Default session runs the normal single-mo
 Call `ctx.orchestrations.run(parent, task, pool, signal)`. The pool is the ordered list of route choices; each route names a `provider` and `model`. Capability routing is resolved from the investigated provider catalog, not from per-route tags.
 
 ```ts
-import type { PoolRoute } from '@deepseek-ai/dsh-experimental-orchestration'
+import type { PoolRoute } from '@deepseek-ai/dsh-orchestration'
 
 const pool: readonly PoolRoute[] = [
   { provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' },

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Aufgabenabgleich",
+    "description": "Gleicht die persistierte Aufgabenliste beim Fortsetzen ab, geschützt vor Race Conditions."
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "noEmit": true,
+    "paths": {}
+  },
+  "include": [
+    "packages/llm/llm/tests/service.spec.ts",
+    "packages/todo/todo-reconcile-driver/tests/todo-reconcile-driver.spec.ts",
+    "packages/experimental/tool-orchestration/tests/index.spec.ts",
+    "packages/experimental/dsh-orchestration/tests/index.spec.ts"
+  ]
+}

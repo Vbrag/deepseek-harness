@@ -3,7 +3,7 @@ description: "Use and debug the experimental Web Orchestration settings panel: p
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-client-ui-orchestration
+# @deepseek-ai/dsh-client-ui-orchestration
 
 English | [中文](README.zh.md)
 
@@ -24,7 +24,7 @@ Select Default or Orchestration from the conversation composer and choose worker
 <a id="use-this-package"></a>
 ## Use this package
 
-Enable this package through [`@deepseek-ai/dsh-experimental-orchestration-profile`](../orchestration-profile/README.md), which supplies the Orchestration service, tool, and this Web panel together. The Web Client loader mounts the `/client` export; the root Host export is inert, and the package has no user configuration fields.
+Enable this package through [`@deepseek-ai/dsh-orchestration-profile`](../orchestration-profile/README.md), which supplies the Orchestration service, tool, and this Web panel together. The Web Client loader mounts the `/client` export; the root Host export is inert, and the package has no user configuration fields.
 
 ### Select the session mode
 

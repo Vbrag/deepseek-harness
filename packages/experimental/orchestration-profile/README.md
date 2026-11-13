@@ -3,13 +3,13 @@ description: "Opt-in Orchestration Mode experimental profile bundle: split one t
 kind: "package-bundle"
 ---
 
-# @deepseek-ai/dsh-experimental-orchestration-profile
+# @deepseek-ai/dsh-orchestration-profile
 
 English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-experimental-orchestration-profile` is an opt-in profile layer that enables **Orchestration Mode** in one bundle. Applied after `dsh-base`, it mounts the Orchestration service and its `run_orchestration` tool with a selected multi-model pool, so a session can split a goal into independent parallel sub-tasks across several models and restart any failed sub-task on the next eligible model route instead of failing the whole run. It is experimental and ships only when explicitly opted into; it is never part of the default bundles.
+`dsh-orchestration-profile` is an opt-in profile layer that enables **Orchestration Mode** in one bundle. Applied after `dsh-base`, it mounts the Orchestration service and its `run_orchestration` tool with a selected multi-model pool, so a session can split a goal into independent parallel sub-tasks across several models and restart any failed sub-task on the next eligible model route instead of failing the whole run. It is experimental and ships only when explicitly opted into; it is never part of the default bundles.
 
 ## Table of Contents
 
@@ -26,7 +26,7 @@ Install this bundle and apply its patch over `dsh-base` to add Orchestration Mod
 
 ```yaml
 - id: tool-orchestration
-  name: '@deepseek-ai/dsh-experimental-tool-orchestration'
+  name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
       - provider: deepseek-official
@@ -50,7 +50,7 @@ A session in Orchestration Mode completes its goal by splitting it into parallel
 
 #### What the model sees
 
-This bundle mounts the `run_orchestration` tool and its Orchestration service alongside the rest of the profile. The model-facing tool schema, sub-task prompts, and results belong to `@deepseek-ai/dsh-experimental-tool-orchestration` and `@deepseek-ai/dsh-experimental-orchestration`; the profile layer itself contributes no prompt or tool text.
+This bundle mounts the `run_orchestration` tool and its Orchestration service alongside the rest of the profile. The model-facing tool schema, sub-task prompts, and results belong to `@deepseek-ai/dsh-tool-orchestration` and `@deepseek-ai/dsh-orchestration`; the profile layer itself contributes no prompt or tool text.
 
 #### Token effect
 

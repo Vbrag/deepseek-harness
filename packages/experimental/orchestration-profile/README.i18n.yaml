@@ -5,42 +5,42 @@
 /:
   en: 02992a8ffca2e26a
   zh: ff85d9a6f2c6660e
-/deepseek-ai-dsh-experimental-orchestration-profile:
-  en: 156608c4d618c4e9
-  zh: a3afbdae0da1dd09
-/deepseek-ai-dsh-experimental-orchestration-profile/summary:
-  en: 5715ca0b94016c8c
-  zh: a3d9cc57ea52be28
-/deepseek-ai-dsh-experimental-orchestration-profile/table-of-contents:
+/deepseek-ai-dsh-orchestration-profile:
+  en: f9b97d3579a5c635
+  zh: a3032da0f3894f38
+/deepseek-ai-dsh-orchestration-profile/summary:
+  en: 50f9de8731bbd0f7
+  zh: 7bd95ccad82c27ab
+/deepseek-ai-dsh-orchestration-profile/table-of-contents:
   en: 0e9edf8fb6254fec
   zh: 71902ec5f3b2a814
-/deepseek-ai-dsh-experimental-orchestration-profile/use-this-profile:
+/deepseek-ai-dsh-orchestration-profile/use-this-profile:
   en: 90dd7e1283e739f7
   zh: 3a54cbd1a73e5ab0
-/deepseek-ai-dsh-experimental-orchestration-profile/use-this-profile/what-success-and-failure-look-like:
+/deepseek-ai-dsh-orchestration-profile/use-this-profile/what-success-and-failure-look-like:
   en: cf5e545885cc3426
   zh: e00282c7796a4fdf
-/deepseek-ai-dsh-experimental-orchestration-profile/model-experience:
+/deepseek-ai-dsh-orchestration-profile/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
-/deepseek-ai-dsh-experimental-orchestration-profile/model-experience/delegated-run-orchestration:
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration:
   en: 3ef15c5ff717e43f
   zh: 16c391cd01aded27
-/deepseek-ai-dsh-experimental-orchestration-profile/model-experience/delegated-run-orchestration/what-the-model-sees:
-  en: c84743a0f0e45d37
-  zh: 152ea79f94fbe6da
-/deepseek-ai-dsh-experimental-orchestration-profile/model-experience/delegated-run-orchestration/token-effect:
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration/what-the-model-sees:
+  en: 84ec7451b83714e4
+  zh: e750c4e295e8647b
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration/token-effect:
   en: 7af4b1076507a8a5
   zh: c29d3bb49661f2df
-/deepseek-ai-dsh-experimental-orchestration-profile/model-experience/delegated-run-orchestration/kv-cache-effect:
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration/kv-cache-effect:
   en: a476c74e13f04fdc
   zh: 83a910f3198e6058
-/deepseek-ai-dsh-experimental-orchestration-profile/known-limitations-and-deferred-work:
+/deepseek-ai-dsh-orchestration-profile/known-limitations-and-deferred-work:
   en: 296de86fd1bb8f9c
   zh: a8f8765713d5d9e9
-/deepseek-ai-dsh-experimental-orchestration-profile/known-limitations-and-deferred-work/dev-note:
+/deepseek-ai-dsh-orchestration-profile/known-limitations-and-deferred-work/dev-note:
   en: 498e4cf9fe5741a7
   zh: 4d131e4db9e217b2
-/deepseek-ai-dsh-experimental-orchestration-profile/known-limitations-and-deferred-work/dev-note/promotion:
+/deepseek-ai-dsh-orchestration-profile/known-limitations-and-deferred-work/dev-note/promotion:
   en: 547cd203a81fc534
   zh: 8d31bccb245f2c7c

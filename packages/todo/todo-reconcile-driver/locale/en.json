@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Todo List Reconcile",
+    "description": "Race-fenced resume reconciliation for the persisted todo list."
+  }
+}

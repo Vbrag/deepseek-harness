@@ -4,7 +4,7 @@
  * policy and scheduling live here, outside the agent-loop, composing the
  * stable `ctx.subagents` and `ctx.llm` seams.
  *
- * @module @deepseek-ai/dsh-experimental-orchestration
+ * @module @deepseek-ai/dsh-orchestration
  */
 
 import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
@@ -205,7 +205,7 @@ export class OrchestrationService extends TypertRemoteService {
     // composed, so the service still boots without one (the boot test path).
     this.ctx.inject(['commands'], (commandCtx) => {
       commandCtx.commands.register({
-        definitionId: brandString<CommandDefinitionId>('@deepseek-ai/dsh-experimental-orchestration'),
+        definitionId: brandString<CommandDefinitionId>('@deepseek-ai/dsh-orchestration'),
         name: 'orchestration',
         description: 'Turn orchestration mode on or off for this session',
         input: { hint: 'on|off' },
@@ -510,11 +510,9 @@ export class OrchestrationService extends TypertRemoteService {
           provider: 'spawn',
           label: step.id,
           delivery: 'caller',
-          request: {
-            prompt: [{ type: 'text', text: step.description }],
-            parent,
-            agentOptions: { provider: route.provider, model: route.model },
-          },
+          prompt: [{ type: 'text', text: step.description }],
+          parent,
+          agentOptions: { provider: route.provider, model: route.model },
           signal,
         })
       } catch (error: unknown) {

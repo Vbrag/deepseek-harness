@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Réconciliation des tâches",
+    "description": "Réconcilie la liste de tâches persistée à la reprise, protégé contre les courses."
+  }
+}

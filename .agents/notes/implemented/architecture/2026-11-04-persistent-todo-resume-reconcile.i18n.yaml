@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-04-persistent-todo-resume-reconcile.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-04-persistent-todo-resume-reconcile.md
+/agent-note-persistent-to-do-list-with-resume-reconciliation:
+  en: 5daeb661d0b09598
+  zh: ed014b4463b22857
+/agent-note-persistent-to-do-list-with-resume-reconciliation/problem:
+  en: 8da680bf045ce424
+  zh: 1e34a3766b39c472
+/agent-note-persistent-to-do-list-with-resume-reconciliation/decision:
+  en: a51c6a24965fae38
+  zh: c69f8bf5cc2543d7
+/agent-note-persistent-to-do-list-with-resume-reconciliation/alternatives-considered:
+  en: 428ca78f553f1914
+  zh: 5ed0fc4d30916b45
+/agent-note-persistent-to-do-list-with-resume-reconciliation/consequences:
+  en: a4d057d5edecd315
+  zh: e0b5929fda6a9896

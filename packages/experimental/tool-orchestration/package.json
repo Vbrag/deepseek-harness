@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-experimental-tool-orchestration",
+  "name": "@deepseek-ai/dsh-tool-orchestration",
   "description": "Model-facing run_orchestration tool over the opt-in Orchestration service: split a task into parallel subagents over a selected multi-model pool",
-  "version": "0.1.0-alpha.0",
+  "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
   },
@@ -23,14 +23,16 @@
   },
   "files": [
     "lib/index.js",
-    "lib/types/**/*.js",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/types/**/*.d.ts.map",
+    "lib/**/*.js.map",
+    "src"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-experimental-orchestration": "workspace:*",
+    "@deepseek-ai/dsh-orchestration": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*"
@@ -38,7 +40,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-experimental-orchestration": "workspace:*",
+    "@deepseek-ai/dsh-orchestration": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*"

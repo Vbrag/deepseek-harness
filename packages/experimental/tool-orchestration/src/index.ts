@@ -5,7 +5,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
-import type { PoolRoute } from '@deepseek-ai/dsh-experimental-orchestration'
+import type { PoolRoute } from '@deepseek-ai/dsh-orchestration'
 
 /** Cordis plugin name. */
 export const name = 'tool-orchestration'

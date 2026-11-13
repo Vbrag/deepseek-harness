@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Orquestación",
+    "description": "Divide una tarea en subagentes paralelos que se ejecutan sobre un conjunto de modelos seleccionado con conmutación por error de ruta acotada."
+  }
+}

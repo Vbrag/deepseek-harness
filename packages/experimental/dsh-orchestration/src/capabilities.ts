@@ -8,7 +8,7 @@
  * catalog defaults (routing-only, not a live quota); a live-override seam is
  * reserved for a gateway that later reports current per-model limits.
  *
- * @module @deepseek-ai/dsh-experimental-orchestration/capabilities
+ * @module @deepseek-ai/dsh-orchestration/capabilities
  */
 
 /** Health of a catalog entry; only routeable entries are usable. */

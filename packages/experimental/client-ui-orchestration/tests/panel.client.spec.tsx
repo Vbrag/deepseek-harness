@@ -2,8 +2,8 @@
 /** The panel draws the catalog rows, seeds the selection from the Host pool, and persists every toggle. */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { PoolRoute } from '@deepseek-ai/dsh-experimental-orchestration/types'
-import { PADERBORN_CATALOG } from '@deepseek-ai/dsh-experimental-orchestration/src/capabilities.ts'
+import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import { PADERBORN_CATALOG } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { OrchestrationPanel, type OrchestrationPanelProps } from '../src/client/OrchestrationPanel.tsx'
 import { zh } from '../src/client/locales.ts'

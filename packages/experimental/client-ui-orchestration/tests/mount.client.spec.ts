@@ -8,7 +8,7 @@ import { OrchestrationModeControl, type OrchestrationModeInjected } from '../src
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import type { PoolRoute } from '@deepseek-ai/dsh-experimental-orchestration/types'
+import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { expect, it, vi, type Mock } from 'vitest'
@@ -17,12 +17,12 @@ import { apply as clientApply } from '../src/client/index.ts'
 import { OrchestrationPanel, type OrchestrationInjected } from '../src/client/OrchestrationPanel.tsx'
 import { inject, mountOrchestration } from '../src/client/mount.ts'
 
-const REMOTE: TypertRemoteContribution = { package: '@deepseek-ai/dsh-experimental-orchestration', descriptors: [] }
+const REMOTE: TypertRemoteContribution = { package: '@deepseek-ai/dsh-orchestration', descriptors: [] }
 
 // The client entry imports the generated Remote contribution as a value; hand
 // it the same fake object to keep `$mount` interacting with a plain descriptor.
-vi.mock('@deepseek-ai/dsh-experimental-orchestration/remote', () => ({
-  default: { package: '@deepseek-ai/dsh-experimental-orchestration', descriptors: [] },
+vi.mock('@deepseek-ai/dsh-orchestration/remote', () => ({
+  default: { package: '@deepseek-ai/dsh-orchestration', descriptors: [] },
 }))
 
 const INITIAL: readonly PoolRoute[] = [{ provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' }]

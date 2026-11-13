@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as yaml from 'js-yaml'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 
 describe('Orchestration profile bundle', () => {
   it('declares a public parseable layer with the service, model tool, and pool picker', () => {
@@ -20,14 +19,13 @@ describe('Orchestration profile bundle', () => {
     expect(manifest.publishConfig?.access).toBe('public')
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.dependencies).toMatchObject({
-      '@deepseek-ai/dsh-experimental-client-ui-orchestration': 'workspace:*',
-      '@deepseek-ai/dsh-experimental-orchestration': 'workspace:*',
-      '@deepseek-ai/dsh-experimental-tool-orchestration': 'workspace:*',
+      '@deepseek-ai/dsh-client-ui-orchestration': 'workspace:*',
+      '@deepseek-ai/dsh-orchestration': 'workspace:*',
+      '@deepseek-ai/dsh-tool-orchestration': 'workspace:*',
     })
 
     const parsed = yaml.load(
       readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'),
-      { schema: entryListSchema },
     )
     expect(Array.isArray(parsed)).toBe(true)
     const patches = parsed as {
@@ -35,13 +33,13 @@ describe('Orchestration profile bundle', () => {
     }[]
     const inserted = patches.flatMap(patch => patch.insert ?? [])
     expect(inserted.find(entry => entry.id === 'orchestration')).toMatchObject({
-      name: '@deepseek-ai/dsh-experimental-orchestration',
+      name: '@deepseek-ai/dsh-orchestration',
     })
     expect(inserted.find(entry => entry.id === 'tool-orchestration')).toMatchObject({
-      name: '@deepseek-ai/dsh-experimental-tool-orchestration',
+      name: '@deepseek-ai/dsh-tool-orchestration',
     })
     expect(inserted.find(entry => entry.id === 'ui-orchestration')).toMatchObject({
-      name: '@deepseek-ai/dsh-experimental-client-ui-orchestration',
+      name: '@deepseek-ai/dsh-client-ui-orchestration',
     })
   })
 })

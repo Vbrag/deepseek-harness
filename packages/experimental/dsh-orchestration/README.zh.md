@@ -3,13 +3,13 @@ description: "在实验性 Orchestration 组合中，将单个任务拆分为并
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-experimental-orchestration
+# @deepseek-ai/dsh-orchestration
 
 [English](README.md) | 中文
 
 ## 概述
 
-`dsh-experimental-orchestration` 提供一个 `orchestrations` 服务：将一个原始任务拆分为彼此独立的子步骤计划，然后在所选模型池中为每个步骤分配一条模型路由，作为并行生成的子代理运行。当某个工作进程以失败、错误或达到 token 上限而结束时，运行不会终止：在有限的重试预算内，该步骤会使用模型池中下一条符合条件的路由重新开始。本包为实验性质，不提供稳定性承诺。
+`dsh-orchestration` 提供一个 `orchestrations` 服务：将一个原始任务拆分为彼此独立的子步骤计划，然后在所选模型池中为每个步骤分配一条模型路由，作为并行生成的子代理运行。当某个工作进程以失败、错误或达到 token 上限而结束时，运行不会终止：在有限的重试预算内，该步骤会使用模型池中下一条符合条件的路由重新开始。本包为实验性质，不提供稳定性承诺。
 
 ## 目录
 
@@ -42,7 +42,7 @@ kind: "package-reference"
 | `workerTimeoutMs` | `120,000` | 尝试运行超过该时长即放弃，并触发故障转移 |
 | `defaultToOrchestrator` | `false` | 为没有显式 `/orchestration` 选择的会话提供默认编排模式；`run_orchestration` 工具在该模式之外拒绝委派 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-experimental-orchestration)是每个可用字段及其 JSDoc 的详尽来源。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-orchestration)是每个可用字段及其 JSDoc 的详尽来源。
 
 ### 选择会话模式
 
@@ -53,7 +53,7 @@ kind: "package-reference"
 调用 `ctx.orchestrations.run(parent, task, pool, signal)`。`pool` 是路由的有序数组，每项包含 `provider` 与 `model`。能力路由从经过调研的提供方目录解析而来，而不是来自每条路由上的标签。
 
 ```ts
-import type { PoolRoute } from '@deepseek-ai/dsh-experimental-orchestration'
+import type { PoolRoute } from '@deepseek-ai/dsh-orchestration'
 
 const pool: readonly PoolRoute[] = [
   { provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' },

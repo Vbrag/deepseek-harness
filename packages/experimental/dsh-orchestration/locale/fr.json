@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Orchestration",
+    "description": "Divisez une tâche en sous-agents parallèles exécutés sur un groupe de modèles sélectionné avec bascule de routage bornée."
+  }
+}

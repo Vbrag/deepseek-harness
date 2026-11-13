@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Orchestrierung",
+    "description": "Teilen Sie eine Aufgabe in parallele Subagenten auf, die auf einem ausgewählten Multi-Modell-Pool mit begrenztem Routen-Failover laufen."
+  }
+}
