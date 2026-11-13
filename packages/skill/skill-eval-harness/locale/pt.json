@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Habilidade de harness de avaliação",
+    "description": "Fornece um fluxo de trabalho de desenvolvimento orientado a avaliações com avaliações de capacidade e regressão, métricas pass@k e pass^k, e avaliadores de código, modelo ou humano."
+  }
+}

@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/skill/skill-eval-harness/README.md
+/:
+  en: 59df5156db93992c
+  zh: 3ad832256a4c6893
+/deepseek-ai-dsh-skill-eval-harness:
+  en: 62e60e8aaa4c3a63
+  zh: 554fa60d03e6ae7b
+/deepseek-ai-dsh-skill-eval-harness/summary:
+  en: 64e62ca5329729c1
+  zh: 0a75a2be511fb4d4
+/deepseek-ai-dsh-skill-eval-harness/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 4e367cef393295ae
+/deepseek-ai-dsh-skill-eval-harness/use-this-package:
+  en: 9d7717bd17f884cf
+  zh: 4f217fe1449937da
+/deepseek-ai-dsh-skill-eval-harness/when-to-choose-it:
+  en: 24867238fd878588
+  zh: fa88a6335dfc991d
+/deepseek-ai-dsh-skill-eval-harness/when-to-choose-it/mount-and-configure:
+  en: e6fdeb9925a823b7
+  zh: 02f0d63f938b3e8a
+/deepseek-ai-dsh-skill-eval-harness/when-to-choose-it/observable-behavior:
+  en: 3508541a8fb949ea
+  zh: a7f899bc55ce8be8
+/deepseek-ai-dsh-skill-eval-harness/understand-the-implementation:
+  en: 2641ba6cff12d9fa
+  zh: 547110dca1413a44
+/deepseek-ai-dsh-skill-eval-harness/further-exploration:
+  en: 85d7f35c0c528a24
+  zh: ab7816040e52d8e6
+/deepseek-ai-dsh-skill-eval-harness/model-experience:
+  en: 86be820ee6ed7e5b
+  zh: 0c87d801a113e85d
+/deepseek-ai-dsh-skill-eval-harness/model-experience/kv-cache-effect:
+  en: d02a25f757995704
+  zh: dbc02cbf01c4c4a0
+/deepseek-ai-dsh-skill-eval-harness/known-limitations-and-deferred-work:
+  en: 51614f35d79f8ce6
+  zh: 49d66c54e17398f3
+/deepseek-ai-dsh-skill-eval-harness/known-limitations-and-deferred-work/dev-note:
+  en: a6787e85ccbd7aac
+  zh: 76793717f146950c

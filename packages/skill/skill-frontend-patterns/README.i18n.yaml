@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/skill/skill-frontend-patterns/README.md
+/:
+  en: 1c565964a6c0484e
+  zh: 812670735d258f62
+/deepseek-ai-dsh-skill-frontend-patterns:
+  en: d3b8a9734dc4f64f
+  zh: 843e004c6299c357
+/deepseek-ai-dsh-skill-frontend-patterns/summary:
+  en: 6371299ef4ebaa3e
+  zh: 275be2a6523e4e69
+/deepseek-ai-dsh-skill-frontend-patterns/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 4e367cef393295ae
+/deepseek-ai-dsh-skill-frontend-patterns/use-this-package:
+  en: 4c8bc7b3eeeb2c4f
+  zh: f707747110a46d7e
+/deepseek-ai-dsh-skill-frontend-patterns/when-to-choose-it:
+  en: cf36fdcbda1cb5ae
+  zh: bf7bf62bd4bb1f9c
+/deepseek-ai-dsh-skill-frontend-patterns/when-to-choose-it/mount-and-configure:
+  en: e6fdeb9925a823b7
+  zh: 02f0d63f938b3e8a
+/deepseek-ai-dsh-skill-frontend-patterns/when-to-choose-it/observable-behavior:
+  en: 77f116e710968b67
+  zh: c4cb7d2e7b640904
+/deepseek-ai-dsh-skill-frontend-patterns/understand-the-implementation:
+  en: 5dd97bcaa1c73a08
+  zh: 472d2ede16ad60a4
+/deepseek-ai-dsh-skill-frontend-patterns/further-exploration:
+  en: 85d7f35c0c528a24
+  zh: ab7816040e52d8e6
+/deepseek-ai-dsh-skill-frontend-patterns/model-experience:
+  en: 86be820ee6ed7e5b
+  zh: 0c87d801a113e85d
+/deepseek-ai-dsh-skill-frontend-patterns/model-experience/kv-cache-effect:
+  en: d02a25f757995704
+  zh: dbc02cbf01c4c4a0
+/deepseek-ai-dsh-skill-frontend-patterns/known-limitations-and-deferred-work:
+  en: f5d7504a6d3b154e
+  zh: 17bbfe490bc6a3ca
+/deepseek-ai-dsh-skill-frontend-patterns/known-limitations-and-deferred-work/dev-note:
+  en: 6cd7eced6e756010
+  zh: bb345f2ef3f07064

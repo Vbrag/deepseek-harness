@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/skill/skill-continuous-learning/README.md
+/:
+  en: 61147b092aea0d78
+  zh: c7004edcadcc75ed
+/deepseek-ai-dsh-skill-continuous-learning:
+  en: c4864b381b3d7232
+  zh: fb940d1478c2ca73
+/deepseek-ai-dsh-skill-continuous-learning/summary:
+  en: ec3dbe93bca70351
+  zh: 1c519921de00ef72
+/deepseek-ai-dsh-skill-continuous-learning/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 4e367cef393295ae
+/deepseek-ai-dsh-skill-continuous-learning/use-this-package:
+  en: 2d9fc4f58f8d02a1
+  zh: 12c7fca85e1b5296
+/deepseek-ai-dsh-skill-continuous-learning/when-to-choose-it:
+  en: 03474d48d37f444c
+  zh: 3c84e2fca749873f
+/deepseek-ai-dsh-skill-continuous-learning/when-to-choose-it/mount-and-configure:
+  en: e6fdeb9925a823b7
+  zh: 02f0d63f938b3e8a
+/deepseek-ai-dsh-skill-continuous-learning/when-to-choose-it/observable-behavior:
+  en: b801bf3ae1afe41e
+  zh: 399c741c65af4b66
+/deepseek-ai-dsh-skill-continuous-learning/understand-the-implementation:
+  en: bf8d5d63b8fd5d40
+  zh: 1990cb571c129aab
+/deepseek-ai-dsh-skill-continuous-learning/further-exploration:
+  en: 85d7f35c0c528a24
+  zh: ab7816040e52d8e6
+/deepseek-ai-dsh-skill-continuous-learning/model-experience:
+  en: 86be820ee6ed7e5b
+  zh: 0c87d801a113e85d
+/deepseek-ai-dsh-skill-continuous-learning/model-experience/kv-cache-effect:
+  en: d02a25f757995704
+  zh: dbc02cbf01c4c4a0
+/deepseek-ai-dsh-skill-continuous-learning/known-limitations-and-deferred-work:
+  en: 2cfdfdfc1e95e6f5
+  zh: ad686d37c27ebaa6
+/deepseek-ai-dsh-skill-continuous-learning/known-limitations-and-deferred-work/dev-note:
+  en: c7988c1c7face668
+  zh: 5127134af08bc5ed

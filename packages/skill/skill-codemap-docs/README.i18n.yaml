@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/skill/skill-codemap-docs/README.md
+/:
+  en: e0381f4524dc1880
+  zh: 25c5eb5fde4ae633
+/deepseek-ai-dsh-skill-codemap-docs:
+  en: 3e2d5ad5d0019c8c
+  zh: c53b02185fc394d0
+/deepseek-ai-dsh-skill-codemap-docs/summary:
+  en: 6839a5c8cedf868a
+  zh: 6312ae0f8daff5a2
+/deepseek-ai-dsh-skill-codemap-docs/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 4e367cef393295ae
+/deepseek-ai-dsh-skill-codemap-docs/use-this-package:
+  en: 3c3ba90216f382b9
+  zh: 8963859d62737397
+/deepseek-ai-dsh-skill-codemap-docs/when-to-choose-it:
+  en: de85778ae66d0458
+  zh: c6968405699e856c
+/deepseek-ai-dsh-skill-codemap-docs/when-to-choose-it/mount-and-configure:
+  en: e6fdeb9925a823b7
+  zh: 02f0d63f938b3e8a
+/deepseek-ai-dsh-skill-codemap-docs/when-to-choose-it/observable-behavior:
+  en: 12ed4a640b2de8e0
+  zh: 9973973f907ba580
+/deepseek-ai-dsh-skill-codemap-docs/understand-the-implementation:
+  en: ca269f37ef81f453
+  zh: a8981af582abb11d
+/deepseek-ai-dsh-skill-codemap-docs/further-exploration:
+  en: 85d7f35c0c528a24
+  zh: ab7816040e52d8e6
+/deepseek-ai-dsh-skill-codemap-docs/model-experience:
+  en: 86be820ee6ed7e5b
+  zh: 0c87d801a113e85d
+/deepseek-ai-dsh-skill-codemap-docs/model-experience/kv-cache-effect:
+  en: d02a25f757995704
+  zh: dbc02cbf01c4c4a0
+/deepseek-ai-dsh-skill-codemap-docs/known-limitations-and-deferred-work:
+  en: 1ef453bcb25dbf8b
+  zh: 7dd02a2e80c99c4c
+/deepseek-ai-dsh-skill-codemap-docs/known-limitations-and-deferred-work/dev-note:
+  en: 0d705180d3151ad1
+  zh: 7fdab73b406bb67a

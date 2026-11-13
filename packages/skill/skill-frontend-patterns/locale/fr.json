@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Compétences de modèles frontend",
+    "description": "Fournit des modèles d'écriture frontend et GUI pour les composants React et Next.js, les hooks, l'état, les performances, l'animation et l'accessibilité."
+  }
+}

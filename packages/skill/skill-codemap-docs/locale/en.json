@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Codemap documentation skill",
+    "description": "Provide a workflow for mapping a codebase's structure into Markdown codemap documentation from source code."
+  }
+}

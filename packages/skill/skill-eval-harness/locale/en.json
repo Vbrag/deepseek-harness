@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Eval harness skill",
+    "description": "Provide an eval-driven-development workflow with capability and regression evaluations, pass@k and pass^k metrics, and code, model, or human graders."
+  }
+}

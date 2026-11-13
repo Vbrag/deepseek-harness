@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Compétence de harnais d'évaluation",
+    "description": "Fournit un flux de travail de développement piloté par les évaluations avec des évaluations de capacité et de régression, des métriques pass@k et pass^k, et des évaluateurs par code, modèle ou humain."
+  }
+}

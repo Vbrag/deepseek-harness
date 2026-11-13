@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Compétence de documentation de codemaps",
+    "description": "Fournit un flux de travail pour transformer la structure d'une base de code en documentation de codemaps en Markdown à partir du code source."
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Habilidade de documentação de codemaps",
+    "description": "Fornece um fluxo de trabalho para mapear a estrutura de uma base de código em documentação de codemaps em Markdown a partir do código-fonte."
+  }
+}

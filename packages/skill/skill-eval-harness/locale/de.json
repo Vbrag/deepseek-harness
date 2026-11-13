@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Eval-Harness-Skill",
+    "description": "Stellt einen Entwicklungsworkflow mit Fähigkeits- und Regressions-Evaluierungen, pass@k- und pass^k-Metriken sowie Code-, Modell- oder Human-Gradern bereit."
+  }
+}

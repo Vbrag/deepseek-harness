@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Habilidades de patrones de frontend",
+    "description": "Proporciona patrones de autoría de frontend y GUI para componentes, hooks, estado, rendimiento, animación y accesibilidad de React y Next.js."
+  }
+}

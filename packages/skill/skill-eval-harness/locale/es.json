@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Habilidad de banco de evaluaciones",
+    "description": "Proporciona un flujo de trabajo de desarrollo impulsado por evaluaciones con evaluaciones de capacidad y regresión, métricas pass@k y pass^k, y calificadores de código, modelo o humano."
+  }
+}
