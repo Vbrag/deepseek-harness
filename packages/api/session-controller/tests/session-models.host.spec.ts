@@ -47,6 +47,7 @@ class CatalogAdapter extends LlmAdapter {
     private readonly models: readonly LlmModelInfo[] | Error,
     private readonly reasoning?: LlmModelReasoningInfo,
     private readonly exactError?: Error,
+    private readonly rateLimitForModel: Readonly<Record<string, { rpm?: number; tpm?: number }>> = {},
   ) {
     super()
   }
@@ -68,6 +69,7 @@ class CatalogAdapter extends LlmAdapter {
       id: model,
       name: model,
       ...this.reasoning === undefined ? {} : { reasoning: this.reasoning },
+      ...this.rateLimitForModel[model] === undefined ? {} : { rateLimit: this.rateLimitForModel[model]! },
     })
   }
 
@@ -433,7 +435,8 @@ describe('Web session model selection', () => {
     ctx.llm.registerAdapter(['plain'], new CatalogAdapter('Plain', [
       { provider: 'plain', id: 'plain-model', name: 'Plain Model' },
       { provider: 'plain', id: 'badged-model', name: 'Badged Model', badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
-    ]))
+      { provider: 'plain', id: 'limited-model', name: 'Limited Model' },
+    ], undefined, undefined, { 'limited-model': { rpm: 60, tpm: 120000 } }))
     ctx.llm.registerAdapter(['described-reasoning'], new CatalogAdapter('Described Reasoning', [
       { provider: 'described-reasoning', id: 'reasoning-model', name: 'Reasoning Model' },
     ], {
@@ -455,6 +458,7 @@ describe('Web session model selection', () => {
       { id: 'plain', name: 'Plain', models: [
         { id: 'plain-model', name: 'Plain Model' },
         { id: 'badged-model', name: 'Badged Model', badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
+        { id: 'limited-model', name: 'Limited Model', rateLimit: { rpm: 60, tpm: 120000 } },
       ] },
       {
         id: 'described-reasoning',

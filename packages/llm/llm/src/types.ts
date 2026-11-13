@@ -382,6 +382,12 @@ export interface LlmModelInfo {
    * omits it, and no model request or Session event carries it.
    */
   badge?: LlmModelBadge
+  /**
+   * Provider-declared per-minute request/token budget. Absent when the route
+   * publishes no limits; a value here reflects the adapter's configured or
+   * discovered rate limits, not live usage.
+   */
+  rateLimit?: LlmRateLimit
 }
 
 /** Provider-owned context capacity for one exact provider/model route. */
@@ -408,6 +414,14 @@ export interface LlmImageRequestBudget {
   byteQuantum?: number
   /** Occurrences removed as one deterministic advance step; absent removes the minimum. */
   countQuantum?: number
+}
+
+/** Provider-declared per-minute budget for one exact provider/model route. */
+export interface LlmRateLimit {
+  /** Maximum requests per rolling minute; absent when the route declares no request cap. */
+  rpm?: number
+  /** Maximum tokens per rolling minute; absent when the route declares no token cap. */
+  tpm?: number
 }
 
 /** Display metadata for one adapter-owned reasoning effort. */

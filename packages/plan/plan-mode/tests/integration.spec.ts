@@ -1,7 +1,7 @@
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { createUserMessage, type GenerateOptions, type Message, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, type GenerateOptions, type RequestMessage, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -64,7 +64,7 @@ function planActive(ctx: Context, agent: Agent): boolean {
 }
 
 /** Join the text blocks of one message. */
-function textOf(message: Message): string {
+function textOf(message: RequestMessage): string {
   return message.content.filter(block => block.type === 'text').map(block => block.text).join('')
 }
 
@@ -250,5 +250,39 @@ describe('plan mode through the agent loop', () => {
     expect(result.data.message.content).toEqual([{ type: 'text', text: 'The user dismissed the plan review to reply in their own words; plan mode remains active.' }])
     expect(findEvent(log, 'turn/end').data.reason).toEqual({ kind: 'completed' })
     expect(planActive(ctx, agent)).toBe(true)
+  })
+
+  it('an approved review appends the carry-out directive to the next step', async () => {
+    const adapter = new MockAdapter([
+      toolCallResponse('call-exit', 'exit_plan_mode', { plan: '# Plan\n\ndo things' }),
+      textResponse('Carrying out the approved plan.'),
+    ])
+    const ctx = await harness(adapter)
+    await ctx.plugin(UserQuestionService)
+    ctx.on('user-questions/request', () => Promise.resolve({
+      answers: [{ id: 'plan-review', selected: ['Approve'] }],
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('it-plan-approved'), { provider: 'mock', model: 'mock' })
+    ctx.planMode.set(agent, true)
+
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'plan it' }], source: { kind: 'user' } }))
+    await idle
+
+    const log = agent.session.snapshotEvents()
+    // The approved review exited plan mode.
+    expect(findEvent(log, 'plan/mode', 'last').data).toEqual({ active: false })
+    expect(planActive(ctx, agent)).toBe(false)
+    // The carry-out directive is logged durably as a plan-mode notice, ordered
+    // after the mode exit and before the step that carries it out.
+    const afterModeSeq = findEvent(log, 'plan/mode', 'last').seq
+    const directive = log
+      .filter((event): event is Extract<SessionEvent, { type: 'user/message' }> =>
+        event.type === 'user/message' && event.data.source.kind === 'plan-mode' && event.seq > afterModeSeq)
+      .map(event => textOf(event.data))
+    expect(directive).toEqual([expect.stringContaining('The user approved your plan and plan mode has exited.')])
+    // And it reached the next model request so the carry-out step sees it.
+    const lastRequest = adapter.requests.at(-1)!
+    expect(lastRequest.messages.map(textOf).join('\n')).toContain('Carry the plan out')
   })
 })

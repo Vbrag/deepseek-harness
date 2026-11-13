@@ -1,7 +1,9 @@
 # Experimental Orchestration Mode profile layer. Apply after dsh-base.
 # Orchestration coexists with normal delegation, so no default tools are
-# disabled; this layer only mounts the orchestration service and its model tool
-# with a selected multi-model pool.
+# disabled; this layer only mounts the orchestration service and its model tool.
+# The service mounts with no pool: the picker defaults to every catalog model
+# selected, and the user's Save writes the pool to the profile as a plain
+# user-layer value, so it persists across restart.
 
 - insert:
     - id: orchestration
@@ -9,12 +11,6 @@
 
     - id: tool-orchestration
       name: '@deepseek-ai/dsh-experimental-tool-orchestration'
-      config:
-        pool:
-          - provider: paderborn
-            model: gwdg.qwen3.5-397b-a17b
-          - provider: paderborn
-            model: gwdg.deepseek-v4-flash-0731
 
     - id: ui-orchestration
       name: '@deepseek-ai/dsh-experimental-client-ui-orchestration'

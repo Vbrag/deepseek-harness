@@ -19,8 +19,9 @@ import type {
   LlmModelContext,
   LlmModelDiscoveryRequest,
   LlmModelInfo,
-  LlmResolvedModelInfo,
   LlmProviderInfo,
+  LlmRateLimit,
+  LlmResolvedModelInfo,
   ModelModality,
   StreamChunk,
   SystemPromptUpdate,
@@ -708,6 +709,30 @@ export class LlmRuntime extends TypertRemoteService {
     return modalities === undefined ? undefined : [...modalities]
   }
 
+  /** Validate and detach adapter-owned per-minute rate limits. */
+  private normalizedRateLimit(
+    provider: string,
+    model: string,
+    rateLimit: LlmRateLimit,
+  ): LlmRateLimit {
+    const validated = (value: number | undefined, dimension: 'rpm' | 'tpm'): number | undefined => {
+      if (value === undefined) return undefined
+      if (!Number.isSafeInteger(value) || value <= 0) {
+        throw new LlmError(
+          `adapter returned invalid ${dimension} rate limit for provider "${provider}" model "${model}"`,
+          'INVALID_MODEL_INFO',
+        )
+      }
+      return value
+    }
+    const rpm = validated(rateLimit.rpm, 'rpm')
+    const tpm = validated(rateLimit.tpm, 'tpm')
+    return {
+      ...rpm === undefined ? {} : { rpm },
+      ...tpm === undefined ? {} : { tpm },
+    }
+  }
+
   /**
    * Discover models advertised by one registered provider. Catalog membership
    * does not constrain core routing. Catalog-driven entry points may restrict
@@ -839,6 +864,7 @@ export class LlmRuntime extends TypertRemoteService {
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
       ...resolved.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: resolved.systemPromptUpdate },
       ...resolved.toolUpdate === undefined ? {} : { toolUpdate: resolved.toolUpdate },
+      ...resolved.rateLimit === undefined ? {} : { rateLimit: this.normalizedRateLimit(provider, model, resolved.rateLimit) },
     }
     const reasoning = resolved.reasoning
     if (reasoning === undefined) return info

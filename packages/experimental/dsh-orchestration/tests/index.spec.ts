@@ -139,6 +139,40 @@ describe('OrchestrationService pool', () => {
     service.setPool([])
     expect(service.getPool()).toEqual([])
   })
+
+  it('seeds the live pool from the configured pool on load', async () => {
+    const { service } = await setup({ pool: [...POOL] })
+    expect(service.getPool()).toEqual(POOL)
+  })
+})
+
+describe('OrchestrationService pool persistence', () => {
+  it('persists a replacement pool through settings and updates the live value', async () => {
+    const { ctx, service } = await setup()
+    const updates: Array<[string, unknown]> = []
+    ctx.provide('settings', { update: async (ns: string, patch: unknown) => { updates.push([ns, patch]) } } as never)
+    await expect(service.persistPool(POOL)).resolves.toBe(true)
+    expect(updates).toEqual([['orchestration', { pool: POOL }]])
+    expect(service.getPool()).toEqual(POOL)
+  })
+
+  it('applies the pool in memory and warns when the settings write is refused', async () => {
+    const { ctx, service } = await setup()
+    ctx.provide('settings', { update: async () => { throw new Error('overridden by a home patch') } } as never)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    expect(service.getPool()).toEqual([])
+    await expect(service.persistPool(POOL)).resolves.toBe(true)
+    expect(service.getPool()).toEqual(POOL)
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('applies the pool in memory and warns when the settings service is absent', async () => {
+    const { ctx, service } = await setup()
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    await expect(service.persistPool(POOL)).resolves.toBe(true)
+    expect(service.getPool()).toEqual(POOL)
+    expect(warn).toHaveBeenCalled()
+  })
 })
 
 describe('orchestration projection unit', () => {

@@ -7,9 +7,14 @@
  * @module @deepseek-ai/dsh-experimental-orchestration
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
+import { isVolatile } from '@deepseek-ai/cosmokit'
+// Type-only: pulls the Loader's Events augmentation (`loader/volatile-update`)
+// and Fiber.entry, used for pool refresh and self-namespace resolution.
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { SettingsForms } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
@@ -118,6 +123,11 @@ function positiveInt(name: string, value: number): number {
   return value
 }
 
+/** Human-readable message for an arbitrary thrown value. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /**
  * Is a terminal stop reason eligible for a model-route failover? A completed
  * step succeeded; a refusal or policy-denial is never routed around.
@@ -136,14 +146,21 @@ type AttemptSettlement =
 export class OrchestrationService extends TypertRemoteService {
   static inject = ['llm', 'subagents', 'sessionProjections', 'agents']
 
-  static Config: z<OrchestrationConfig> = z.object({
+  static Config = z.object({
+    pool: z.array(z.object({ provider: z.string(), model: z.string() })).default([]).volatile(),
     maxConcurrency: z.number().step(1).min(1).default(DEFAULT_MAX_CONCURRENCY),
     maxAttemptsPerStep: z.number().step(1).min(1).default(DEFAULT_MAX_ATTEMPTS_PER_STEP),
     workerTimeoutMs: z.number().step(1).min(1).default(DEFAULT_WORKER_TIMEOUT_MS),
     defaultToOrchestrator: z.boolean().default(false),
   })
 
-  private readonly config: Required<OrchestrationConfig>
+  private readonly config: Required<Omit<OrchestrationConfig, 'pool'>>
+  /**
+   * The configured pool source: a live volatile ref (schema-mounted config,
+   * mutated in place on `loader/volatile-update`) or a plain array (direct
+   * construction without schema resolution).
+   */
+  private readonly poolConfig: Volatile<readonly PoolRoute[]> | readonly PoolRoute[] | undefined
   private poolValue: readonly PoolRoute[] = []
   /** `orchestration` projection handle, ready after `[Service.init]`. */
   private orchestrationProjectionHandle: ProjectionHandle<OrchestrationUnitState> | undefined
@@ -162,10 +179,28 @@ export class OrchestrationService extends TypertRemoteService {
       workerTimeoutMs: positiveInt('workerTimeoutMs', config.workerTimeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS),
       defaultToOrchestrator: config.defaultToOrchestrator ?? false,
     }
+    this.poolConfig = config.pool
+    // Restore the persisted pool on load so the GUI-selected pool survives a
+    // restart and the tool seed only ever runs against an intentionally empty
+    // profile.
+    this.poolValue = [...this.poolOf()]
+  }
+
+  /** Current plain routes of the configured pool, live after a volatile update. */
+  private poolOf(): readonly PoolRoute[] {
+    const source = this.poolConfig
+    return source === undefined ? [] : isVolatile(source) ? source.get() : source
   }
 
   protected async [Service.init](): Promise<void> {
     this.orchestrationProjectionHandle = await this.ctx.sessionProjections.register(orchestrationProjectionDefinition)
+    // Reflect volatile `pool` edits (GUI panel or a direct cordis.yml edit) into
+    // the live runtime value without remounting the service.
+    this.ctx.on('loader/volatile-update', (paths) => {
+      if (paths.some(path => path.length === 1 && path[0] === 'pool')) {
+        this.poolValue = [...this.poolOf()]
+      }
+    })
     // The `/orchestration` command mounts only when a command registry is
     // composed, so the service still boots without one (the boot test path).
     this.ctx.inject(['commands'], (commandCtx) => {
@@ -301,7 +336,7 @@ export class OrchestrationService extends TypertRemoteService {
   }
 
   /**
-   * The currently selected multi-model pool, set by the GUI panel or a caller.
+   * The currently selected multi-model pool, read live by orchestration runs.
    * @returns the selected provider/model routes; may be empty.
    */
   @Remote('getPool')
@@ -310,13 +345,57 @@ export class OrchestrationService extends TypertRemoteService {
   }
 
   /**
-   * Replace the selected multi-model pool. An empty pool clears the selection;
-   * later runs then fail loud rather than silently running nothing.
+   * Replace the selected multi-model pool in memory only, without persisting.
+   * An empty pool clears the selection; later runs then fail loud rather than
+   * silently running nothing. This is the non-persisted setter used by the
+   * headless `tool-orchestration` seed; the GUI panel persists a selection
+   * through {@link OrchestrationService.persistPool}.
    * @param pool - provider/model routes to select.
    */
   @Remote('setPool')
   setPool(pool: readonly PoolRoute[]): void {
     this.poolValue = [...pool]
+  }
+
+  /**
+   * Persist a replacement pool to Host settings (`orchestration.pool` in the
+   * profile), restoring it after restart. The pool is always applied in memory
+   * so the selection takes effect immediately; the profile write is best-effort
+   * and a refused write (a settings conflict, a profile override, or a layered
+   * entry the config editor cannot rewrite) is logged as a warning and keeps
+   * the pool live for the session without blocking the selection. When the
+   * settings service is absent (settings-less boots), the pool is applied in
+   * memory with a warning so the call still lands.
+   * @param pool - provider/model routes to select.
+   * @returns true when the pool was applied (always, after an in-memory apply).
+   */
+  @Remote('persistPool')
+  async persistPool(pool: readonly PoolRoute[]): Promise<boolean> {
+    this.poolValue = [...pool]
+    const settings = this.ctx.get('settings') as SettingsForms | undefined
+    if (settings === undefined) {
+      this.ctx.logger.warn('orchestration: settings service is absent; the selected pool is applied for this session only')
+      return true
+    }
+    try {
+      await settings.update(this.orchestrationNamespace(), { pool: [...pool] })
+    } catch (error) {
+      this.ctx.logger.warn(
+        'orchestration: persisting the model pool to the profile was refused (%s); the pool is applied for this session only',
+        messageOf(error),
+      )
+    }
+    return true
+  }
+
+  /**
+   * The profile entry id this service mounts as, the settings namespace for
+   * its own config. Falls back to the shipped profile's `orchestration` entry
+   * id when no Loader entry is attached (e.g. a bare-context test boot).
+   */
+  private orchestrationNamespace(): string {
+    const id = this.ctx.fiber.entry?.options.id
+    return typeof id === 'string' && id.length > 0 ? id : 'orchestration'
   }
 
   /**

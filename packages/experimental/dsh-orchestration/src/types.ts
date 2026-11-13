@@ -29,6 +29,13 @@ export interface PoolRoute {
 
 /** Accepted deployment limits for one orchestration; every field is optional and defaults on validation. */
 export interface OrchestrationConfig {
+  /**
+   * Persisted multi-model pool. Seeded into the service at load and written by
+   * {@link OrchestrationService.persistPool} on GUI change, so the selection
+   * survives restart. Execution reads the service's selected pool, which is
+   * restored from this field on boot.
+   */
+  readonly pool?: PoolRoute[]
   /** Maximum concurrent workers, sampled before each run. */
   readonly maxConcurrency?: number
   /** Maximum attempts per planned step before the step is reported failed. */

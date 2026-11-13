@@ -32,9 +32,9 @@ Use the composer's mode menu to choose Default or Orchestration. The selector ap
 
 ### Pick the model pool
 
-The panel shows every model the provider catalog reports for the Paderborn AI-Gateway (`provider: paderborn`), each with capability badges derived from the catalog entry. Checking or unchecking a row is optimistic local state; every toggle persists the new pool to the Host through `setPool`. The pool read at mount time is seeded into the panel, so the current Host selection is the starting state.
+The panel shows every model the provider catalog reports for the Paderborn AI-Gateway (`provider: paderborn`), each with capability badges derived from the catalog entry. Checking or unchecking a row, **Select all**, and **Clear** adjust a local selection; the explicit **Save model pool** button persists the whole pool to the Host through `setPool`. The pool read at mount time is seeded into the panel, so the current Host selection is the starting state; when nothing has been persisted yet, the panel defaults to every catalog model selected so the full pool is available immediately.
 
-The panel shows the selection already saved to the Host, a notice when the pool is empty, and a save failure notice if the Host refuses an update. There is no separate save button; each toggle applies immediately.
+The panel shows the applied selection count, a notice when the pool is empty, and a save failure notice if the Host refuses an update. Save reports success only after the Host applies the pool; a refused write shows a failure notice instead. The Host applies the selection in memory and persists it to the profile as a plain user-layer value, so the saved pool survives a restart.
 
 -----
 

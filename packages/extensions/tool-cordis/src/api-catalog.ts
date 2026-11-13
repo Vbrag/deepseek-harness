@@ -2097,6 +2097,47 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'orchestrations',
+    summary: 'Orchestration service; injects the seams it composes and exposes the pool over Remote.',
+    description: 'Orchestration service; injects the seams it composes and exposes the pool over Remote.',
+    methods: [
+      {
+        signature: 'modeOf(agent: Agent): boolean',
+        description: 'Whether the orchestration mode is selected for the calling Agent\'s session. An explicit logged `orchestration/mode` selection wins; a session with no selection falls back to the deployment `defaultToOrchestrator`. The selection is session-scoped (an Agent is 1:1 with its Session) rather than a global flag, and it is folded from the logged `orchestration/mode` event by the `orchestration` projection, so restart recovery restores it.',
+        parameters: [{ name: 'agent', description: 'the Agent whose session mode is read.' }],
+        returns: 'true when orchestration should be available to this session.',
+      },
+      {
+        signature: 'setMode(agent: Agent, active: boolean): void',
+        description: 'Select orchestration mode for the calling Agent\'s session, recording the selection as a durable `orchestration/mode` Session event and updating the live projected value. A failed durable append propagates so a selection is never silently unrecorded; the projection reads the log, so a failed append leaves the mode unchanged. This is the between-turns commit path; use OrchestrationService.select to queue a mid-turn selection.',
+        parameters: [{ name: 'agent', description: 'the Agent whose session mode is set.' }, { name: 'active', description: 'true to enable orchestration mode for this session.' }],
+      },
+      {
+        signature: 'select(agent: Agent, active: boolean): \'committed\' | \'queued\' | \'cancelled\' | \'noop\'',
+        description: 'Select orchestration mode, distinguishing how the selection lands. Between turns the method appends `orchestration/mode` immediately because no in-turn boundary will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn boundary runs. During an open turn the selection remains pending until the next accepted boundary commits it. Repeated selection of the current or already-pending state is a no-op.',
+        parameters: [{ name: 'agent', description: 'the Agent to switch.' }, { name: 'active', description: 'true to enable orchestration mode for this session.' }],
+        returns: 'what happened: `committed` (logged now), `queued` (awaiting the next boundary), `cancelled` (an opposite pending selection was cleared and the logged state already matches), or `noop` (already in that state).',
+      },
+      {
+        signature: '@Remote(\'getPool\') getPool(): readonly PoolRoute[]',
+        description: 'The currently selected multi-model pool, set by the GUI panel or a caller.',
+        parameters: [],
+        returns: 'the selected provider/model routes; may be empty.',
+      },
+      {
+        signature: '@Remote(\'setPool\') setPool(pool: readonly PoolRoute[]): void',
+        description: 'Replace the selected multi-model pool. An empty pool clears the selection; later runs then fail loud rather than silently running nothing.',
+        parameters: [{ name: 'pool', description: 'provider/model routes to select.' }],
+      },
+      {
+        signature: 'async run( parent: Agent, task: string, pool: readonly PoolRoute[] | undefined, signal: AbortSignal, ): Promise<OrchestrationResult>',
+        description: 'Split a task into a plan with the coordinator and run every step as a parallel spawn worker, failing over each settled failure to the next capability-similar eligible pool route within a bounded attempt budget.\n\nWorkers do not inherit orchestration mode: the delegation gate reads the calling agent\'s own session mode only, and spawned workers receive just provider/model options (no orchestration flag), so orchestration never recursively enables itself inside worker chains.',
+        parameters: [{ name: 'parent', description: 'exact live Agent providing worker lineage for every step.' }, { name: 'task', description: 'the raw goal to decompose and execute.' }, { name: 'pool', description: 'optional selected model routes; defaults to the value set with {@link OrchestrationService.setPool}, so the GUI-selected pool drives runs.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'every step outcome plus run-level counts.',
+      },
+    ],
+  },
+  {
     key: 'otel',
     summary: 'Shared transport provider.',
     description: 'Shared transport provider. Mounting creates no queue, identity, or network connection.',
@@ -6837,7 +6878,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmModelInfo',
-    declaration: 'export interface LlmModelInfo {\n    provider: string;\n    id: string;\n    name: string;\n    description?: string;\n    inputModalities?: readonly ModelModality[];\n    badge?: LlmModelBadge;\n}',
+    declaration: 'export interface LlmModelInfo {\n    provider: string;\n    id: string;\n    name: string;\n    description?: string;\n    inputModalities?: readonly ModelModality[];\n    badge?: LlmModelBadge;\n    rateLimit?: LlmRateLimit;\n}',
   },
   {
     name: 'LlmModelReasoningInfo',
@@ -6850,6 +6891,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmProviderInfo',
     declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n}',
+  },
+  {
+    name: 'LlmRateLimit',
+    declaration: 'export interface LlmRateLimit {\n    rpm?: number;\n    tpm?: number;\n}',
   },
   {
     name: 'LlmReasoningEffortInfo',
@@ -7116,6 +7161,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    \'system-prompt\': SystemPromptMessageSource;\n}',
   },
   {
+    name: 'Modality',
+    declaration: 'export type Modality = \'text\' | \'image\' | \'audio\' | \'video\';',
+  },
+  {
     name: 'ModDefinition',
     declaration: 'export interface ModDefinition {\n    readonly name: string;\n    readonly version?: string;\n    readonly root?: string;\n    readonly options?: PluginOptions;\n    readonly register: ModRegister;\n}',
   },
@@ -7129,7 +7178,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelCatalogModel',
-    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n    readonly badge?: LlmModelBadge;\n}',
+    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n    readonly badge?: LlmModelBadge;\n    readonly rateLimit?: LlmRateLimit;\n}',
   },
   {
     name: 'ModelMessageSource',
@@ -7236,6 +7285,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
+    name: 'OrchestrationResult',
+    declaration: 'export interface OrchestrationResult {\n    readonly steps: readonly StepOutcome[];\n    readonly succeeded: boolean;\n    readonly failovers: number;\n    readonly failedSteps: number;\n}',
+  },
+  {
+    name: 'OrchestrationStepId',
+    declaration: 'export type OrchestrationStepId = Branded<\'OrchestrationStepId\'>;',
+  },
+  {
     name: 'OTelEventRecord',
     declaration: 'export interface OTelEventRecord {\n    eventName: string;\n    body: string;\n    timestamp: number;\n    severityNumber?: SeverityNumber;\n    attributes?: Record<string, OTelEventScalar | Record<string, OTelEventScalar>>;\n}',
   },
@@ -7310,6 +7367,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
+  },
+  {
+    name: 'PlannedStep',
+    declaration: 'export interface PlannedStep {\n    readonly id: OrchestrationStepId;\n    readonly description: string;\n    readonly requiredDomains: readonly TaskDomain[];\n    readonly requiredModalities?: readonly Modality[];\n    readonly contextTokens?: number;\n    readonly error?: string;\n}',
   },
   {
     name: 'PlatformSession',
@@ -7418,6 +7479,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PluginVersionList',
     declaration: 'export type PluginVersionList = {\n    readonly status: \'listed\';\n    readonly installed: string;\n    readonly registry: Registry;\n    readonly attempts: readonly RegistryAttempt[];\n    readonly versions: readonly PluginVersion[];\n    readonly omitted: number;\n} | {\n    readonly status: \'refused\';\n    readonly problem: \'not-updatable\' | \'not-found\' | \'network\' | \'unknown\';\n    readonly reason: string;\n    readonly attempts: readonly RegistryAttempt[];\n};',
+  },
+  {
+    name: 'PoolRoute',
+    declaration: 'export interface PoolRoute {\n    readonly provider: string;\n    readonly model: string;\n}',
   },
   {
     name: 'PostToolDecision',
@@ -8940,6 +9005,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type StagedAttachment = {\n    readonly type: \'file\';\n    readonly attachment: FileAttachmentRef;\n} | {\n    readonly type: \'image\';\n    readonly attachment: ImageAttachmentRef;\n    readonly encodedBytes: number;\n};',
   },
   {
+    name: 'StepOutcome',
+    declaration: 'export interface StepOutcome {\n    readonly step: PlannedStep;\n    readonly attempts: readonly WorkerAttempt[];\n    readonly output: readonly ContentBlock[];\n    readonly failed: boolean;\n    readonly failedOver: boolean;\n}',
+  },
+  {
     name: 'StopShareRequest',
     declaration: 'export interface StopShareRequest {\n    readonly shareId: string;\n}',
   },
@@ -9166,6 +9235,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TableValueOf',
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
+  },
+  {
+    name: 'TaskDomain',
+    declaration: 'export type TaskDomain = \'coding\' | \'reasoning\' | \'vision\' | \'allrounder\' | \'european\';',
   },
   {
     name: 'TeamId',
@@ -9862,6 +9935,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WeeklyScheduleRecord',
     declaration: 'export interface WeeklyScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'weekly\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly time: string;\n    readonly timeZone: string;\n    readonly weekdays: number[];\n    readonly scheduledAt: string;\n}',
+  },
+  {
+    name: 'WorkerAttempt',
+    declaration: 'export interface WorkerAttempt {\n    readonly stepId: OrchestrationStepId;\n    readonly provider: string;\n    readonly model: string;\n    readonly childId?: string;\n    readonly stopReason: SubagentStopReason;\n    readonly diagnostic?: string;\n}',
   },
   {
     name: 'WorkflowAgentEndInfo',

@@ -71,6 +71,28 @@
   flex: 0 0 auto;
 }
 
+/* Read-only badge for addressed subagent sessions: same chip rhythm and
+   caption tone as the interactive trigger, but non-interactive (no pointer,
+   no focus, no hover) because subagents cannot select a model. */
+.readOnly {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 360px;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+}
+
+.readOnlyIcon {
+  display: var(--dsh-composer-model-icon-display, none);
+  flex: 0 0 auto;
+}
+
 /* The composer measures expanded row demand and owns these display variables.
    Outside a composer, the trigger retains its text. */
 .triggerLabel,
@@ -370,4 +392,63 @@
   width: 12px;
   height: 12px;
   color: var(--dsw-alias-menu-icon);
+}
+
+/* Contextual rate-limit indicator inside the model trigger: a compact chip
+   that opens a HoverCard with the full per-minute breakdown. Rendered only
+   when the selected model's provider publishes rpm/tpm. */
+.rateLimit {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.rateLimitItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.rateLimitCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.rateLimitTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.rateLimitRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.rateLimitRowLabel {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rateLimitRowValue {
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
 }

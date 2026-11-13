@@ -26,6 +26,10 @@ skill 家族让 agent 和用户仅在需要时发现并加载可复用的任务�
 |---|---|---|
 | [`skill/`](skill/README.zh.md) | 合并任意提供方的 skill 目录、并按名称解析出胜出 skill 的注册表 | `ctx.skills` |
 | [`skill-filesystem/`](skill-filesystem/README.zh.md) | 从项目、自定义与用户目录发现 skill，并监视其变更 | 注册到 `ctx.skills` |
+| [`skill-codemap-docs/`](skill-codemap-docs/README.zh.md) | 随包提供的技能，将源码结构映射为 Markdown 文档 | 注册到 `ctx.skills` |
+| [`skill-continuous-learning/`](skill-continuous-learning/README.zh.md) | 随包提供的技能，从会话中抽取可复用模式 | 注册到 `ctx.skills` |
+| [`skill-eval-harness/`](skill-eval-harness/README.zh.md) | 随包提供的评估驱动开发技能，用于定义并运行评估 | 注册到 `ctx.skills` |
+| [`skill-frontend-patterns/`](skill-frontend-patterns/README.zh.md) | 随包提供的 React 与 Next.js 前端和 GUI 编写模式 | 注册到 `ctx.skills` |
 | [`skill-office/`](skill-office/README.zh.md) | 随包提供 Word、PowerPoint 和 Excel 工作流及文件结构检查 | 注册到 `ctx.skills` |
 | [`tool-skill/`](tool-skill/README.zh.md) | 发布会话 skill 目录与面向模型的 `skill` 加载工具 | 注册到 `ctx.tools` |
 | [`tool-workspace-dependencies/`](tool-workspace-dependencies/README.zh.md) | 为 Desktop 与 SDK 载体报告内置 Office 解释器路径和版本 | 注册到 `ctx.tools` |

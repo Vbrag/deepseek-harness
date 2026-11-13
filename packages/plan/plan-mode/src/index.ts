@@ -80,8 +80,25 @@ const KEEP_PLANNING_LABEL = 'Keep planning'
 
 const EXIT_DESCRIPTION
   = 'Use only in plan mode. Present your plan for the user\'s review and, on approval, leave plan mode. '
-  + 'The user may approve (carry out the plan from your next step) or keep '
-  + 'planning — their feedback comes back in the tool result; revise and present again.'
+  + 'On approval, carry the plan out starting with your next step: reflect the approved plan into the '
+  + 'todo_write list and begin executing it, updating any active goal that still restricts the task to '
+  + 'planning only. Or keep planning — the user\'s feedback comes back in the tool result; revise and '
+  + 'present again.'
+
+/**
+ * The model-visible directive appended on an approved review, instructing the
+ * next step to carry the approved plan out. Stable and verbatim so it is
+ * snapshot-testable and survives translation (see README Model Experience).
+ */
+const APPROVED_DIRECTIVE
+  = 'The user approved your plan and plan mode has exited. Carry the plan out: '
+  + 'first read your active goal and, if it still restricts the task to planning only or no code '
+  + 'changes, update it (get_goal, then update_goal) to the approved plan\'s implementation objective; '
+  + 'then reflect the approved plan into the todo_write list and begin executing it. '
+  + 'Treat the approved plan as the task to implement, not as the final deliverable.'
+
+/** One-line account of the approved-directive notice, bounded to the notice summary limit. */
+const APPROVED_DIRECTIVE_SUMMARY = 'Approved plan: plan mode exited; carry the plan out from this step.'
 
 /** The plan's first markdown heading (any level), or `undefined` when it has none. */
 function firstHeading(plan: string): string | undefined {
@@ -183,9 +200,15 @@ export class PlanModeController extends Service {
   /**
    * Latest selection per session awaiting the next accepted in-turn pre-step.
    * `narrate` is true for user selections and false for the exit tool, whose
-   * result already narrates the transition.
+   * result already narrates the transition. `fromApproval` marks a review that
+   * the user approved, so the next accepted pre-step also appends the
+   * carry-out-the-plan directive.
    */
-  private readonly pendingIntents = new WeakMap<Session, { active: boolean; narrate: boolean }>()
+  private readonly pendingIntents = new WeakMap<Session, {
+    active: boolean
+    narrate: boolean
+    fromApproval?: boolean
+  }>()
 
   constructor(ctx: Context, config: PlanModeConfig = { section: '' }) {
     super(ctx, 'planMode')
@@ -215,6 +238,9 @@ export class PlanModeController extends Service {
       const decision = await next()
       const pending = this.pendingIntents.get(agent.session)
       if (decision.kind === 'reject' || signal.aborted || pending === undefined) return decision
+      // An approved review carries out the plan: the next step must reconcile
+      // a planning-only goal, write the todos, and start executing.
+      const carryOutApproved = pending.fromApproval === true && pending.active === false
       const narration = this.narration(agent.session, pending.active)
       try {
         this.onBoundary(agent.session)
@@ -222,9 +248,12 @@ export class PlanModeController extends Service {
         ctx.logger.warn('dsh-plan-mode: failed to append selected plan mode at step start: %o', error)
         return decision
       }
-      return !pending.narrate || narration === undefined
+      const additions: UserMessage[] = []
+      if (carryOutApproved) additions.push(this.approvedDirective())
+      if (pending.narrate && narration !== undefined) additions.push(narration)
+      return additions.length === 0
         ? decision
-        : { ...decision, messages: [...decision.messages, narration] }
+        : { ...decision, messages: [...decision.messages, ...additions] }
     })
     ctx.effect(() => () => { disposed = true }, 'dsh-plan-mode: close service lifetime')
 
@@ -357,8 +386,9 @@ export class PlanModeController extends Service {
         }
         // Keep plan guidance for the rest of this assistant tool batch. The
         // silent selection is appended at the next accepted in-turn pre-step,
-        // before its request assembly.
-        this.pendingIntents.set(agent.session, { active: false, narrate: false })
+        // before its request assembly; the approved-review marker makes that
+        // pre-step also append the carry-out-the-plan directive.
+        this.pendingIntents.set(agent.session, { active: false, narrate: false, fromApproval: true })
         return { approved: true }
       },
       presentCall: args => ({
@@ -476,6 +506,14 @@ export class PlanModeController extends Service {
       content: [{ type: 'text', text }],
       // The narration is already one sentence, so it is its own summary.
       source: { kind: 'plan-mode', form: 'notice', summary: text },
+    })
+  }
+
+  /** The model-visible directive that directs one step to carry the approved plan out. */
+  private approvedDirective(): UserMessage {
+    return createUserMessage({
+      content: [{ type: 'text', text: APPROVED_DIRECTIVE }],
+      source: { kind: 'plan-mode', form: 'notice', summary: APPROVED_DIRECTIVE_SUMMARY },
     })
   }
 }

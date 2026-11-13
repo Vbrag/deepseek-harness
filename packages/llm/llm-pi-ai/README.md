@@ -35,7 +35,7 @@ Choose this adapter when the same composition serves several providers, when a r
 
 ### Configure provider routes
 
-Each profile may set a `retryPolicy`; omission uses normal mode with five retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Omitting it leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery.
+Each profile may set a `retryPolicy`; omission uses normal mode with five hundred retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Omitting it leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery.
 
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
@@ -98,6 +98,44 @@ A provider pi-ai ships a login for can be signed into through the harness author
 
 A profile's `models` list replaces the route's installed catalog rather than extending it; each entry defaults its unset fields from the installed model of the same id, so narrowing a route to two models, correcting one capacity, or adding a model newer than the installed catalog are one-line edits. `modelOverrides` reshapes individual installed-catalog models without that cost — correct one model, keep the other thirty-seven — and is refused when set beside a `models` list, on a hand-declared route, or naming a model the catalog does not describe, because a silently unchanged model would be a typo someone hunts for later.
 
+### Pace calls within model rate limits
+
+A gateway such as a university AI gateway publishes per-model limits: a maximum number of requests per minute (RPM) and a maximum number of tokens per minute (TPM). Declaring `rpm` and/or `tpm` on a `models` or `modelOverrides` entry makes the adapter pace that model's calls proactively, so concurrent chats sharing the route never push it past the gateway's per-model cap and get denied mid-turn (HTTP 429). The remaining fields are billing metadata for configuration surfaces: `free: true` labels a no-cost model, and `pricing: { input, output }` records a paid model's rates per 1M tokens.
+
+```yaml
+providers:
+  uni-paderborn:
+    apiKeyEnv: UNI_PADERBORN_API_KEY
+    api: openai-completions
+    baseURL: https://ai-gateway.uni-paderborn.de/v1
+    models:
+      - id: gwdg.deepseek-v4-flash-0731
+        name: DeepSeek V4 Flash 0731
+        contextWindow: 1000000
+        maxTokens: 384000
+        rpm: 10        # at most 10 requests/minute, paced across all chats
+        tpm: 500000    # at most 500k tokens/minute, reconciled from real usage
+        free: true
+      - id: hs-de.qwen3.8-27b
+        name: Qwen 3.8 27B
+        contextWindow: 262000
+        maxTokens: 262000
+        rpm: 10
+        tpm: 500000
+        input: [text, image]
+        free: true
+```
+
+This module ships a ready-to-use Uni Paderborn AI-Gateway route with its full
+chat-model catalog as [`UPB_GATEWAY_PROFILE`](../src/upb-gateway.ts)
+(re-exported as `UPB_GATEWAY_MODELS`, `UPB_GATEWAY_PROVIDER`,
+`UPB_GATEWAY_BASE_URL`, `UPB_GATEWAY_API_KEY_ENV`). Activate it with only the
+API key exported as `UPB_AI_GATEWAY_KEY`; the shipped catalog already declares
+each model's `rpm` / `tpm` budget from the gateway's public model list.
+
+
+The pacing budget is **process-wide per provider+model**: every session and every step of an agent calling the same model shares one rolling-minute budget, so several chats cannot collectively exceed what a single chat is allowed. When the RPM or TPM budget for the current minute is exhausted, the adapter holds the call until the budget refills (at most a rolling minute) instead of failing it; an aborted or cancelled request leaves the queue and returns its reservation without charging the budget. The TPM reservation is estimated from the request's serialized text before dispatch and reconciled against the provider's reported usage at completion, so an underestimate is charged to the following call rather than silently exceeding the minute budget. To pace without token limiting, declare only `rpm`; to limit tokens only, declare only `tpm`. A model with neither limit is dispatched without waiting.
+
 ### Run with reasoning and wire compatibility
 
 `reasoningEfforts` declares a model's selectable thinking levels: each key is a level selectors offer, its value the spelling dispatch sends on the wire, so `max: ultra` renames a level for a gateway with its own vocabulary. Omitting the field keeps the installed catalog entry's capability; `false` declares a non-reasoning model. `compat` switches reshape the request for endpoints pi-ai cannot recognize — which role carries the system prompt, which field caps output, how a thinking level travels — configurable per route and per model. A model neither the entry nor the installed catalog sizes takes the route's `defaultContextWindow` and `defaultMaxTokens` fallbacks.
@@ -151,6 +189,7 @@ Initial prompt text and active tools use pi-ai's `Context.systemPrompt` and `Con
 | [`src/catalog.ts`](src/catalog.ts) | Installed-catalog integration and drift gates |
 | [`src/provider-data.ts`](src/provider-data.ts) | Generated authentication and endpoint metadata for configuration surfaces |
 | [`src/models.ts`](src/models.ts) | Model collections, static providers, and reasoning levels over narrow pi-ai entry points |
+| [`src/rate-limit.ts`](src/rate-limit.ts) | Process-wide per-model RPM/TPM token-bucket pacing and request-token estimation |
 | [`src/provider.ts`](src/provider.ts) | The supported-protocol table and provider construction |
 | [`src/context.ts`](src/context.ts) | Harness-to-pi-ai context conversion, image handling, replay restore |
 | [`src/stream.ts`](src/stream.ts) | pi-ai event conversion into harness `StreamChunk` values |
@@ -253,6 +292,7 @@ These limits define where the adapter stops and future work begins. They are cur
 - **A modality declaration is not verified** — a model declaring `image` its gateway does not serve is refused by the provider after prompt admission. The durable image remains in history and the same misdeclared model can fail again; switching to a text-only model remains possible because the shared LLM runtime projects image references into stable text for that request.
 - **An unauthenticated route depends on its protocol** — a route naming no credential resolves as configured-but-keyless, but pi-ai's OpenAI-compatible implementation still requires an API key or an `Authorization` header, so a keyless local server needs a placeholder credential referenced by `apiKeyEnv` or an `Authorization` entry in `headers`.
 - **`GenerateOptions.stop` is unsupported** — pi-ai's common stream options cannot guarantee stop-sequence behavior across providers.
+- **TPM pacing is estimated at dispatch** — a request's input-token reservation is approximated from its serialized text (no provider tokenizer), and output tokens are settled after the response reports them, so a single very large request can overrun the minute TPM before the next call is throttled.
 - **Conversation update support comes only from the installed pi-ai catalog** — native system and tool updates require the catalog model’s mid-conversation compat flags, which profiles cannot set. Hand-declared routes and unflagged models receive later system text as user-role reminders and the complete current tool list at the start of each request.
 - **Images are accepted only in user and tool-result messages** — images in system, developer, or assistant history fail with `UNSUPPORTED_CONTENT` on both conversion paths.
 - **Provider HTTP status is unavailable** — pi-ai error events do not expose a stable HTTP status across providers.

@@ -12,6 +12,8 @@ interface DriverReport {
   failovers: number
   failedSteps: number
   stepStatuses: { id: string; failed: boolean; failedOver: boolean; routes: string[] }[]
+  persistAccepted: boolean
+  persistedPool: { provider: string; model: string }[]
 }
 
 it('boots the orchestration service and model tool over headless and fails over a failed worker to a capability-similar model', { timeout: 90_000, retry: 0 }, async () => {
@@ -34,4 +36,6 @@ it('boots the orchestration service and model tool over headless and fails over 
   expect(report.stepStatuses).toEqual([
     { id: 'step-1', failed: false, failedOver: true, routes: ['gwdg.glm-5.3-flash', 'gwdg.qwen3-coder-next'] },
   ])
+  expect(report.persistAccepted).toBe(true)
+  expect(report.persistedPool).toEqual([{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }])
 })

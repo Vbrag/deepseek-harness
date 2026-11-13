@@ -45,7 +45,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Injected business face of the composer model seat. */
 export interface ModelSelectInjected {
-  /** Whether this session supports Agent-bound model inspection and selection. */
+  /** Whether this session supports Agent-bound model inspection and selection. When false (an addressed subagent session), the seat renders a read-only badge naming the session's recorded model instead of the selector. */
   available: boolean
   /** The session's shared directory store (same instance the /model popup reads). */
   directory: SnapshotStore<ModelDirectoryState>

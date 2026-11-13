@@ -485,7 +485,7 @@ describe('ModelSelect reasoning effort', () => {
     }
   })
 
-  it('renders no Agent-bound control for an addressed subagent session', () => {
+  it('renders a read-only model badge (no Agent-bound control) for an addressed subagent session', () => {
     const load = vi.fn()
     render(<ModelSelect renderSlot={renderLabel}
       locked={false}
@@ -496,8 +496,79 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
+    // A non-interactive badge naming the recorded model: no button, no menu,
+    // no catalog-load and no select RPC.
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
+    const badge = screen.getByRole('text', { name: '子智能体模型 deepseek-v4-flash' })
+    expect(badge.textContent).toBe('deepseek-v4-flash')
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('shows a placeholder badge for an addressed subagent session without a recorded model', () => {
+    const directory = createSnapshotStore(state({ current: null, groups: [], status: 'ready' }))
+    render(<ModelSelect renderSlot={renderLabel}
+      locked={false}
+      available={false}
+      directory={directory}
+      load={vi.fn()} resolveText={resolveText}
+      select={vi.fn().mockResolvedValue(undefined)}
+      t={t}
+    />)
+
+    expect(screen.getByRole('text', { name: '模型未选定' }).textContent).toBe('模型未选定')
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
+describe('ModelSelect rate limits', () => {
+  it('shows a compact RPM/TPM chip beside the selected model and a detail card on hover', () => {
+    const directory = createSnapshotStore(state({
+      groups: [{
+        id: 'deepseek-official',
+        name: 'DeepSeek',
+        models: [{
+          id: 'deepseek-v4-flash',
+          name: 'DeepSeek-V4-Flash',
+          reasoning,
+          rateLimit: { rpm: 60, tpm: 120000 },
+        }],
+      }],
+    }))
+    render(<ModelSelect renderSlot={renderLabel} locked={false} available directory={directory} load={vi.fn()}
+      resolveText={resolveText} select={vi.fn()} t={t} />)
+    const trigger = screen.getByRole('button', { name: /选择模型，当前/ })
+    // Compact chip: RPM 60 and TPM 120K.
+    expect(trigger.textContent).toContain('RPM 60')
+    expect(trigger.textContent).toContain('TPM 120K')
+  })
+
+  it('shows only the declared dimension in the chip', () => {
+    const directory = createSnapshotStore(state({
+      groups: [{
+        id: 'deepseek-official',
+        name: 'DeepSeek',
+        models: [{
+          id: 'deepseek-v4-flash',
+          name: 'DeepSeek-V4-Flash',
+          reasoning,
+          rateLimit: { rpm: 5 },
+        }],
+      }],
+    }))
+    render(<ModelSelect renderSlot={renderLabel} locked={false} available directory={directory} load={vi.fn()}
+      resolveText={resolveText} select={vi.fn()} t={t} />)
+    const trigger = screen.getByRole('button', { name: /选择模型，当前/ })
+    expect(trigger.textContent).toContain('RPM 5')
+    expect(trigger.textContent).not.toContain('TPM')
+  })
+
+  it('renders no chip when the selected model declares no rate limit', () => {
+    render(<ModelSelect renderSlot={renderLabel} locked={false} available directory={createSnapshotStore(state())}
+      load={vi.fn()} resolveText={resolveText} select={vi.fn()} t={t} />)
+    const trigger = screen.getByRole('button', { name: /选择模型，当前/ })
+    expect(trigger.textContent).not.toContain('RPM')
+    expect(trigger.textContent).not.toContain('TPM')
   })
 })
 

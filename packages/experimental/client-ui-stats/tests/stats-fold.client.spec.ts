@@ -1,7 +1,6 @@
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'team-message': { readonly kind: 'team-message'; readonly senderName: string }
-    'agent-message': { readonly kind: 'agent-message' }
   }
 }
 
@@ -23,7 +22,9 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import { RetryId } from '@deepseek-ai/dsh-llm-retry'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionSeq, type SessionEventMap, type SessionEventType } from '@deepseek-ai/dsh-session/types'
+import type { AgentMessageSource } from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-tool-executor-ptc/types'
 import {
   CALL_LIMIT, fallbackState, foldEvent, isCodeMode, newState, promptOf, stepMetrics, toolSpanUnion, triggerSenderOf,
@@ -736,17 +737,21 @@ describe('trigger sender helper', () => {
   it('parses the agent id from a direct agent message', () => {
     expect(triggerSenderOf(userMessage([textBlock('Agent abc-123 sent a message: hi')], {
       kind: 'agent-message',
-    }))).toBe('abc-123')
+      form: 'relay',
+      senderSessionId: SessionId('abc-123'),
+    } satisfies AgentMessageSource))).toBe('abc-123')
     // Raw session UUIDs are not member names.
     expect(triggerSenderOf(userMessage([textBlock('Agent 52224ac7-b02b-4d25-8c6e-123456789abc sent a message: hi')], {
       kind: 'agent-message',
-    }))).toBeNull()
+      form: 'relay',
+      senderSessionId: SessionId('52224ac7-b02b-4d25-8c6e-123456789abc'),
+    } satisfies AgentMessageSource))).toBeNull()
   })
 
   it('returns nothing without a framed sender', () => {
     expect(triggerSenderOf(userMessage([textBlock('Team message from hfai-deploy: x')], { kind: 'user' }))).toBeNull()
-    expect(triggerSenderOf(userMessage([textBlock('hello')], { kind: 'agent-message' }))).toBeNull()
-    expect(triggerSenderOf(userMessage([textBlock('Agent noverb')], { kind: 'agent-message' }))).toBeNull()
+    expect(triggerSenderOf(userMessage([textBlock('hello')], { kind: 'agent-message', form: 'relay', senderSessionId: SessionId('hello-sender') } satisfies AgentMessageSource))).toBeNull()
+    expect(triggerSenderOf(userMessage([textBlock('Agent noverb')], { kind: 'agent-message', form: 'relay', senderSessionId: SessionId('noverb-sender') } satisfies AgentMessageSource))).toBeNull()
   })
 })
 

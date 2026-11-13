@@ -19,6 +19,9 @@ export const zh = {
   'trigger.selectAria': '请选择模型',
   'trigger.aria': '选择模型，当前 {model}',
   'trigger.ariaEffort': '选择模型，当前 {model}，推理等级 {effort}',
+  'trigger.subagentUnset': '模型未选定',
+  'trigger.readOnlyAria': '子智能体模型 {model}',
+  'trigger.readOnlyAriaEffort': '子智能体模型 {model}，推理等级 {effort}',
   'menu.aria': '模型与推理等级',
   'menu.model': '模型',
   'menu.effort': '推理等级',
@@ -33,6 +36,12 @@ export const zh = {
   'search.empty': '没有匹配的模型。',
   'empty.models': '暂无可用模型',
   'empty.efforts': '当前模型未提供推理等级。',
+  'rateLimit.title': '速率限制',
+  'rateLimit.rpm': '每分钟请求数',
+  'rateLimit.tpm': '每分钟令牌数',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': '当前模型的速率限制',
 } satisfies Record<string, string>
 
 /** The model namespace key union. */
@@ -49,6 +58,9 @@ export const en = {
   'trigger.selectAria': 'Select model',
   'trigger.aria': 'Select model, current {model}',
   'trigger.ariaEffort': 'Select model, current {model}, reasoning effort {effort}',
+  'trigger.subagentUnset': 'Model not set',
+  'trigger.readOnlyAria': 'Subagent model {model}',
+  'trigger.readOnlyAriaEffort': 'Subagent model {model}, reasoning effort {effort}',
   'menu.aria': 'Model and reasoning effort',
   'menu.model': 'Model',
   'menu.effort': 'Effort',
@@ -63,6 +75,12 @@ export const en = {
   'search.empty': 'No matching models.',
   'empty.models': 'No models available.',
   'empty.efforts': 'This model provides no reasoning effort levels.',
+  'rateLimit.title': 'Rate limits',
+  'rateLimit.rpm': 'Requests per minute',
+  'rateLimit.tpm': 'Tokens per minute',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': 'Rate limits for this model',
 } satisfies Record<ModelKey, string>
 
 /** Japanese copy, checked against the English keys. */
@@ -76,6 +94,9 @@ export const ja = {
   'trigger.selectAria': 'モデルを選択',
   'trigger.aria': 'モデルを選択、現在 {model}',
   'trigger.ariaEffort': 'モデルを選択、現在 {model}、推論強度 {effort}',
+  'trigger.subagentUnset': 'モデル未設定',
+  'trigger.readOnlyAria': 'サブエージェントのモデル {model}',
+  'trigger.readOnlyAriaEffort': 'サブエージェントのモデル {model}、推論強度 {effort}',
   'menu.aria': 'モデルと推論強度',
   'menu.model': 'モデル',
   'menu.effort': '強度',
@@ -90,6 +111,12 @@ export const ja = {
   'search.empty': '一致するモデルがありません。',
   'empty.models': '利用可能なモデルがありません。',
   'empty.efforts': 'このモデルには推論強度の設定がありません。',
+  'rateLimit.title': 'レート制限',
+  'rateLimit.rpm': '1分あたりのリクエスト数',
+  'rateLimit.tpm': '1分あたりのトークン数',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': 'このモデルのレート制限',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -103,6 +130,9 @@ export const es = {
   'trigger.selectAria': 'Seleccionar modelo',
   'trigger.aria': 'Seleccionar modelo, actual {model}',
   'trigger.ariaEffort': 'Seleccionar modelo, {model} actual, esfuerzo de razonamiento {effort}',
+  'trigger.subagentUnset': 'Modelo no configurado',
+  'trigger.readOnlyAria': 'Modelo de subagente {model}',
+  'trigger.readOnlyAriaEffort': 'Modelo de subagente {model}, esfuerzo de razonamiento {effort}',
   'menu.aria': 'Esfuerzo de modelo y razonamiento.',
   'menu.model': 'modelo',
   'menu.effort': 'Esfuerzo',
@@ -117,6 +147,12 @@ export const es = {
   'search.empty': 'No hay modelos coincidentes.',
   'empty.models': 'No hay modelos disponibles.',
   'empty.efforts': 'Este modelo no proporciona niveles de esfuerzo de razonamiento.',
+  'rateLimit.title': 'Límites de velocidad',
+  'rateLimit.rpm': 'Solicitudes por minuto',
+  'rateLimit.tpm': 'Tokens por minuto',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': 'Límites de velocidad de este modelo',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -130,6 +166,9 @@ export const fr = {
   'trigger.selectAria': 'Sélectionnez le modèle',
   'trigger.aria': 'Sélectionnez le modèle, {model} actuel',
   'trigger.ariaEffort': 'Sélectionnez le modèle, {model} actuel, effort de raisonnement {effort}',
+  'trigger.subagentUnset': 'Modèle non défini',
+  'trigger.readOnlyAria': 'Modèle de sous-agent {model}',
+  'trigger.readOnlyAriaEffort': 'Modèle de sous-agent {model}, effort de raisonnement {effort}',
   'menu.aria': 'Effort de modélisation et de raisonnement',
   'menu.model': 'Modèle',
   'menu.effort': 'Effort',
@@ -144,6 +183,12 @@ export const fr = {
   'search.empty': 'Aucun modèle correspondant.',
   'empty.models': 'Aucun modèle disponible.',
   'empty.efforts': 'Ce modèle ne fournit aucun niveau d’effort de raisonnement.',
+  'rateLimit.title': 'Limites de débit',
+  'rateLimit.rpm': 'Requêtes par minute',
+  'rateLimit.tpm': 'Jetons par minute',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': 'Limites de débit de ce modèle',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -157,6 +202,9 @@ export const de = {
   'trigger.selectAria': 'Modell auswählen',
   'trigger.aria': 'Modell auswählen, aktuell {model}',
   'trigger.ariaEffort': 'Modell auswählen, aktuell {model}, Argumentationsaufwand {effort}',
+  'trigger.subagentUnset': 'Modell nicht festgelegt',
+  'trigger.readOnlyAria': 'Subagent-Modell {model}',
+  'trigger.readOnlyAriaEffort': 'Subagent-Modell {model}, Argumentationsaufwand {effort}',
   'menu.aria': 'Modell- und Argumentationsaufwand',
   'menu.model': 'Modell',
   'menu.effort': 'Aufwand',
@@ -171,6 +219,12 @@ export const de = {
   'search.empty': 'Keine passenden Modelle.',
   'empty.models': 'Keine Modelle verfügbar.',
   'empty.efforts': 'Dieses Modell liefert keine Argumentationsaufwandsstufen.',
+  'rateLimit.title': 'Ratenbegrenzungen',
+  'rateLimit.rpm': 'Anfragen pro Minute',
+  'rateLimit.tpm': 'Token pro Minute',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': 'Ratenbegrenzungen dieses Modells',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -184,6 +238,9 @@ export const ru = {
   'trigger.selectAria': 'Выберите модель',
   'trigger.aria': 'Выберите модель, текущую {model}',
   'trigger.ariaEffort': 'Выберите модель, текущую версию {model}, аргументацию {effort}',
+  'trigger.subagentUnset': 'Модель не задана',
+  'trigger.readOnlyAria': 'Модель субагента {model}',
+  'trigger.readOnlyAriaEffort': 'Модель субагента {model}, рассуждение {effort}',
   'menu.aria': 'Модель и рассуждения',
   'menu.model': 'Модель',
   'menu.effort': 'Усилие',
@@ -198,6 +255,12 @@ export const ru = {
   'search.empty': 'Нет подходящих моделей.',
   'empty.models': 'Нет доступных моделей.',
   'empty.efforts': 'Эта модель не обеспечивает обоснования уровней усилий.',
+  'rateLimit.title': 'Лимиты частоты',
+  'rateLimit.rpm': 'Запросов в минуту',
+  'rateLimit.tpm': 'Токенов в минуту',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': 'Лимиты частоты этой модели',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -211,6 +274,9 @@ export const pt = {
   'trigger.selectAria': 'Selecione o modelo',
   'trigger.aria': 'Selecione o modelo, atual {model}',
   'trigger.ariaEffort': 'Selecione modelo, atual {model}, esforço de raciocínio {effort}',
+  'trigger.subagentUnset': 'Modelo não definido',
+  'trigger.readOnlyAria': 'Modelo do subagente {model}',
+  'trigger.readOnlyAriaEffort': 'Modelo do subagente {model}, esforço de raciocínio {effort}',
   'menu.aria': 'Modelo e esforço de raciocínio',
   'menu.model': 'Modelo',
   'menu.effort': 'Esforço',
@@ -225,4 +291,10 @@ export const pt = {
   'search.empty': 'Não há modelos correspondentes.',
   'empty.models': 'Nenhum modelo disponível.',
   'empty.efforts': 'Este modelo não fornece níveis de esforço de raciocínio.',
+  'rateLimit.title': 'Limites de taxa',
+  'rateLimit.rpm': 'Solicitações por minuto',
+  'rateLimit.tpm': 'Tokens por minuto',
+  'rateLimit.rpmShort': 'RPM',
+  'rateLimit.tpmShort': 'TPM',
+  'rateLimit.aria': 'Limites de taxa deste modelo',
 } satisfies Record<keyof typeof en, string>

@@ -39,12 +39,6 @@ describe('Orchestration profile bundle', () => {
     })
     expect(inserted.find(entry => entry.id === 'tool-orchestration')).toMatchObject({
       name: '@deepseek-ai/dsh-experimental-tool-orchestration',
-      config: {
-        pool: [
-          { provider: 'paderborn', model: 'gwdg.qwen3.5-397b-a17b' },
-          { provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
-        ],
-      },
     })
     expect(inserted.find(entry => entry.id === 'ui-orchestration')).toMatchObject({
       name: '@deepseek-ai/dsh-experimental-client-ui-orchestration',

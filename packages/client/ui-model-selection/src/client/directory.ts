@@ -159,6 +159,28 @@ export class ModelDirectory {
     if (this.disposed) return
     const catalog = this.catalog.store.getSnapshot()
     const projected = modelSelectionProjection(this.projected.getSnapshot())
+    // An addressed subagent session never loads the catalog or selects a model
+    // (its Agent-bound RPCs are gated off), but its durable model selection is
+    // still readable: surface it as a read-only `current` so the composer can
+    // show which model the subagent runs on. No catalog load and no selection.
+    if (!this.available()) {
+      const selection = projected?.next ?? null
+      const reasoning = selection === null ? undefined : this.catalog.reasoningFor(selection)
+      const effort = selection?.reasoningEffort ?? reasoning?.defaultEffort
+      const retainedEffort = effort === undefined ? undefined
+        : reasoning?.efforts.find(level => level.id === effort)?.name ?? effort
+      this.store.set({
+        current: selection,
+        ...retainedEffort === undefined ? {} : { retainedEffort },
+        routable: null,
+        groups: [],
+        failures: [],
+        status: 'ready',
+        pending: null,
+        error: null,
+      })
+      return
+    }
     const intended = projected?.next ?? catalog.value?.default
     const reasoning = intended === undefined ? undefined : this.catalog.reasoningFor(intended)
     const effort = intended?.reasoningEffort ?? reasoning?.defaultEffort

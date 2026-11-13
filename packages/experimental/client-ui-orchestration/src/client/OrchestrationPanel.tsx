@@ -76,31 +76,69 @@ export type OrchestrationPanelProps =
 
 /**
  * Render the provider catalog with capability badges as checkable rows to
- * select the multi-model pool. Selection is optimistic local state drawn from
- * the injected Host pool; every toggle persists the new pool through the
- * injected `setPool` and reports a refused write. The component is function-only
- * and uses no DOM refs.
+ * select the multi-model pool. Selection is local state drawn from the
+ * injected Host pool; Select all and Clear adjust it, and Save persists the
+ * whole pool through the injected `setPool`, reporting a refused write. When
+ * nothing is persisted the panel defaults to every catalog model selected, so
+ * the full pool is available immediately. The component is function-only and
+ * uses no DOM refs.
  * @param props - settings runtime, the injected pool and setter, and localized copy.
  * @returns The Orchestration settings section.
  */
 export function OrchestrationPanel({ pool, setPool, t }: OrchestrationPanelProps) {
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(pool.map(route => route.model)))
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => {
+    const persisted = pool.map(route => route.model)
+    return persisted.length > 0
+      ? new Set(persisted)
+      : new Set(PADERBORN_CATALOG.map(capability => capability.id))
+  })
   const [notice, setNotice] = useState<OrchestrationKey | undefined>(undefined)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  const save = (): void => {
+    setNotice(undefined)
+    const routes: readonly PoolRoute[] = [...selected].map(model => ({ provider: PROVIDER, model }))
+    setSaving(true)
+    void setPool(routes).then((ok) => {
+      setSaving(false)
+      setDirty(false)
+      setNotice(ok ? 'savedOk' : 'saveFailed')
+    })
+  }
+
+  const setSelection = (next: ReadonlySet<string>): void => {
+    setSelected(next)
+    setDirty(true)
+    setNotice(undefined)
+  }
+
   const toggle = (id: string, checked: boolean): void => {
     const next = new Set(selected)
     if (checked) next.add(id)
     else next.delete(id)
-    setSelected(next)
-    setNotice(undefined)
-    const routes: readonly PoolRoute[] = [...next].map(model => ({ provider: PROVIDER, model }))
-    void setPool(routes).then((ok) => {
-      if (!ok) setNotice('saveFailed')
-    })
+    setSelection(next)
   }
+
+  const selectAll = (): void => {
+    setSelection(new Set(PADERBORN_CATALOG.map(capability => capability.id)))
+  }
+
+  const clear = (): void => {
+    setSelection(new Set())
+  }
+
+  const status: OrchestrationKey = notice ?? (selected.size === 0 ? 'noneSelected' : 'selectedPool')
+
   return (
     <section className={css.section}>
       <h2 className={css.title}>{t('title')}</h2>
       <p className={css.subtitle}>{t('subtitle')}</p>
+      <div className={css.toolbar}>
+        <button type="button" className={css.linkButton} onClick={selectAll}>{t('selectAll')}</button>
+        <button type="button" className={css.linkButton} onClick={clear}>{t('clearAll')}</button>
+        <span className={css.count}>{t('selectedPool')} ({selected.size})</span>
+      </div>
       <ul className={css.list}>
         {PADERBORN_CATALOG.map(capability => (
           <CatalogRow
@@ -112,11 +150,15 @@ export function OrchestrationPanel({ pool, setPool, t }: OrchestrationPanelProps
           />
         ))}
       </ul>
-      <p className={css.poolHint} role="status">
-        {notice !== undefined ? t(notice) : (selected.size === 0
-          ? t('noneSelected')
-          : `${t('selectedPool')} (${selected.size}) — ${t('poolHint')}`)}
-      </p>
+      <p className={css.poolHint} role="status">{t(status)}</p>
+      <button
+        type="button"
+        className={css.saveButton}
+        disabled={saving || !dirty}
+        onClick={save}
+      >
+        {saving ? t('saving') : t('save')}
+      </button>
     </section>
   )
 }

@@ -1254,6 +1254,55 @@ export interface InspectorOptions {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-inspector -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-orchestration -->
+<a id="deepseek-aidsh-experimental-orchestration"></a>
+
+## `@deepseek-ai/dsh-experimental-orchestration`
+
+- `inject`: `llm` · `subagents` · `sessionProjections` · `agents`
+- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:31`](../packages/experimental/dsh-orchestration/src/types.ts)
+
+```ts config-catalog
+/** Accepted deployment limits for one orchestration; every field is optional and defaults on validation. */
+export interface OrchestrationConfig {
+  /**
+   * Persisted multi-model pool. Seeded into the service at load and written by
+   * {@link OrchestrationService.persistPool} on GUI change, so the selection
+   * survives restart. Execution reads the service's selected pool, which is
+   * restored from this field on boot.
+   */
+  readonly pool?: PoolRoute[]
+  /** Maximum concurrent workers, sampled before each run. */
+  readonly maxConcurrency?: number
+  /** Maximum attempts per planned step before the step is reported failed. */
+  readonly maxAttemptsPerStep?: number
+  /** Timeout, in milliseconds, budgeted per worker attempt before it is abandoned. */
+  readonly workerTimeoutMs?: number
+  /**
+   * Seed the per-Agent (session) orchestration-mode default. A session with no
+   * explicit {@link OrchestrationService.setMode} or `select` selection falls
+   * back to this value, which `run_orchestration` consumes as its delegation
+   * gate. The selection is recorded as a Session `orchestration/mode` event and
+   * recovered from the `orchestration` session projection after restart, so an
+   * explicit selection always wins over this default.
+   */
+  readonly defaultToOrchestrator?: boolean
+}
+
+/**
+ * One model route in the selected pool. `provider` and `model` form the exact
+ * route passed to a subagent's `agentOptions`; capability matching is resolved
+ * from the provider's investigated catalog, not from per-route tags.
+ */
+export interface PoolRoute {
+  /** Provider route registered on `ctx.llm`. */
+  readonly provider: string
+  /** Exact API model id as passed to the provider. */
+  readonly model: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-orchestration -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-ptc-runtime-python -->
 <a id="deepseek-aidsh-experimental-ptc-runtime-python"></a>
 
@@ -1452,6 +1501,35 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-orchestration -->
+<a id="deepseek-aidsh-experimental-tool-orchestration"></a>
+
+## `@deepseek-ai/dsh-experimental-tool-orchestration`
+
+- `inject`: `agents` · `orchestrations` · `tools`
+- `source`: [`packages/experimental/tool-orchestration/src/index.ts:24`](../packages/experimental/tool-orchestration/src/index.ts)
+
+```ts config-catalog
+/** Tool routing configuration. */
+export interface Config {
+  /**
+   * Seed pool of provider/model routes: used only to set the service pool when
+   * it is empty on plugin load, so a deployment without the GUI panel can still
+   * run. Execution always reads the service's selected pool.
+   */
+  readonly pool: PoolRouteConfig[]
+}
+
+/** One provider/model route in the configured Orchestration pool. */
+export interface PoolRouteConfig {
+  /** Provider route registered on `ctx.llm`; must match a catalogued route. */
+  readonly provider: string
+  /** Exact API model id passed to the provider; must match a catalogued model. */
+  readonly model: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-orchestration -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-subagent-oar -->
 <a id="deepseek-aidsh-experimental-tool-subagent-oar"></a>
@@ -1962,7 +2040,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:222`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:232`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2065,7 +2143,7 @@ export interface PiAiProviderProfile {
    * the smallest quality-ladder output is used when no quality fits.
    */
   requestImageMaxBytes?: number
-  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
+  /** Provider-owned model-request retry policy; omission uses normal mode with five hundred retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -2084,6 +2162,39 @@ export interface PiAiModelProfile {
    * default on its own.
    */
   maxTokens?: number
+  /**
+   * Maximum requests per rolling minute the gateway allows for this model.
+   * Declaring one activates proactive pacing on this model: the adapter queues
+   * a call until the process-wide RPM budget has a slot, so concurrent chats
+   * sharing the route never exceed the gateway's per-model request cap.
+   */
+  rpm?: number
+  /**
+   * Maximum tokens per rolling minute the gateway allows for this model.
+   * Declaring one activates proactive token pacing on this model: the adapter
+   * reserves an estimate of each request's input tokens before dispatch and
+   * reconciles the real input+output usage when the response reports it, so
+   * concurrent chats sharing the route stay within the gateway's per-model
+   * token throughput cap.
+   */
+  tpm?: number
+  /**
+   * Whether the model is served at no per-token cost. Purely descriptive for
+   * configuration surfaces and budgets; it does not change request dispatch.
+   * Omission keeps whatever the catalog or a derived `pricing` implies.
+   */
+  free?: boolean
+  /**
+   * Token price metadata per 1M tokens, in the provider's currency. Shows on
+   * configuration surfaces as input/output rates; `free: true` takes precedence
+   * for labeling. Purely descriptive — the harness never reports spend.
+   */
+  pricing?: {
+    /** Price per 1M input tokens. */
+    input?: number
+    /** Price per 1M output tokens. */
+    output?: number
+  }
   /**
    * Request modalities this model accepts. Absent — or empty, which describes
    * a model that accepts nothing and so states no answer either — keeps the
@@ -3305,6 +3416,57 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-codemap-docs -->
+<a id="deepseek-aidsh-skill-codemap-docs"></a>
+
+## `@deepseek-ai/dsh-skill-codemap-docs`
+
+- `inject`: `skills`
+- `source`: [`packages/skill/skill-codemap-docs/src/index.ts:14`](../packages/skill/skill-codemap-docs/src/index.ts)
+
+```ts config-catalog
+/** Codemap documentation skill resource location. */
+export interface Config {
+  /** Absolute assets directory containing the skill folder; defaults to packaged assets. */
+  assetRoot?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-codemap-docs -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-continuous-learning -->
+<a id="deepseek-aidsh-skill-continuous-learning"></a>
+
+## `@deepseek-ai/dsh-skill-continuous-learning`
+
+- `inject`: `skills`
+- `source`: [`packages/skill/skill-continuous-learning/src/index.ts:14`](../packages/skill/skill-continuous-learning/src/index.ts)
+
+```ts config-catalog
+/** Continuous learning skill resource location. */
+export interface Config {
+  /** Absolute assets directory containing the skill folder; defaults to packaged assets. */
+  assetRoot?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-continuous-learning -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-eval-harness -->
+<a id="deepseek-aidsh-skill-eval-harness"></a>
+
+## `@deepseek-ai/dsh-skill-eval-harness`
+
+- `inject`: `skills`
+- `source`: [`packages/skill/skill-eval-harness/src/index.ts:14`](../packages/skill/skill-eval-harness/src/index.ts)
+
+```ts config-catalog
+/** Eval harness skill resource location. */
+export interface Config {
+  /** Absolute assets directory containing the skill folder; defaults to packaged assets. */
+  assetRoot?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-eval-harness -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-filesystem -->
 <a id="deepseek-aidsh-skill-filesystem"></a>
 
@@ -3343,6 +3505,23 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-filesystem -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-frontend-patterns -->
+<a id="deepseek-aidsh-skill-frontend-patterns"></a>
+
+## `@deepseek-ai/dsh-skill-frontend-patterns`
+
+- `inject`: `skills`
+- `source`: [`packages/skill/skill-frontend-patterns/src/index.ts:14`](../packages/skill/skill-frontend-patterns/src/index.ts)
+
+```ts config-catalog
+/** Frontend patterns skill resource location. */
+export interface Config {
+  /** Absolute assets directory containing the skill folder; defaults to packaged assets. */
+  assetRoot?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-frontend-patterns -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-office -->
 <a id="deepseek-aidsh-skill-office"></a>
@@ -4894,6 +5073,7 @@ export interface Config {
 | `@deepseek-ai/dsh-experimental-auto-review` | `approval` · `llm` · `permissionPresets` · `sessions` · `tools` · `workingDirectory` | [`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | — | [`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-claude-code-mods` | — | [`packages/experimental/client-ui-claude-code-mods/src/index.ts`](../packages/experimental/client-ui-claude-code-mods/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-client-ui-orchestration` | — | [`packages/experimental/client-ui-orchestration/src/index.ts`](../packages/experimental/client-ui-orchestration/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-stats` | — | [`packages/experimental/client-ui-stats/src/index.ts`](../packages/experimental/client-ui-stats/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | — | [`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | `computerUse` · `tools` · `systemPrompt` | [`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts) |
@@ -4924,6 +5104,7 @@ export interface Config {
 | `@deepseek-ai/dsh-subprocess-local` | — | [`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts) |
 | `@deepseek-ai/dsh-subprocess-ssh` | `ssh` | [`packages/ssh/subprocess-ssh/src/index.ts`](../packages/ssh/subprocess-ssh/src/index.ts) |
 | `@deepseek-ai/dsh-terminal` | — | [`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts) |
+| `@deepseek-ai/dsh-todo-reconcile-driver` | `agents` · `goals` · `sessions` · `sessionProjections` | [`packages/todo/todo-reconcile-driver/src/index.ts`](../packages/todo/todo-reconcile-driver/src/index.ts) |
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | `tools` | [`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts) |
 | `@deepseek-ai/dsh-tool-cordis` | `tools` · `cordisInspect` | [`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts) |
 | `@deepseek-ai/dsh-tool-executor-native` | `tools` | [`packages/core/tool-executor-native/src/index.ts`](../packages/core/tool-executor-native/src/index.ts) |
@@ -4992,6 +5173,7 @@ export interface Config {
 | `@deepseek-ai/dsh-experimental-inspector-profile` | — | [`packages/experimental/inspector-profile/src/index.ts`](../packages/experimental/inspector-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-liveshare` | — | [`packages/experimental/liveshare/src/index.ts`](../packages/experimental/liveshare/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-liveshare-protocol` | — | [`packages/experimental/liveshare-protocol/src/index.ts`](../packages/experimental/liveshare-protocol/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-orchestration-profile` | — | [`packages/experimental/orchestration-profile/src/index.ts`](../packages/experimental/orchestration-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-plugin-market-bundle` | — | [`packages/experimental/plugin-market-bundle/src/index.ts`](../packages/experimental/plugin-market-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-ralph-bundle` | — | [`packages/experimental/ralph-bundle/src/index.ts`](../packages/experimental/ralph-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-session-search` | — | [`packages/experimental/session-search/src/index.ts`](../packages/experimental/session-search/src/index.ts) |

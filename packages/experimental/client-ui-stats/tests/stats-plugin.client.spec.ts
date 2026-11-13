@@ -875,7 +875,7 @@ describe('conversation Definitions', () => {
       status: null, chars: null,
     })
     expect(eventMetrics(event('llm/retry', {
-      retryId: 'r1', turn: 3, step: 2, provider: 'p', mode: 'normal', policyKey: 'k', retry: 2, maxRetries: 5,
+      retryId: 'r1', turn: 3, step: 2, provider: 'p', mode: 'normal', policyKey: 'k', retry: 2, maxRetries: 500,
       delayMs: 1_500, failure: { message: 'rate limited', code: 'RATE_LIMIT' },
     }), undefined)).toMatchObject({
       kind: 'model-retry', turn: 3, step: 2, provider: 'p', status: 'normal', retry: 2, delayMs: 1_500,

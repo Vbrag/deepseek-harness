@@ -1006,13 +1006,19 @@ describe('exit_plan_mode', () => {
     expect(afterExit.sections.find(section => section.name === 'plan:policy')?.text).toBe('')
   })
 
-  it('the exit flush narrates nothing — the tool result is the narration', async () => {
+  it('an approved exit flush appends the carry-out-the-plan directive', async () => {
     const { ctx, agent } = await setupWithReview({ selected: ['Approve'] })
     header(agent.session)
     await callExit(ctx, agent)
     await boundary(ctx, agent, 'step-start')
     expect(foldPlanMode(agent.session.snapshotEvents())).toBe(false)
-    expect(noticeTexts(agent.session)).toEqual([])
+    expect(noticeTexts(agent.session)).toEqual([
+      'The user approved your plan and plan mode has exited. Carry the plan out: '
+        + 'first read your active goal and, if it still restricts the task to planning only or no '
+        + 'code changes, update it (get_goal, then update_goal) to the approved plan\'s implementation '
+        + 'objective; then reflect the approved plan into the todo_write list and begin executing it. '
+        + 'Treat the approved plan as the task to implement, not as the final deliverable.',
+    ])
   })
 
   it('keep planning returns the corrective error carrying the feedback verbatim', async () => {

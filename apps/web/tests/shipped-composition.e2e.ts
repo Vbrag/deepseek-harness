@@ -537,10 +537,10 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   await index.body?.cancel()
   expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
     {
-      "initialDelayMs": 500,
+      "initialDelayMs": 60000,
       "jitterRatio": 0.1,
-      "maxDelayMs": 10000,
-      "maxRetries": 5,
+      "maxDelayMs": 60000,
+      "maxRetries": 500,
       "mode": "normal",
       "retryableCodes": [
         "EMPTY_RESPONSE",
@@ -556,9 +556,9 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   })
   expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
     {
-      "initialDelayMs": 500,
+      "initialDelayMs": 60000,
       "jitterRatio": 0.1,
-      "maxDelayMs": 10000,
+      "maxDelayMs": 60000,
       "mode": "always",
     }
   `)
@@ -570,10 +570,10 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   })
   expect(ctx.llm.providerRetryPolicy('openai')).toMatchInlineSnapshot(`
     {
-      "initialDelayMs": 500,
+      "initialDelayMs": 60000,
       "jitterRatio": 0.1,
-      "maxDelayMs": 10000,
-      "maxRetries": 5,
+      "maxDelayMs": 60000,
+      "maxRetries": 500,
       "mode": "normal",
       "retryableCodes": [
         "EMPTY_RESPONSE",
@@ -586,9 +586,9 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   `)
   expect(ctx.llm.providerRetryPolicy('anthropic')).toMatchInlineSnapshot(`
     {
-      "initialDelayMs": 500,
+      "initialDelayMs": 60000,
       "jitterRatio": 0.1,
-      "maxDelayMs": 10000,
+      "maxDelayMs": 60000,
       "mode": "always",
     }
   `)

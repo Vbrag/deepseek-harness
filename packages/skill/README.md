@@ -26,6 +26,10 @@ The skill family lets agents and users discover and load reusable task instructi
 |---|---|---|
 | [`skill/`](skill/README.md) | Registry that merges skill catalogs from any provider and resolves the winning skill for a name | `ctx.skills` |
 | [`skill-filesystem/`](skill-filesystem/README.md) | Discovers skills from project, custom, and user directories and watches them for changes | registers on `ctx.skills` |
+| [`skill-codemap-docs/`](skill-codemap-docs/README.md) | Bundled skill that maps source structure into Markdown documentation | registers on `ctx.skills` |
+| [`skill-continuous-learning/`](skill-continuous-learning/README.md) | Bundled skill for extracting reusable patterns from sessions | registers on `ctx.skills` |
+| [`skill-eval-harness/`](skill-eval-harness/README.md) | Bundled eval-driven-development skill for defining and running evaluations | registers on `ctx.skills` |
+| [`skill-frontend-patterns/`](skill-frontend-patterns/README.md) | Bundled frontend and GUI authoring patterns for React and Next.js | registers on `ctx.skills` |
 | [`skill-office/`](skill-office/README.md) | Bundles Word, PowerPoint, and Excel workflows with structural file checks | registers on `ctx.skills` |
 | [`tool-skill/`](tool-skill/README.md) | Publishes the session skill catalog and the model-facing `skill` loader tool | registers on `ctx.tools` |
 | [`tool-workspace-dependencies/`](tool-workspace-dependencies/README.md) | Reports bundled Office interpreter paths and versions for Desktop and SDK carriers | registers on `ctx.tools` |

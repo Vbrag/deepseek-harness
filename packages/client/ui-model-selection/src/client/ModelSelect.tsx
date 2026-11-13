@@ -30,13 +30,13 @@
 import { MenuGroup, MenuSurface, observeStickyMenuGroups } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
-  type CSSProperties, type KeyboardEvent, type FocusEvent,
+  type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
+  HoverCard, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
   IconDataOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -56,6 +56,12 @@ interface EffortChoice {
 
 /** Unplaced portal card: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real (Menu primitive's measure pass). */
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
+
+/** Compact per-minute count for the trigger chip (e.g. "60" or "120K"). */
+const COMPACT_COUNT = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+
+/** Full grouping-preserving per-minute count for the detail card. */
+const GROUPED_COUNT = new Intl.NumberFormat('en-US')
 
 /**
  * Render the composer model seat.
@@ -127,6 +133,7 @@ export function ModelSelect(
     ? -1
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
   const currentChoice = choices[selectedIndex]
+  const rateLimit = currentChoice?.model.rateLimit
   const reasoning = currentChoice?.model.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
   const effortLabel = currentChoice === undefined
@@ -247,7 +254,40 @@ export function ModelSelect(
     }
   }, [available, open, pane, state, query])
 
-  if (!available) return null
+  // Addressed subagent sessions cannot select a model (their Agent-bound RPCs
+  // are gated off), but the session's durable model selection is surfaced by
+  // the directory as read-only `current`; render a non-interactive badge naming
+  // the model the subagent runs on instead of the selector.
+  if (!available) {
+    const readOnlyAria = state.current === null
+      ? t('trigger.subagentUnset')
+      : state.retainedEffort === undefined
+        ? t('trigger.readOnlyAria', { model: state.current.model })
+        : t('trigger.readOnlyAriaEffort', { model: state.current.model, effort: state.retainedEffort })
+    const readOnlyTitle = state.current === null
+      ? t('trigger.subagentUnset')
+      : state.retainedEffort === undefined
+        ? state.current.model
+        : `${state.current.model} · ${state.retainedEffort}`
+    return (
+      <div className={css.root}>
+        <span
+          role="text"
+          className={css.readOnly}
+          aria-label={readOnlyAria}
+          title={readOnlyTitle}
+        >
+          <IconDataOutlineRegular className={css.readOnlyIcon} size={16} />
+          <span className={css.triggerLabel}>
+            {state.current === null ? t('trigger.subagentUnset') : state.current.model}
+          </span>
+          {state.current !== null && state.retainedEffort !== undefined && (
+            <span className={css.triggerEffort}>{state.retainedEffort}</span>
+          )}
+        </span>
+      </div>
+    )
+  }
 
   const show = (): void => {
     setSelectionFocus(false)
@@ -452,6 +492,23 @@ export function ModelSelect(
       })}
     </span>
   )
+  const renderRateLimitCard = (): ReactNode => (
+    <div className={css.rateLimitCard}>
+      <span className={css.rateLimitTitle}>{t('rateLimit.title')}</span>
+      {rateLimit?.rpm !== undefined && (
+        <span className={css.rateLimitRow}>
+          <span className={css.rateLimitRowLabel}>{t('rateLimit.rpm')}</span>
+          <span className={css.rateLimitRowValue}>{GROUPED_COUNT.format(rateLimit.rpm)}</span>
+        </span>
+      )}
+      {rateLimit?.tpm !== undefined && (
+        <span className={css.rateLimitRow}>
+          <span className={css.rateLimitRowLabel}>{t('rateLimit.tpm')}</span>
+          <span className={css.rateLimitRowValue}>{GROUPED_COUNT.format(rateLimit.tpm)}</span>
+        </span>
+      )}
+    </div>
+  )
   let itemIndex = 0
   let modelIndex = 0
   const itemRef = () => {
@@ -496,6 +553,26 @@ export function ModelSelect(
           {currentChoice === undefined ? modelLabel : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true)}
         </span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        {rateLimit !== undefined && (rateLimit.rpm !== undefined || rateLimit.tpm !== undefined) && (
+          <HoverCard
+            variant="compact"
+            anchor={
+              <span className={css.rateLimit} aria-label={t('rateLimit.aria')}>
+                {rateLimit.rpm !== undefined && (
+                  <span className={css.rateLimitItem}>
+                    {t('rateLimit.rpmShort')} {COMPACT_COUNT.format(rateLimit.rpm)}
+                  </span>
+                )}
+                {rateLimit.tpm !== undefined && (
+                  <span className={css.rateLimitItem}>
+                    {t('rateLimit.tpmShort')} {COMPACT_COUNT.format(rateLimit.tpm)}
+                  </span>
+                )}
+              </span>
+            }
+            content={renderRateLimitCard()}
+          />
+        )}
         {busy
           ? <StateDot state="ongoing" />
           : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}

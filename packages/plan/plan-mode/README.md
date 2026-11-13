@@ -60,7 +60,7 @@ You can attach images and generic files to a `/plan` message, and they are inclu
 
 When the agent has a finished plan, it calls `exit_plan_mode` with the plan written as markdown and starting with a heading. You review that exact plan and choose `Approve` to leave plan mode, or `Keep planning` to send the agent back with feedback.
 
-Choosing `Keep planning` (optionally with free-text feedback) sends the agent back to revise the plan; closing the review to type a message instead ends the agent's turn, and your next message starts the next request. If no interactive review is available, `exit_plan_mode` cannot run and you can still leave plan mode with `/plan off`.
+Choosing `Approve` leaves plan mode and the agent carries the approved plan out on the next step: it reads and, if needed, updates its active goal (so a "planning only" goal no longer blocks implementation), reflects the plan into the `todo_write` list, and begins executing it. Choosing `Keep planning` (optionally with free-text feedback) sends the agent back to revise the plan; closing the review to type a message instead ends the agent's turn, and your next message starts the next request. If no interactive review is available, `exit_plan_mode` cannot run and you can still leave plan mode with `/plan off`.
 
 ### Observing plan state
 
@@ -90,7 +90,7 @@ The command child activates only when a commands service is composed. It maps ba
 
 ### The exit tool
 
-`exit_plan_mode` is disclosed progressively: it is admitted from the first step whose selected plan state is active and stays admitted for the rest of the Session, so entering plan mode the first time adds it together with the guidance, and later transitions change only the guidance; Native and PTC execution use the same admitted set. A call while plan mode is not committed fails. An approved review records a silent pending exit that the next accepted in-turn pre-step appends, keeping plan guidance for the rest of the current tool batch. Without a user-questions channel, or after a service reload while the review is pending, the call fails closed and `/plan off` remains the manual escape.
+`exit_plan_mode` is disclosed progressively: it is admitted from the first step whose selected plan state is active and stays admitted for the rest of the Session, so entering plan mode the first time adds it together with the guidance, and later transitions change only the guidance; Native and PTC execution use the same admitted set. A call while plan mode is not committed fails. An approved review records a silent pending exit that the next accepted in-turn pre-step appends, keeping plan guidance for the rest of the current tool batch and adding a model-visible carry-out directive to the next step: it tells the agent to reconcile a "planning only" goal, write the approved plan into the `todo_write` list, and start executing. Without a user-questions channel, or after a service reload while the review is pending, the call fails closed and `/plan off` remains the manual escape.
 
 ### Session projection unit
 
@@ -166,11 +166,11 @@ The user block is append-only conversation growth. Entering or leaving plan mode
 
 #### What the model sees
 
-The [`exit_plan_mode` schema](../../../docs/tool-catalog.md#deepseek-aidsh-plan-mode) is offered from the first plan-mode entry in a Session; earlier calls return `UNKNOWN_TOOL`, calls after leaving plan mode fail as unavailable outside plan mode, and an approved in-mode review returns the canonical `{ approved: true }` value and renders the existing confirmation text. Rejection remains a failed call carrying review feedback. A dismissed review returns `{ approved: false }`, renders a note that the user will reply, and concludes the turn without another model request.
+The [`exit_plan_mode` schema](../../../docs/tool-catalog.md#deepseek-aidsh-plan-mode) is offered from the first plan-mode entry in a Session; earlier calls return `UNKNOWN_TOOL`, calls after leaving plan mode fail as unavailable outside plan mode, and an approved in-mode review returns the canonical `{ approved: true }` value and renders the existing confirmation text. The next step then also carries a plan-mode notice that directs the agent to carry the approved plan out: reconcile a goal that still restricts the task to planning only, write the approved plan into the `todo_write` list, and begin executing it. Rejection remains a failed call carrying review feedback. A dismissed review returns `{ approved: false }`, renders a note that the user will reply, and concludes the turn without another model request.
 
 #### Token effect
 
-The schema is paid from the first entry on, according to ToolRuntime mode, and each plan argument and review result remains in conversation history.
+The schema is paid from the first entry on, according to ToolRuntime mode, and each plan argument and review result remains in conversation history. An approved review appends the fixed one-message carry-out notice (~110 tokens of prompt) once, to the first step after the exit.
 
 #### KV Cache effect
 
@@ -184,6 +184,7 @@ The first entry into plan mode adds the exit tool through the route’s tool-upd
 These limits describe when plan mode does not behave as you might expect or needs extra care. They are current package constraints, not a roadmap.
 
 - **Guidance, not enforcement** — plan mode restrains through text only; deployments that need enforced restrictions configure sandbox mode and approval policy independently.
+- **Carry-out is a directive, not a guarantee** — an approved review directs the next step to update a planning-only goal, write the `todo_write` list, and execute, but the model must actually continue to that next step; a deployment that needs a hard guarantee that a turn cannot close with the plan unexecuted configures approval policy to keep the loop open.
 - **Pending selections are process-local** — a selection made after the turn's final accepted pre-step is lost if the process exits before another accepted in-turn pre-step; the UI must reapply it.
 - **No creation-time plan option** — forked agents inherit logged plan state, while newly spawned agents begin inactive.
 - **Live children cannot open the review** — a child owned by another live agent fails the `exit_plan_mode` call and is told to include the unresolved decision in its final result; durable fork lineage alone does not prevent a session resumed as a runtime root from opening the review.

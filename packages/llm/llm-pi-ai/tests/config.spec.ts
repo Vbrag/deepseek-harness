@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertServiceable, Config, resolveProfiles, type Options } from '../src/config.ts'
+import { assertServiceable, Config, resolveProfiles, type Options, type PiAiProviderProfile } from '../src/config.ts'
 
 /** Validate one hand-declared route, with the caller's fields layered onto it. */
 const routeWith = (profile: Record<string, unknown>): (() => unknown) =>
@@ -105,5 +105,60 @@ describe('request image policy bounds', () => {
     expect(() => {
       assertServiceable(programmatic)
     }).toThrow(message)
+  })
+})
+
+describe('per-model pacing limits and billing', () => {
+  it('carries rpm/tpm/free/pricing into the resolved profile', () => {
+    const resolved = resolveProfiles({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [{
+          id: 'm',
+          rpm: 10,
+          tpm: 500_000,
+          free: true,
+          pricing: { input: 1.25, output: 5 },
+        }],
+      },
+    }, 'deferred')
+    const profile = resolved.get('acme-gateway')
+    expect(profile?.modelRateLimits.get('m')).toEqual({ rpm: 10, tpm: 500_000 })
+    expect(profile?.modelBilling.get('m')).toEqual({ free: true, pricing: { input: 1.25, output: 5 } })
+  })
+
+  it('records only the limit fields a model declares', () => {
+    const resolved = resolveProfiles({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [{ id: 'a', rpm: 5 }, { id: 'b', tpm: 1000 }, { id: 'c' }],
+      },
+    }, 'deferred')
+    const profile = resolved.get('acme-gateway')
+    expect(profile?.modelRateLimits.get('a')).toEqual({ rpm: 5 })
+    expect(profile?.modelRateLimits.get('b')).toEqual({ tpm: 1000 })
+    expect(profile?.modelRateLimits.get('c')).toBeUndefined()
+  })
+
+  it('accepts the new fields at the schema boundary', () => {
+    expect(configWith({
+      rpm: 10,
+      tpm: 500_000,
+      free: false,
+      pricing: { input: 0.1, output: 0.5 },
+    })).not.toThrow()
+  })
+
+  it('rejects a non-positive rpm/tpm at service resolution', () => {
+    const provider = (rpm: number): PiAiProviderProfile => ({
+      api: 'openai-completions',
+      baseURL: 'https://acme.test',
+      models: [{ id: 'm', rpm }],
+    })
+    const programmatic = { providers: { 'acme-gateway': provider(0) } } as Options
+    expect(() => assertServiceable(programmatic)).toThrow(/positive integer/)
+    expect(() => resolveProfiles({ 'acme-gateway': provider(0) })).toThrow(/positive integer/)
   })
 })

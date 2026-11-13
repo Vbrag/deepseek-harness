@@ -47,11 +47,12 @@ function registerUi(ctx: Context, initial: readonly PoolRoute[]): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'client-ui-orchestration: dictionaries')
   let pool = initial
   const setPool = async (next: readonly PoolRoute[]): Promise<boolean> => {
-    const result = await ctx.remote.orchestrations.setPool(next)
+    const result = await ctx.remote.orchestrations.persistPool(next)
     if (!result.ok) {
-      ctx.logger.warn(`orchestration: setPool refused: ${messageOf(result.error)}`)
+      ctx.logger.warn(`orchestration: persistPool refused: ${messageOf(result.error)}`)
       return false
     }
+    if (result.value !== true) return false
     pool = next
     return true
   }

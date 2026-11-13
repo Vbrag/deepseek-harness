@@ -567,6 +567,44 @@ describe('ui-model-selection dual entry', () => {
     await Promise.resolve()
     expect(b.calls).toEqual({ models: 2, select: 0 })
   })
+
+  it('surfaces an addressed subagent session\'s recorded model as read-only without RPCs', async () => {
+    const b = await bench()
+    b.mint('child')
+    b.address(sid('child'))
+    b.setProjected(sid('child'), {
+      lastUsed: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: ReasoningEffortId('high') },
+      next: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: ReasoningEffortId('high') },
+    })
+
+    const face = b.seat().inject!(sid('child'))
+    const directory = b.ctx.modelDirectories.directoryFor(sid('child'))
+    await vi.waitFor(() => { expect(directory.store.getSnapshot().status).toBe('ready') })
+    expect(face.available).toBe(false)
+    expect(directory.store.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      groups: [],
+      failures: [],
+    })
+    // Only the resolver's constructor seed catalog load runs; the subagent
+    // surfaced its model from the projection without any per-session load or
+    // selection RPC.
+    expect(b.calls).toEqual({ models: 1, select: 0 })
+  })
+
+  it('leaves an addressed subagent session unset before any request records a model', async () => {
+    const b = await bench()
+    b.mint('child')
+    b.address(sid('child'))
+
+    const directory = b.ctx.modelDirectories.directoryFor(sid('child'))
+    await vi.waitFor(() => { expect(directory.store.getSnapshot().status).toBe('ready') })
+    expect(directory.store.getSnapshot().current).toBeNull()
+    expect(directory.store.getSnapshot().groups).toEqual([])
+    // The resolver's constructor catalog seed is the only load; no per-session
+    // load or selection runs for an addressed subagent.
+    expect(b.calls).toEqual({ models: 1, select: 0 })
+  })
 })
 
 

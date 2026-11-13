@@ -478,7 +478,7 @@ describe('provider profile lifecycle', () => {
     })
     expect(ctx.llm.providerRetryPolicy('anthropic')).toMatchObject({
       mode: 'normal',
-      maxRetries: 5,
+      maxRetries: 500,
     })
     await fiber.dispose()
     expect(ctx.llm.listProviders()).toEqual([])
@@ -601,6 +601,29 @@ describe('provider profile lifecycle', () => {
         defaultEffort: ReasoningEffortId('high'),
       },
     })
+  })
+
+  it('publishes declared rpm/tpm as exact-route rate limits and omits them for unbounded models', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions',
+          baseURL: 'https://acme.test/v1',
+          models: [
+            { id: 'limited', rpm: 60, tpm: 120_000 },
+            { id: 'unbounded' },
+          ],
+        },
+      },
+    })
+
+    await expect(ctx.llm.resolveModelInfo('acme-gateway', 'limited')).resolves.toMatchObject({
+      rateLimit: { rpm: 60, tpm: 120_000 },
+    })
+    await expect(ctx.llm.resolveModelInfo('acme-gateway', 'unbounded')).resolves.not.toHaveProperty('rateLimit')
   })
 
   it('sends the declared wire spelling and refuses undeclared levels before network I/O', async () => {

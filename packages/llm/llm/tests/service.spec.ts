@@ -24,6 +24,7 @@ import type {
   LlmModelInfo,
   LlmModelReasoningInfo,
   LlmProviderInfo,
+  LlmRateLimit,
   LlmResolvedModelInfo,
   SystemPromptUpdate,
 } from '@deepseek-ai/dsh-llm'
@@ -72,6 +73,7 @@ class CatalogAdapter extends ScriptedAdapter {
     private readonly reasoning: Readonly<Record<string, LlmModelReasoningInfo>> = {},
     private readonly defaultMaxTokens: Readonly<Record<string, number>> = {},
     private readonly systemPromptUpdate: Readonly<Record<string, string>> = {},
+    private readonly rateLimits: Readonly<Record<string, LlmRateLimit>> = {},
   ) {
     super(SCRIPT)
   }
@@ -98,6 +100,7 @@ class CatalogAdapter extends ScriptedAdapter {
       ...this.systemPromptUpdate[model] === undefined
         ? {}
         : { systemPromptUpdate: this.systemPromptUpdate[model] as SystemPromptUpdate },
+      ...this.rateLimits[model] === undefined ? {} : { rateLimit: this.rateLimits[model] },
     })
   }
 }
@@ -365,7 +368,7 @@ describe('LlmRuntime', () => {
     expect(ctx.llm.providerRetryPolicy('configured')).toBe(configured)
     expect(ctx.llm.providerRetryPolicy('defaulted')).toMatchObject({
       mode: 'normal',
-      maxRetries: 5,
+      maxRetries: 500,
     })
     expect(() => ctx.llm.providerRetryPolicy('missing')).toThrow(
       expect.objectContaining({ code: 'NO_ADAPTER' }),
@@ -853,6 +856,48 @@ describe('LlmRuntime', () => {
     await expect(ctx.llm.resolveCallConfig(explicit)).resolves.toBe(explicit)
     const preparedExplicit = await ctx.llm.prepareCall(explicit)
     expect(preparedExplicit.adapterDefaults).toEqual({})
+  })
+
+  it.each([
+    [{ provider: 'route', id: 'model', name: 'Model', rateLimit: { rpm: -1 } }, 'non-positive rpm'],
+    [{ provider: 'route', id: 'model', name: 'Model', rateLimit: { tpm: 0 } }, 'zero tpm'],
+    [{ provider: 'route', id: 'model', name: 'Model', rateLimit: { tpm: 1.5 } }, 'fractional tpm'],
+    [{ provider: 'route', id: 'model', name: 'Model', rateLimit: { rpm: Number.MAX_SAFE_INTEGER + 1 } }, 'non-safe rpm'],
+  ] as const)('rejects invalid adapter-owned rate limits (%s: %s)', async (metadata, _label) => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const adapter = new class extends ScriptedAdapter {
+      override resolveModel(): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve(metadata as unknown as LlmResolvedModelInfo)
+      }
+    }(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+
+    await expect(ctx.llm.resolveModelInfo('route', 'model'))
+      .rejects.toMatchObject({ code: 'INVALID_MODEL_INFO' })
+  })
+
+  it('preserves and detaches adapter-owned rate limits through exact model resolution', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const source = { rpm: 60, tpm: 120_000 }
+    ctx.llm.registerAdapter(['route'], new CatalogAdapter(
+      { id: 'route', name: 'Route' },
+      [],
+      {},
+      {},
+      {},
+      {},
+      { model: source },
+    ))
+
+    const resolved = await ctx.llm.resolveModelInfo('route', 'model')
+    expect(resolved.rateLimit).toEqual({ rpm: 60, tpm: 120_000 })
+    source.rpm = 1
+    expect(resolved.rateLimit).toEqual({ rpm: 60, tpm: 120_000 })
+    await expect(ctx.llm.resolveModelInfo('route', 'other')).resolves.toEqual({
+      provider: 'route', id: 'other', name: 'other',
+    })
   })
 
   it.each([0, 1.5, Number.MAX_SAFE_INTEGER + 1])(

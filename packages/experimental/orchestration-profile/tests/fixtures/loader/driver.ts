@@ -4,7 +4,8 @@
  * orchestration service + orchestration model tool with a mock pool), creates a
  * live parent Agent, proves the service and tool are composed, runs one
  * orchestration whose first worker model settles with a server error, asserts
- * the capability-similar failover completes the coding step, prints a compact
+ * the capability-similar failover completes the coding step, verifies the GUI
+ * pool-persist path (`persistPool`) lands a replacement pool, prints a compact
  * JSON report to stdout, then disposes the fiber.
  */
 
@@ -22,6 +23,8 @@ import { bootProductionProfile } from '../../../../../test-support/loader-smoke/
 
 const FAILING_MODEL = 'gwdg.glm-5.3-flash'
 const BACKUP_MODEL = 'gwdg.qwen3-coder-next'
+
+const PERSIST_MODEL = 'gwdg.gemma-4-31b-it'
 
 const POOL: readonly PoolRoute[] = [
   { provider: 'orchestration-mock', model: FAILING_MODEL },
@@ -43,10 +46,17 @@ export interface DriverReport {
   failovers: number
   failedSteps: number
   stepStatuses: { id: string; failed: boolean; failedOver: boolean; routes: string[] }[]
+  persistAccepted: boolean
+  persistedPool: PoolRoute[]
 }
 
 try {
   const orchestrationsLoaded = ctx.get('orchestrations') !== undefined
+
+  // The GUI save path: persistPool must land a replacement pool (applied in
+  // memory even when the profile write is refused by a layered entry).
+  const persistAccepted = await ctx.orchestrations.persistPool([{ provider: 'orchestration-mock', model: PERSIST_MODEL }])
+  const persistedPool = (await ctx.orchestrations.getPool()).map(route => ({ provider: route.provider, model: route.model }))
 
   const parent = await createParentAgent()
   // The orchestration model tool mounts in each agent scope (tool-orchestration
@@ -73,6 +83,8 @@ try {
       failedOver: outcome.failedOver,
       routes: outcome.attempts.map(attempt => attempt.model),
     })),
+    persistAccepted,
+    persistedPool,
   }
 
   // Assert in-process so a regression fails the subprocess loudly with the report.
@@ -92,6 +104,10 @@ try {
   const routes = step.attempts.map(attempt => attempt.model)
   if (routes[0] !== FAILING_MODEL || routes[1] !== BACKUP_MODEL) {
     throw new Error(`expected failover from ${FAILING_MODEL} to ${BACKUP_MODEL}, saw ${routes.join(' -> ')}`)
+  }
+  if (!persistAccepted) throw new Error('persistPool refused the pool selection')
+  if (persistedPool.length !== 1 || persistedPool[0]?.model !== PERSIST_MODEL) {
+    throw new Error(`persistPool did not apply the replacement pool; saw ${JSON.stringify(persistedPool)}`)
   }
 
   process.stdout.write(`${JSON.stringify(report)}\n`)

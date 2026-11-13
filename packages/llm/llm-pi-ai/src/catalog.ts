@@ -616,6 +616,39 @@ export interface PiAiModelProfile {
    */
   maxTokens?: number
   /**
+   * Maximum requests per rolling minute the gateway allows for this model.
+   * Declaring one activates proactive pacing on this model: the adapter queues
+   * a call until the process-wide RPM budget has a slot, so concurrent chats
+   * sharing the route never exceed the gateway's per-model request cap.
+   */
+  rpm?: number
+  /**
+   * Maximum tokens per rolling minute the gateway allows for this model.
+   * Declaring one activates proactive token pacing on this model: the adapter
+   * reserves an estimate of each request's input tokens before dispatch and
+   * reconciles the real input+output usage when the response reports it, so
+   * concurrent chats sharing the route stay within the gateway's per-model
+   * token throughput cap.
+   */
+  tpm?: number
+  /**
+   * Whether the model is served at no per-token cost. Purely descriptive for
+   * configuration surfaces and budgets; it does not change request dispatch.
+   * Omission keeps whatever the catalog or a derived `pricing` implies.
+   */
+  free?: boolean
+  /**
+   * Token price metadata per 1M tokens, in the provider's currency. Shows on
+   * configuration surfaces as input/output rates; `free: true` takes precedence
+   * for labeling. Purely descriptive — the harness never reports spend.
+   */
+  pricing?: {
+    /** Price per 1M input tokens. */
+    input?: number
+    /** Price per 1M output tokens. */
+    output?: number
+  }
+  /**
    * Request modalities this model accepts. Absent — or empty, which describes
    * a model that accepts nothing and so states no answer either — keeps the
    * installed catalog entry's modalities, then the route's `defaultInput`.
@@ -844,6 +877,30 @@ export interface RouteCatalog {
    * picked, so only an explicit configuration lands here.
    */
   configuredMaxTokens: ReadonlyMap<string, number>
+  /**
+   * Per-model request/token pacing limits this profile configured, by model id.
+   * Only an explicit `rpm`/`tpm` lands here: a catalog never supplies these
+   * because a gateway's limits are deployment facts, not model capabilities.
+   */
+  modelRateLimits: ReadonlyMap<string, ModelRateLimit>
+  /** Per-model billing metadata this profile configured, by model id. */
+  modelBilling: ReadonlyMap<string, ModelBilling>
+}
+
+/** The proactive pacing limits one model declares. */
+export interface ModelRateLimit {
+  /** Maximum requests per rolling minute. */
+  rpm?: number
+  /** Maximum tokens per rolling minute. */
+  tpm?: number
+}
+
+/** Billing metadata one model declares. */
+export interface ModelBilling {
+  /** Whether the model is served at no per-token cost. */
+  free?: boolean
+  /** Token price metadata per 1M tokens. */
+  pricing?: { input?: number; output?: number }
 }
 
 /**
@@ -909,6 +966,16 @@ export function resolveRouteModels(
   assertOfferedCompatFields(provider, 'route', request.compat)
   const seen = new Set<string>()
   const configuredMaxTokens = new Map<string, number>()
+  const modelRateLimits = new Map<string, ModelRateLimit>()
+  const modelBilling = new Map<string, ModelBilling>()
+  // A bounded per-minute rate or token limit is a positive integer when set.
+  const resolveLimit = (entry: PiAiModelProfile, value: number | undefined): number | undefined => {
+    if (value === undefined) return undefined
+    if (!Number.isInteger(value) || value <= 0) {
+      invalid(provider, `model "${entry.id}" rpm/tpm must be a positive integer`)
+    }
+    return value
+  }
   const resolveEntry = (entry: PiAiModelProfile): Model<Api> => {
     assertOfferedCompatFields(provider, `model "${entry.id}"`, entry.compat)
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
@@ -939,6 +1006,19 @@ export function resolveRouteModels(
     // Only a value the profile named is a deployment choice; the catalog's is
     // the model's capability and stays out of request defaults.
     if (entry.maxTokens !== undefined) configuredMaxTokens.set(entry.id, entry.maxTokens)
+    // Pacing limits and billing are deployment facts, kept beside the model so
+    // the adapter and configuration surfaces read them off the same catalog.
+    const rpm = resolveLimit(entry, entry.rpm)
+    const tpm = resolveLimit(entry, entry.tpm)
+    if (rpm !== undefined || tpm !== undefined) {
+      modelRateLimits.set(entry.id, { ...rpm === undefined ? {} : { rpm }, ...tpm === undefined ? {} : { tpm } })
+    }
+    if (entry.free !== undefined || entry.pricing !== undefined) {
+      modelBilling.set(entry.id, {
+        ...entry.free === undefined ? {} : { free: entry.free },
+        ...entry.pricing === undefined ? {} : { pricing: entry.pricing },
+      })
+    }
     return {
       // The installed entry lays the floor, and the fields below override it.
       // Enumerating instead would silently drop every `Model` field this
@@ -983,5 +1063,5 @@ export function resolveRouteModels(
     invalid(provider, `sets compat "${field}", but no model on the route speaks a protocol that takes it;`
       + ` it exists on ${takers.join(', ')}`)
   }
-  return { models: serviceableModels, configuredMaxTokens, modelErrors }
+  return { models: serviceableModels, configuredMaxTokens, modelErrors, modelRateLimits, modelBilling }
 }
