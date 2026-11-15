@@ -29,13 +29,13 @@ Mount both the Orchestration service and this tool plugin:
 - name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
-      - provider: deepseek-official
-        model: deepseek-v4-flash
-      - provider: deepseek-official
-        model: deepseek-v4
+      - provider: uni-paderborn
+        model: gwdg.deepseek-v4-flash-0731
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3-flash
 ```
 
-The `pool` is the selected multi-model set, in priority order; the orchestrator plans on the first route and fails over each failed sub-task to the next route. An empty pool fails the tool call loudly rather than silently running nothing.
+The `pool` is the selected multi-model set, in priority order; the coordinator plans on the parent's selected model and each worker sub-task runs on a pool route, failing over a failed sub-task to the next eligible route. An empty pool fails the tool call loudly rather than silently running nothing.
 
 ### The tool
 
@@ -72,7 +72,7 @@ No direct effect. Each sub-task runs as an independent spawn worker with no shar
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Config-static pool for now** — the pool is a tool config value; a per-session GUI multi-model pool selector is deferred.
+- **Config-seeded pool replaced by the GUI picker** — the tool's `pool` config only seeds the service pool when it is empty; an installed GUI panel (`dsh-client-ui-orchestration`) replaces it per deployment with a persisted selection.
 - **No durability** — a run is not resumed across restart; each invocation re-plans from scratch.
 - **Flat dependency-free split** — the coordinator emits an independent step set with no ordering or merge phase.
 - **Experiment prototype with no stability promise** — the package is public, but its contracts can change freely while it incubates.
@@ -87,6 +87,6 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 
 #### Promotion
 
-Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A per-session GUI pool selector is a natural next step.
+Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A durable plan/task board is the natural next step.
 
 </details>

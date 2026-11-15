@@ -107,6 +107,43 @@ describe('selectRoute routing options', () => {
   })
 })
 
+describe('selectRoute load-balanced distribution', () => {
+  const routes = capabilityRoutes([...POOL])
+
+  it('spreads same-domain steps across the top capability matches', () => {
+    // Both glm (coding) and qwen (coding) score 2 for a coding step; the shared
+    // per-run assignment counter pushes the second step onto the other model.
+    const assigned: Record<string, number> = {}
+    const first = selectRoute(routes, { requiredDomains: ['coding'] }, [], { assigned })
+    expect(first).toBeDefined()
+    if (first !== undefined) assigned[first.model] = 1
+    const second = selectRoute(routes, { requiredDomains: ['coding'] }, [], { assigned })
+    expect(second?.model).not.toBe(first?.model)
+  })
+
+  it('round-robins no-domain steps across the usable pool', () => {
+    // With no domain requirement every usable route is acceptable, so repeated
+    // first selections rotate through the pool instead of piling on the broadest.
+    const assigned: Record<string, number> = {}
+    const seen = new Set<string>()
+    for (let i = 0; i < routes.length; i += 1) {
+      const selected = selectRoute(routes, { requiredDomains: [] }, [], { assigned })
+      expect(selected).toBeDefined()
+      if (selected === undefined) break
+      seen.add(selected.model)
+      assigned[selected.model] = (assigned[selected.model] ?? 0) + 1
+    }
+    // Every pool model is used once before any is used twice.
+    expect(seen.size).toBe(routes.length)
+  })
+
+  it('keeps capability-best selection without an assignment signal', () => {
+    // A single step with no shared assignment counter still routes to the
+    // capability-best model for its domain.
+    expect(selectRoute(routes, { requiredDomains: ['coding'] }, [])?.model).toBe('gwdg.glm-5.3-flash')
+  })
+})
+
 describe('selectFailover', () => {
   const routes = capabilityRoutes([...POOL])
 

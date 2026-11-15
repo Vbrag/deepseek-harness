@@ -3,14 +3,14 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
-import { PADERBORN_CATALOG } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
+import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { OrchestrationPanel, type OrchestrationPanelProps } from '../src/client/OrchestrationPanel.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
-const ROUTE: PoolRoute = { provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' }
+const ROUTE: PoolRoute = { provider: POOL_PROVIDER, model: 'gwdg.deepseek-v4-flash-0731' }
 
 function fixture(pool: readonly PoolRoute[] = [], setPool = vi.fn<(pool: readonly PoolRoute[]) => Promise<boolean>>(async () => true)) {
   const props = { t: makeTranslate(zh), pool, setPool } as OrchestrationPanelProps
@@ -40,7 +40,7 @@ it('persists a toggled-on model on Save, computing the pool from the selection',
   fireEvent.click(screen.getByRole('button', { name: zh.save }))
   expect(setPool).toHaveBeenCalledWith([
     ROUTE,
-    { provider: 'paderborn', model: 'gwdg.gemma-4-31b-it' },
+    { provider: POOL_PROVIDER, model: 'gwdg.gemma-4-31b-it' },
   ])
   await act(async () => { await Promise.resolve() })
   expect(screen.getByRole('status').textContent).toContain(zh.savedOk)
@@ -74,6 +74,6 @@ it('selects and clears the whole catalog through the toolbar buttons', async () 
     expect(checkbox.checked).toBe(true)
   }
   fireEvent.click(screen.getByRole('button', { name: zh.save }))
-  expect(setPool).toHaveBeenCalledWith(PADERBORN_CATALOG.map(capability => ({ provider: 'paderborn', model: capability.id })))
+  expect(setPool).toHaveBeenCalledWith(PADERBORN_CATALOG.map(capability => ({ provider: POOL_PROVIDER, model: capability.id })))
   await act(async () => { await Promise.resolve() })
 })

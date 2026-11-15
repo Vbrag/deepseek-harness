@@ -9,6 +9,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import { POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { expect, it, vi, type Mock } from 'vitest'
@@ -25,7 +26,7 @@ vi.mock('@deepseek-ai/dsh-orchestration/remote', () => ({
   default: { package: '@deepseek-ai/dsh-orchestration', descriptors: [] },
 }))
 
-const INITIAL: readonly PoolRoute[] = [{ provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' }]
+const INITIAL: readonly PoolRoute[] = [{ provider: POOL_PROVIDER, model: 'gwdg.deepseek-v4-flash-0731' }]
 
 /** Narrow the erased registry payload before exercising the section's injected face. */
 function assertInjected(value: Record<string, unknown>): asserts value is Record<string, unknown> & OrchestrationInjected {
@@ -183,7 +184,7 @@ it('treats a Host-refused pool write (value false) as a failure without refreshi
 
 it('keeps the face pool current after a successful persistPool', async () => {
   const f = await mount()
-  const next: readonly PoolRoute[] = [{ provider: 'paderborn', model: 'gwdg.gemma-4-31b-it' }]
+  const next: readonly PoolRoute[] = [{ provider: POOL_PROVIDER, model: 'gwdg.gemma-4-31b-it' }]
   await f.injected().setPool(next)
   expect(f.injected().pool).toEqual(next)
   await f.dispose()

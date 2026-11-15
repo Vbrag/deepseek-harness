@@ -22,20 +22,24 @@ English | [中文](README.zh.md)
 <a id="use-this-profile"></a>
 ## Use this profile
 
-Install this bundle and apply its patch over `dsh-base` to add Orchestration Mode to the host. The patch inserts the service and tool; the pool is chosen in the `tool-orchestration` config:
+Install this bundle and apply its patch over `dsh-base` to add Orchestration Mode to the host. The patch inserts the service and tool and seeds a provider-aligned default pool; the pool is replaced with the GUI panel or a `tool-orchestration` config:
 
 ```yaml
 - id: tool-orchestration
   name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
-      - provider: deepseek-official
-        model: deepseek-v4-flash
-      - provider: deepseek-official
-        model: deepseek-v4
+      - provider: uni-paderborn
+        model: gwdg.deepseek-v4-flash-0731
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3-flash
 ```
 
 Because Experimental isolation forbids shipping experimental packages in default bundles, this profile is opt-in by construction. It does not disable normal subagent delegation; orchestration is an additional capability the model can choose with `run_orchestration`.
+
+### Enable Orchestration mode for a session
+
+`run_orchestration` only delegates while the session is in Orchestration mode; a Default session refuses the tool so the normal single-model loop is never silently replaced. Turn the mode on per session from the conversation composer's Default/Orchestration menu, or with `/orchestration on`, and leave it with `/orchestration off`. The selection is logged and restored across restarts.
 
 ### What success and failure look like
 
@@ -64,9 +68,10 @@ No direct effect. The composed service and tool own any model-visible context; t
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Configuration-static pool** — the pool is set in the profile patch; a per-session GUI multi-model pool selector is deferred.
-- **No selectable roster entry yet** — this layer adds the capability; a first-class Mode picker entry (like Standard/PTC) is the next step, pending Loader verification in a run-capable environment.
+- **Pool is seeded provider-aligned, then GUI-editable** — the layer ships a default pool naming the base profile's mounted provider route; the GUI panel replaces it through `persistPool`, which applies it in memory and writes the profile best-effort. A refused profile write leaves the session pool live.
+- **Mode is selected per session, not a dedicated roster entry** — the session is switched with the composer's Default/Orchestration menu or `/orchestration on|off`, not a first-class picker row yet.
 - **No durability** — a run is not resumed across restart; each invocation re-plans.
+- **No keyless recorded-session snapshot yet** — the Loader boot test covers the composed model-visible surface deterministically, but a recorded `run_orchestration` session snapshot still requires a keyed maintainer run (`test:snapshot:record`).
 - **Experimental prototype with no stability promise** — the package is public, but its contracts and placement can change freely while it incubates.
 
 <a id="dev-note"></a>
@@ -79,6 +84,6 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 
 #### Promotion
 
-Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A first-class Mode picker entry and a per-session GUI pool selector are natural next steps.
+Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A first-class Mode picker row and a recorded-session snapshot are natural next steps.
 
 </details>

@@ -29,13 +29,13 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
-      - provider: deepseek-official
-        model: deepseek-v4-flash
-      - provider: deepseek-official
-        model: deepseek-v4
+      - provider: uni-paderborn
+        model: gwdg.deepseek-v4-flash-0731
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3-flash
 ```
 
-`pool` 即所选的多模型集合，按优先级排序；协调器使用第一条路线规划，每个失败的子任务转移到下一条路线。空模型池会让工具调用明确失败，而不会静默地什么都不执行。
+`pool` 即所选的多模型集合，按优先级排序；协调器使用父代理所选的模型规划，每个工作子任务在一条模型池路线上运行，失败的子任务转移到下一条符合资格的路线上。空模型池会让工具调用明确失败，而不会静默地什么都不执行。
 
 ### 工具
 
@@ -72,7 +72,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **模型池暂为静态配置** — 模型池是工具配置值；按会话的 GUI 多模型选择器已推迟。
+- **配置预置的模型池由 GUI 选择器替换** — 本工具的 `pool` 配置只在服务模型池为空时进行预置；安装的 GUI 面板（`dsh-client-ui-orchestration`）可按部署以持久化的选择替换它。
 - **无持久化** — 运行不会在重启后恢复；每次调用都会重新规划。
 - **扁平且无依赖的拆分** — 协调器输出的步骤集彼此独立，没有排序或合并阶段。
 - **实验原型，无稳定性承诺** — 本包公开，但在孵化期间其契约可能自由变更。
@@ -87,6 +87,6 @@ kind: "package-reference"
 
 #### Promotion
 
-Promotion 到产品角色组需要按[实验性子树规则](../AGENTS.md)审查公共契约、限制、测试证据、发布载荷、运行时依赖以及具名的稳定负责人。按会话 GUI 模型池选择器是自然的后续步骤。
+Promotion 到产品角色组需要按[实验性子树规则](../AGENTS.md)审查公共契约、限制、测试证据、发布载荷、运行时依赖以及具名的稳定负责人。持久化的计划/任务看板是自然的后续步骤。
 
 </details>

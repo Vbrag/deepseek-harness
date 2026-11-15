@@ -22,20 +22,24 @@ kind: "package-bundle"
 <a id="use-this-profile"></a>
 ## 使用本配置
 
-安装本包并将其补丁应用在 `dsh-base` 之上，即可为主机添加 Orchestration Mode。补丁会插入服务与工具；模型池在 `tool-orchestration` 配置中选择：
+安装本包并将其补丁应用在 `dsh-base` 之上，即可为主机添加 Orchestration Mode。补丁会插入服务与工具，并预置一个提供商对齐的默认模型池；模型池可通过 GUI 面板或 `tool-orchestration` 配置替换：
 
 ```yaml
 - id: tool-orchestration
   name: '@deepseek-ai/dsh-tool-orchestration'
   config:
     pool:
-      - provider: deepseek-official
-        model: deepseek-v4-flash
-      - provider: deepseek-official
-        model: deepseek-v4
+      - provider: uni-paderborn
+        model: gwdg.deepseek-v4-flash-0731
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3-flash
 ```
 
 由于实验隔离禁止在默认包中提供实验包，本配置文件天然为可选开启。它不会禁用正常子代理委托；编排是一种额外的能力，模型可以通过 `run_orchestration` 选择使用。
+
+### 为会话启用 Orchestration Mode
+
+`run_orchestration` 仅在会话处于 Orchestration Mode 时才委派；默认会话会拒绝该工具，因此正常的单模型循环永远不会被静默替换。可在会话作曲者的 Default/Orchestration 菜单中开启该模式，或执行 `/orchestration on`，并用 `/orchestration off` 退出。该选择会被记录并在重启后恢复。
 
 ### 成功与失败的表现
 
@@ -64,9 +68,10 @@ kind: "package-bundle"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **模型池为静态配置** — 模型池在配置补丁中设置；按会话的 GUI 多模型选择器已推迟。
-- **尚无选择器规范项** — 本层添加能力；像 Standard/PTC 那样的首选 Mode 选择项是下一步，需在可运行环境中经 Loader 验证。
+- **模型池已预置提供商对齐，随后可通过 GUI 编辑** — 本层附带一个默认模型池，命名基础 profile 所挂载的提供商路由；GUI 面板通过 `persistPool` 替换它，该操作在内存中应用并尽力写入 profile。被拒绝的 profile 写入会保留会话级模型池。
+- **模式按会话选择，尚无专门的选择器条目** — 会话通过作曲者的 Default/Orchestration 菜单或 `/orchestration on|off` 切换，尚未成为首选的规范行。
 - **无持久化** — 运行不会在重启后恢复；每次调用都会重新规划。
+- **尚无无密钥的录制会话快照** — Loader 启动测试确定性地覆盖了组合后的模型可见表面，但录制 `run_orchestration` 会话快照仍需带密钥的维护者执行（`test:snapshot:record`）。
 - **实验原型，无稳定性承诺** — 本包公开，但在孵化期间其契约与位置可能自由变更。
 
 <a id="dev-note"></a>
@@ -79,6 +84,6 @@ kind: "package-bundle"
 
 #### Promotion
 
-Promotion 到产品角色组需要按[实验性子树规则](../AGENTS.md)审查公共契约、限制、测试证据、发布载荷、运行时依赖以及具名的稳定负责人。首选 Mode 选择项与按会话 GUI 模型池选择器是自然的后续步骤。
+Promotion 到产品角色组需要按[实验性子树规则](../AGENTS.md)审查公共契约、限制、测试证据、发布载荷、运行时依赖以及具名的稳定负责人。首选的 Mode 选择器行与录制会话快照是自然的后续步骤。
 
 </details>

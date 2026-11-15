@@ -30,8 +30,8 @@
   en: 07ea8a1d991b34f9
   zh: 7dba66f1e09782bc
 /deepseek-ai-dsh-orchestration/use-this-package/what-success-and-failure-look-like:
-  en: 0c11b9787bbb48cc
-  zh: a985fe7f656c6b69
+  en: cbb4bc9bf312aacc
+  zh: b49b2cca6c57d9a4
 /deepseek-ai-dsh-orchestration/understand-the-implementation:
   en: 6a18034f1ccc247a
   zh: ad9d59f12d2fea30
@@ -42,7 +42,7 @@
   en: a0e0fd39a206870b
   zh: 0ea6f95e5a8c4ab6
 /deepseek-ai-dsh-orchestration/understand-the-implementation/route-selection-and-failover:
-  en: 42597f26be26bde7
+  en: f2becedd8a864e2d
   zh: 6bb48cd4b21cda62
 /deepseek-ai-dsh-orchestration/understand-the-implementation/budget-and-cancellation:
   en: 8e98ab35cee83460
@@ -84,5 +84,5 @@
   en: 498e4cf9fe5741a7
   zh: d2877493bb4ffa8f
 /deepseek-ai-dsh-orchestration/known-limitations-and-deferred-work/dev-note/promotion:
-  en: 8131ac9de9a1a31f
-  zh: f9d8221cf0197449
+  en: 6847b71d2888ed7c
+  zh: 171ca019d0cc1982

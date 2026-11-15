@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as yaml from 'js-yaml'
+import { capabilityOf, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 
 describe('Orchestration profile bundle', () => {
   it('declares a public parseable layer with the service, model tool, and pool picker', () => {
@@ -41,5 +42,18 @@ describe('Orchestration profile bundle', () => {
     expect(inserted.find(entry => entry.id === 'ui-orchestration')).toMatchObject({
       name: '@deepseek-ai/dsh-client-ui-orchestration',
     })
+
+    // The shipped layer seeds a provider-aligned default pool so run_orchestration
+    // works on a fresh profile without a prior GUI Save. Every route must name
+    // the harness provider route the base profile mounts (POOL_PROVIDER) and a
+    // catalogued model id, so a stale route or a typoed model fails the bundle.
+    const toolOrchestration = inserted.find(entry => entry.id === 'tool-orchestration')
+    const pool = toolOrchestration?.config?.pool as { provider: string; model: string }[] | undefined
+    expect(pool).toBeDefined()
+    expect(pool?.length).toBeGreaterThan(0)
+    for (const route of pool ?? []) {
+      expect(route.provider).toBe(POOL_PROVIDER)
+      expect(capabilityOf(route.model)).toBeDefined()
+    }
   })
 })

@@ -56,8 +56,8 @@ kind: "package-reference"
 import type { PoolRoute } from '@deepseek-ai/dsh-orchestration'
 
 const pool: readonly PoolRoute[] = [
-  { provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
-  { provider: 'paderborn', model: 'gwdg.glm-5.3-flash' },
+  { provider: 'uni-paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
+  { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash' },
 ]
 const result = await ctx.orchestrations.run(parent, 'review the diff and draft a fix', pool, signal)
 ```
@@ -66,7 +66,7 @@ const result = await ctx.orchestrations.run(parent, 'review the diff and draft a
 
 ### 成功与失败的表现
 
-当某个工作进程以 `completed` 结束时步骤成功，并返回其助手输出。当步骤的尝试次数用尽，或某个工作进程以 `refusal` 结束时步骤失败；`refusal` 绝不会被转移路由，因此被策略拒绝的工作会作为一个失败的步骤呈现，而不是静默重跑。空模型池返回一个空的失败结果；不可解析或空的计划会在启动任何工作进程前被拒绝。
+当某个工作进程以 `completed` 结束时步骤成功，并返回其助手输出。当步骤的尝试次数用尽，或某个工作进程以 `refusal` 结束时步骤失败；`refusal` 绝不会被转移路由，因此被策略拒绝的工作会作为一个失败的步骤呈现，而不是静默重跑。空模型池或无法解析出任何可用路由的模型池会在启动任何工作进程前以 `CoordinatorError` 拒绝；不可解析或空的计划也会在启动任何工作进程前被拒绝。
 
 -----
 
@@ -164,6 +164,6 @@ const result = await ctx.orchestrations.run(parent, 'review the diff and draft a
 
 #### 晋升
 
-晋升到产品角色组需要审核公共契约、限制、测试证据、发布载荷、运行时依赖方，以及命名稳定的所有者，相关规则见[实验性子树规则](../AGENTS.md)。持久化的计划/任务看板与 GUI 模型池选择器是自然的下一步。
+晋升到产品角色组需要审核公共契约、限制、测试证据、发布载荷、运行时依赖方，以及命名稳定的所有者，相关规则见[实验性子树规则](../AGENTS.md)。持久化的计划/任务看板是自然的下一步。
 
 </details>

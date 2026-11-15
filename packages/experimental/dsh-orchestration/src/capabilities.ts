@@ -32,6 +32,17 @@ export interface ModelRateLimits {
   readonly tpm?: number
 }
 
+/**
+ * The harness provider route every pool route must name for a worker to reach
+ * the Paderborn AI-Gateway adapter. The pool's `provider` field is passed
+ * verbatim as a worker's `agentOptions.provider`, which selects a registered
+ * `ctx.llm` adapter route; an unregistered route throws `NO_ADAPTER` on the
+ * worker's first request. The shipped profile mounts this route as
+ * `uni-paderborn`; a deployment that mounts the gateway under a different
+ * route must change this constant and the panel's source of truth together.
+ */
+export const POOL_PROVIDER = 'uni-paderborn'
+
 /** Strict capability facts for one provider model, from the catalog. */
 export interface ModelCapability {
   /** Exact API model id as passed to the provider (dot-separated gateway id). */
@@ -184,6 +195,13 @@ export function bestCapabilityMatch(
     readonly contextTokens?: number
     readonly unavailable?: readonly string[]
     readonly budget?: Record<string, { attempts: number; tokens: number }>
+    /**
+     * Per-run count of first-attempt steps already assigned to each model, used
+     * to break capability ties toward the least-used model so parallel steps
+     * spread across the pool instead of piling onto one model. Absent means no
+     * load signal, so selection falls back to pool order on ties.
+     */
+    readonly assigned?: Readonly<Record<string, number>>
   } = {},
 ): ModelCapability | undefined {
   const triedSet = new Set(tried)
@@ -198,14 +216,25 @@ export function bestCapabilityMatch(
   })
   if (usable.length === 0) return undefined
   if (domains.length === 0) {
-    // No requirement: prefer the broadest routeable model as a default.
-    return [...usable].sort((a, b) => b.domains.length - a.domains.length)[0]
+    // No requirement: every usable route is an acceptable default, so spread
+    // parallel steps by least-used model first and prefer the broadest routeable
+    // model only to break an equal-load tie.
+    const load = ({ id }: ModelCapability): number => options.assigned?.[id] ?? 0
+    return [...usable].sort(
+      (a, b) => (load(a) - load(b)) || (b.domains.length - a.domains.length),
+    )[0]
   }
   const scoring = usable.map(candidate => ({
     candidate,
     score: domains.reduce((sum, d) => sum + domainScore(candidate, d), 0),
   }))
-  scoring.sort((a, b) => b.score - a.score)
+  scoring.sort((a, b) => {
+    const byScore = b.score - a.score
+    if (byScore !== 0) return byScore
+    const aLoad = options.assigned?.[a.candidate.id] ?? 0
+    const bLoad = options.assigned?.[b.candidate.id] ?? 0
+    return aLoad - bLoad
+  })
   const top = scoring[0]
   /* v8 ignore next -- reachable only if scoring were empty, which the earlier usable-empty return already prevents. */
   if (top === undefined) return undefined

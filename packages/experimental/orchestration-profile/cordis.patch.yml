@@ -1,9 +1,9 @@
 # Experimental Orchestration Mode profile layer. Apply after dsh-base.
 # Orchestration coexists with normal delegation, so no default tools are
 # disabled; this layer only mounts the orchestration service and its model tool.
-# The service mounts with no pool: the picker defaults to every catalog model
-# selected, and the user's Save writes the pool to the profile as a plain
-# user-layer value, so it persists across restart.
+# The seed pool below makes run_orchestration work on a fresh profile; the
+# user's GUI Save rewrites the pool to the profile as a plain user-layer value,
+# so the selection persists across restart.
 
 - insert:
     - id: orchestration
@@ -11,6 +11,23 @@
 
     - id: tool-orchestration
       name: '@deepseek-ai/dsh-tool-orchestration'
+      config:
+        # A provider-aligned default pool so run_orchestration works on a fresh
+        # profile without a prior GUI Save. The provider is the LLM adapter
+        # route the base profile mounts (POOL_PROVIDER); each model is a
+        # catalogued Paderborn gateway id. A later explicit GUI Save replaces
+        # this seed: tool-orchestration only seeds when the pool is empty.
+        pool:
+          - provider: uni-paderborn
+            model: gwdg.deepseek-v4-flash-0731
+          - provider: uni-paderborn
+            model: gwdg.glm-5.3-flash
+          - provider: uni-paderborn
+            model: hs-de.qwen3.8-27b
+          - provider: uni-paderborn
+            model: gwdg.gemma-4-31b-it
+          - provider: uni-paderborn
+            model: hs-de.openai-gpt-oss-120b
 
     - id: ui-orchestration
       name: '@deepseek-ai/dsh-client-ui-orchestration'

@@ -56,8 +56,8 @@ Call `ctx.orchestrations.run(parent, task, pool, signal)`. The pool is the order
 import type { PoolRoute } from '@deepseek-ai/dsh-orchestration'
 
 const pool: readonly PoolRoute[] = [
-  { provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
-  { provider: 'paderborn', model: 'gwdg.glm-5.3-flash' },
+  { provider: 'uni-paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
+  { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash' },
 ]
 const result = await ctx.orchestrations.run(parent, 'review the diff and draft a fix', pool, signal)
 ```
@@ -66,7 +66,7 @@ The coordinator plans the task using the parent's selected model and reasoning e
 
 ### What success and failure look like
 
-A step succeeds when a worker finishes with `completed`, and its assistant output is returned. A step fails when its attempts are exhausted or a worker ends in `refusal`; a `refusal` is never routed around, so policy-denied work surfaces as a failed step rather than silently re-running. An empty pool returns an empty failed result; an unparseable or empty plan rejects before any worker starts.
+A step succeeds when a worker finishes with `completed`, and its assistant output is returned. A step fails when its attempts are exhausted or a worker ends in `refusal`; a `refusal` is never routed around, so policy-denied work surfaces as a failed step rather than silently re-running. An empty pool or a pool that resolves to no usable routes rejects with a `CoordinatorError` before any worker starts; an unparseable or empty plan rejects before any worker starts.
 
 -----
 
@@ -93,7 +93,7 @@ The service composes the stable `ctx.llm` and `ctx.subagents` seams and lives en
 
 ### Route selection and failover
 
-Each step matches a worker route by required domains, modalities, and context size. Attempts for one step never repeat a model. Settled `error`, `aborted`, and `max-tokens` results can start a replacement within `maxAttemptsPerStep`; `refusal` never does. Caller cancellation prevents new attempts but waits for the current activation to settle. A rejected worker start ends that step without failover: it may represent a policy denial or an unknown partial start. `failovers` counts replacement attempts, not failed steps or intentions to retry.
+Each step matches a worker route by required domains, modalities, and context size. Among routes that tie for the best capability match, the scheduler prefers the least-used model so parallel steps spread across the pool instead of piling onto one model; a no-domain step round-robins over every usable route. Attempts for one step never repeat a model. Settled `error`, `aborted`, and `max-tokens` results can start a replacement within `maxAttemptsPerStep`; `refusal` never does. Caller cancellation prevents new attempts but waits for the current activation to settle. A rejected worker start ends that step without failover: it may represent a policy denial or an unknown partial start. `failovers` counts replacement attempts, not failed steps or intentions to retry.
 
 ### Budget and cancellation
 
@@ -164,6 +164,6 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 
 #### Promotion
 
-Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A durable plan/task board and a GUI pool picker are natural next steps.
+Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A durable plan/task board is the natural next step.
 
 </details>

@@ -80,7 +80,12 @@ export function selectRoute(
   routes: readonly CapabilityRoute[],
   step: StepRequirements,
   tried: Tried,
-  options: { readonly unavailable?: readonly string[]; readonly budget?: RouteBudget } = {},
+  options: {
+    readonly unavailable?: readonly string[]
+    readonly budget?: RouteBudget
+    /** Per-run first-attempt assignment counts, forwarded to capability tie-breaking. */
+    readonly assigned?: Readonly<Record<string, number>>
+  } = {},
 ): CapabilityRoute | undefined {
   const triedIds = new Set(tried.map(t => t.model))
   const unavailable = options.unavailable ?? []
@@ -95,6 +100,7 @@ export function selectRoute(
     {
       ...(step.requiredModalities === undefined ? {} : { requiredModalities: step.requiredModalities }),
       ...(step.contextTokens === undefined ? {} : { contextTokens: step.contextTokens }),
+      ...(options.assigned === undefined ? {} : { assigned: options.assigned }),
     },
   )
   if (match === undefined) return undefined

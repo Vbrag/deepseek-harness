@@ -2,16 +2,18 @@
 import { useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import { POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 import type { ModelCapability, TaskDomain } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 import { PADERBORN_CATALOG } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
 import { NS, type OrchestrationKey } from './locales.ts'
 import css from './OrchestrationPanel.module.css'
 
-/**
- * The provider route of every catalog entry: the Paderborn AI-Gateway
- * investigates a single OpenAI-compatible provider, so one route serves all.
- */
-const PROVIDER = 'paderborn'
+/** The provider route of every catalog entry: the Paderborn AI-Gateway
+ * mounts a single OpenAI-compatible provider, so one route serves all. The
+ * route name is the shared source of truth (`POOL_PROVIDER`), matching the
+ * LLM adapter route the profile registers, so a saved pool names a route the
+ * spawned worker can actually resolve. */
+const PROVIDER = POOL_PROVIDER
 
 /** Capability badge keys, one per catalog discipline plus the image-input flag. */
 const BADGES: Readonly<{ key: OrchestrationKey; domain: TaskDomain | 'image' }[]> = [

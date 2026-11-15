@@ -32,7 +32,7 @@ Use the composer's mode menu to choose Default or Orchestration. The selector ap
 
 ### Pick the model pool
 
-The panel shows every model the provider catalog reports for the Paderborn AI-Gateway (`provider: paderborn`), each with capability badges derived from the catalog entry. Checking or unchecking a row, **Select all**, and **Clear** adjust a local selection; the explicit **Save model pool** button persists the whole pool to the Host through `setPool`. The pool read at mount time is seeded into the panel, so the current Host selection is the starting state; when nothing has been persisted yet, the panel defaults to every catalog model selected so the full pool is available immediately.
+The panel shows every model the provider catalog reports for the Paderborn AI-Gateway (`provider: uni-paderborn`), each with capability badges derived from the catalog entry. Checking or unchecking a row, **Select all**, and **Clear** adjust a local selection; the explicit **Save model pool** button persists the whole pool to the Host through `setPool`. The pool read at mount time is seeded into the panel, so the current Host selection is the starting state; when nothing has been persisted yet, the panel defaults to every catalog model selected so the full pool is available immediately.
 
 The panel shows the applied selection count, a notice when the pool is empty, and a save failure notice if the Host refuses an update. Save reports success only after the Host applies the pool; a refused write shows a failure notice instead. The Host applies the selection in memory and persists it to the profile as a plain user-layer value, so the saved pool survives a restart.
 
@@ -88,7 +88,7 @@ None. The panel adds no model context and retains no KV prefix; the pool is Host
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Single provider today** — the panel lists only the Paderborn AI-Gateway (`provider: paderborn`); a multi-provider pool picker is deferred.
+- **Single provider today** — the panel lists only the Paderborn AI-Gateway (`provider: uni-paderborn`); a multi-provider pool picker is deferred.
 - **Host service required** — the panel needs the `orchestrations` Remote namespace mounted by the Orchestration service; without it, reads and writes are refused and the panel shows the save-failure notice.
 - **Model availability** — a model appears only when the provider catalog reports it; catalog changes require the page to reload.
 - **No per-session override** — the selected pool is a single Shared Host value, not a per-session or per-run override.

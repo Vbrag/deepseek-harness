@@ -11,7 +11,7 @@ import { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { SubagentActivation, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import OrchestrationService, { orchestrationProjectionDefinition } from '../src/index.ts'
+import OrchestrationService, { CoordinatorError, orchestrationProjectionDefinition } from '../src/index.ts'
 import type { OrchestrationConfig, OrchestrationProjection, OrchestrationUnitState, PlannedStep } from '../src/types.ts'
 import type { CapabilityRoute } from '../src/plan.ts'
 
@@ -313,14 +313,14 @@ describe('orchestration projection unit', () => {
 describe('OrchestrationService run', () => {
   it('fails loud when no pool is selected', async () => {
     const { ctx } = await setup()
-    const result = await ctx.orchestrations.run(parent, 'task', undefined, new AbortController().signal)
-    expect(result).toEqual({ steps: [], succeeded: false, failovers: 0, failedSteps: 0 })
+    await expect(ctx.orchestrations.run(parent, 'task', undefined, new AbortController().signal))
+      .rejects.toThrow('orchestration pool is empty')
   })
 
   it('fails loud when the pool resolves to no usable routes', async () => {
     const { ctx } = await setup()
-    const result = await ctx.orchestrations.run(parent, 'task', [{ provider: 'paderborn', model: 'not-a-model' }], new AbortController().signal)
-    expect(result).toEqual({ steps: [], succeeded: false, failovers: 0, failedSteps: 0 })
+    await expect(ctx.orchestrations.run(parent, 'task', [{ provider: 'paderborn', model: 'not-a-model' }], new AbortController().signal))
+      .rejects.toBeInstanceOf(CoordinatorError)
   })
 
   it('completes every step on a happy path', async () => {
@@ -332,6 +332,27 @@ describe('OrchestrationService run', () => {
     expect(result.failovers).toBe(0)
     expect(result.steps).toHaveLength(1)
     expect(result.steps[0]?.failed).toBe(false)
+  })
+
+  it('spreads parallel same-domain steps across the pool on the happy path', async () => {
+    const { ctx, llm, subagents } = await setup()
+    subagents.startActivation.mockResolvedValue(activation('c', { output: [], stopReason: 'completed' }))
+    llm.stream.mockImplementation(() => asyncIterable(twoStepPlan()))
+    // glm and qwen both rank as the top coding-capable models, so the two
+    // parallel coding steps must be routed to two different models rather than
+    // piling both onto the single best one.
+    const pool = [
+      { provider: 'paderborn', model: 'gwdg.glm-5.3-flash' },
+      { provider: 'paderborn', model: 'hs-de.qwen3.8-27b' },
+      { provider: 'paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
+    ]
+    const result = await ctx.orchestrations.run(parent, 'task', pool, new AbortController().signal)
+    expect(result.succeeded).toBe(true)
+    expect(result.failovers).toBe(0)
+    const models = subagents.startActivation.mock.calls
+      .map(call => (call[0] as { agentOptions: { model: string } }).agentOptions.model)
+    expect(models).toHaveLength(2)
+    expect(models[0]).not.toBe(models[1])
   })
 
   it('plans on the parent model and forwards its reasoning effort to the coordinator', async () => {

@@ -422,15 +422,21 @@ export class OrchestrationService extends TypertRemoteService {
   ): Promise<OrchestrationResult> {
     const routes = capabilityRoutes(pool ?? this.poolValue)
     if (routes.length === 0) {
-      return { steps: [], succeeded: false, failovers: 0, failedSteps: 0 }
+      const source = pool ?? this.poolValue
+      if (source.length === 0) throw new CoordinatorError('orchestration pool is empty; select a model pool before running')
+      throw new CoordinatorError(
+        `orchestration pool resolves to no usable routes: none of ${source.map(r => r.model).join(', ')} is a routeable catalog model`
+        + ' (a provider/model that resolves to a catalog capability)',
+      )
     }
     const steps = await this.plan(parent, task, routes, signal)
     if (steps.length === 0) throw new CoordinatorError('coordinator returned an empty plan')
 
     const semaphore = new Semaphore(this.config.maxConcurrency)
     const budget: RouteBudget = {}
+    const assigned: Record<string, number> = {}
     const stepResults = await Promise.all(
-      steps.map(step => semaphore.run(() => this.executeStep(parent, step, routes, signal, { budget }))),
+      steps.map(step => semaphore.run(() => this.executeStep(parent, step, routes, signal, { budget, assigned }))),
     )
 
     let failovers = 0
@@ -478,12 +484,17 @@ export class OrchestrationService extends TypertRemoteService {
     step: PlannedStep,
     routes: readonly CapabilityRoute[],
     signal: AbortSignal,
-    runState: { readonly budget: RouteBudget },
+    runState: { readonly budget: RouteBudget; readonly assigned: Record<string, number> },
   ): Promise<StepOutcome> {
 
     /** Count one attempt against the per-run budget for a model. */
     const recordAttempt = (model: string): void => {
       runState.budget[model] = { attempts: (runState.budget[model]?.attempts ?? 0) + 1 }
+    }
+
+    /** Reserve one first-attempt assignment for a model, for load balancing. */
+    const recordAssignment = (model: string): void => {
+      runState.assigned[model] = (runState.assigned[model] ?? 0) + 1
     }
 
     const attempts: WorkerAttempt[] = []
@@ -499,9 +510,12 @@ export class OrchestrationService extends TypertRemoteService {
          still widens the access, making this path only reachable through that widening. */
       const failedModel = attempts.at(-1)?.model ?? ''
       const route = index === 0
-        ? selectRoute(routes, step, tried, { budget: runState.budget })
+        ? selectRoute(routes, step, tried, { budget: runState.budget, assigned: runState.assigned })
         : selectFailover(routes, failedModel, step, tried, { budget: runState.budget })
       if (route === undefined) return { step, attempts, output: [], failed: true, failedOver }
+      // Reserve the first-attempt route before any await so concurrently selected
+      // steps see each other's assignments and spread across the pool.
+      if (index === 0) recordAssignment(route.model)
 
       failedOver = attempts.length > 0
       let activation: SubagentActivation
