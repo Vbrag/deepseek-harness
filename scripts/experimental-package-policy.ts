@@ -34,7 +34,6 @@ export const EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS: Readonly<Record<string, strin
   'packages/experimental/client-ui-orchestration': '@deepseek-ai/dsh-client-ui-orchestration',
   'packages/experimental/dsh-orchestration': '@deepseek-ai/dsh-orchestration',
   'packages/experimental/orchestration-profile': '@deepseek-ai/dsh-orchestration-profile',
-  'packages/experimental/tool-orchestration': '@deepseek-ai/dsh-tool-orchestration',
 } satisfies Record<`packages/experimental/${string}`, `@deepseek-ai/dsh-${string}`>
 
 /** Legacy npm namespace, allowed only in `LEGACY_PREFIXED_EXPERIMENTAL_PACKAGE_DIRECTORIES`. */

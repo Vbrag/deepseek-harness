@@ -116,6 +116,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns the card tool, card state, user actions and status notices; card kinds register their actions and handlers.',
   },
   {
+    key: 'orchestrations',
+    pkg: 'orchestration',
+    title: 'Task-aware subagent model routing',
+    mode: 'service',
+    consumers: ['client-ui-orchestration'],
+    note: 'Owns logged session mode and pool settings; registers a model router on the subagent service, which retains child activation and teardown ownership.',
+  },
+  {
     key: 'pluginRecommendations',
     pkg: 'plugin-recommendations',
     title: 'Explicit-need plugin recommendations',
@@ -317,8 +325,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'LLM adapter registry',
     mode: 'seam',
     implementations: ['llm-deepseek', 'llm-pi-ai', 'llm-replay'],
-    consumers: ['agent-loop', 'compaction-basic'],
-    note: 'Adapters register provider implementations; the loop and compaction call the provider-neutral stream service.',
+    consumers: ['agent-loop', 'compaction-basic', 'orchestration'],
+    note: 'Adapters register provider implementations; the loop and compaction stream requests, and orchestration reads model metadata and advisory queue availability.',
   },
   {
     key: 'sessionLogDeepSeek',
@@ -645,7 +653,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'system-prompt',
     title: 'System prompt assembly registry',
     mode: 'core',
-    consumers: ['agent-loop', 'tools', 'tool-fs', 'tool-terminal', 'tool-web'],
+    consumers: ['agent-loop', 'tools', 'tool-fs', 'tool-terminal', 'tool-web', 'orchestration'],
     note: 'Collects prompt sections and model-facing tool schemas for each step.',
   },
   {
@@ -690,7 +698,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'session-projection',
     title: 'Session projection units',
     mode: 'core',
-    consumers: ['api-session-controller', 'tool-todo', 'session-title'],
+    consumers: ['api-session-controller', 'tool-todo', 'session-title', 'orchestration'],
     note: 'Domains register state-driven fold units; the eager drive keeps per-session watermark states and the Session controller serves baselines and pushes changed values.',
   },
   {
@@ -715,7 +723,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'agent',
     title: 'Agent service',
     mode: 'core',
-    consumers: ['agent-loop', 'acp', 'subagent'],
+    consumers: ['agent-loop', 'acp', 'subagent', 'orchestration'],
     note: 'Owns live Agent handles, the create/resume factory seam, and process-local initiator propagation.',
   },
   {
@@ -867,8 +875,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Subagent provider and continuation service',
     mode: 'seam',
     implementations: ['subagent-spawn-in-process', 'subagent-fork-in-process', 'subagent-acp', 'subagent-codex', 'subagent-claude-code', 'subagent-dsh-sdk'],
-    consumers: ['tool-subagent', 'tool-subagent-control', 'tool-ralph'],
-    note: 'Providers prepare local children or execute external tasks; one activation manager owns both lifecycles. The delegation tool selects a backend, control tools deliver local follow-ups, and workflows await activation results.',
+    consumers: ['tool-subagent', 'tool-subagent-control', 'tool-ralph', 'orchestration'],
+    note: 'Providers prepare local children or execute external tasks; one activation manager owns both lifecycles. The delegation tool selects a backend, control tools deliver local follow-ups, and an optional router selects fresh local child models before admission.',
   },
   {
     key: 'speechToText',

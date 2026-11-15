@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
-import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
+import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 import { afterEach, expect, it, vi } from 'vitest'
 import { OrchestrationPanel, type OrchestrationPanelProps } from '../src/client/OrchestrationPanel.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -13,7 +13,9 @@ afterEach(cleanup)
 const ROUTE: PoolRoute = { provider: POOL_PROVIDER, model: 'gwdg.deepseek-v4-flash-0731' }
 
 function fixture(pool: readonly PoolRoute[] = [], setPool = vi.fn<(pool: readonly PoolRoute[]) => Promise<boolean>>(async () => true)) {
-  const props = { t: makeTranslate(zh), pool, setPool } as OrchestrationPanelProps
+  const props = {
+    t: makeTranslate(zh), pool, catalog: { provider: POOL_PROVIDER, models: PADERBORN_CATALOG }, setPool,
+  } as OrchestrationPanelProps
   render(<OrchestrationPanel {...props} />)
   return { setPool }
 }

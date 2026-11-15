@@ -7,7 +7,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 摘要
+## 概述
 
 本包提供一个内置技能 `codemap-docs`，用于指导模型如何根据代码库的实际结构派生 Markdown 文档——架构代码地图、README 与 runbook 同步、分区域指南以及陈旧文档审计。它是纯指令型知识技能：不新增工具、可执行文件或运行时服务。将其与技能注册表和 `dsh-tool-skill` 一起挂载，该技能便会出现在模型的技能目录中。
 
@@ -18,7 +18,7 @@ kind: "package-reference"
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
 - [已知限制与待办工作](#known-limitations-and-deferred-work)
-- [开发者说明](#dev-note)
+- [开发备注](#dev-note)
 
 -----
 
@@ -91,7 +91,7 @@ kind: "package-reference"
 - **按约定限定于项目**——该 README/技能描述了通用工作流程，并将布局和行文规则交由仓库的文档约定处理。
 
 <a id="dev-note"></a>
-### 开发者说明
+### 开发备注
 
 <details>
 <summary>维护者的工作上下文——点击展开</summary>

@@ -1,19 +1,10 @@
 /** Orchestration settings page: pick the multi-model pool from the provider capability catalog and save it to the Host. */
 import { useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
-import { POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
-import type { ModelCapability, TaskDomain } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
-import { PADERBORN_CATALOG } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
+import type { OrchestrationCatalog, PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { ModelCapability, TaskDomain } from '@deepseek-ai/dsh-orchestration/capabilities'
 import { NS, type OrchestrationKey } from './locales.ts'
 import css from './OrchestrationPanel.module.css'
-
-/** The provider route of every catalog entry: the Paderborn AI-Gateway
- * mounts a single OpenAI-compatible provider, so one route serves all. The
- * route name is the shared source of truth (`POOL_PROVIDER`), matching the
- * LLM adapter route the profile registers, so a saved pool names a route the
- * spawned worker can actually resolve. */
-const PROVIDER = POOL_PROVIDER
 
 /** Capability badge keys, one per catalog discipline plus the image-input flag. */
 const BADGES: Readonly<{ key: OrchestrationKey; domain: TaskDomain | 'image' }[]> = [
@@ -66,6 +57,8 @@ function CatalogRow({
 
 /** What the browser plugin injects: the Host pool and the call that persists a replacement. */
 export interface OrchestrationInjected {
+  /** Host-owned provider and verified model catalog. */
+  readonly catalog: OrchestrationCatalog
   /** The pool persisted on the Host when the panel mounted. */
   readonly pool: readonly PoolRoute[]
   /** Persist a replacement pool to the Host; resolves true when it was accepted. */
@@ -87,12 +80,12 @@ export type OrchestrationPanelProps =
  * @param props - settings runtime, the injected pool and setter, and localized copy.
  * @returns The Orchestration settings section.
  */
-export function OrchestrationPanel({ pool, setPool, t }: OrchestrationPanelProps) {
+export function OrchestrationPanel({ pool, catalog: { provider, models }, setPool, t }: OrchestrationPanelProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => {
     const persisted = pool.map(route => route.model)
     return persisted.length > 0
       ? new Set(persisted)
-      : new Set(PADERBORN_CATALOG.map(capability => capability.id))
+      : new Set(models.map(capability => capability.id))
   })
   const [notice, setNotice] = useState<OrchestrationKey | undefined>(undefined)
   const [saving, setSaving] = useState(false)
@@ -100,7 +93,7 @@ export function OrchestrationPanel({ pool, setPool, t }: OrchestrationPanelProps
 
   const save = (): void => {
     setNotice(undefined)
-    const routes: readonly PoolRoute[] = [...selected].map(model => ({ provider: PROVIDER, model }))
+    const routes: readonly PoolRoute[] = [...selected].map(model => ({ provider, model }))
     setSaving(true)
     void setPool(routes).then((ok) => {
       setSaving(false)
@@ -123,7 +116,7 @@ export function OrchestrationPanel({ pool, setPool, t }: OrchestrationPanelProps
   }
 
   const selectAll = (): void => {
-    setSelection(new Set(PADERBORN_CATALOG.map(capability => capability.id)))
+    setSelection(new Set(models.map(capability => capability.id)))
   }
 
   const clear = (): void => {
@@ -142,7 +135,7 @@ export function OrchestrationPanel({ pool, setPool, t }: OrchestrationPanelProps
         <span className={css.count}>{t('selectedPool')} ({selected.size})</span>
       </div>
       <ul className={css.list}>
-        {PADERBORN_CATALOG.map(capability => (
+        {models.map(capability => (
           <CatalogRow
             key={capability.id}
             capability={capability}

@@ -242,7 +242,7 @@ export class PlanModeController extends Service {
       if (decision.kind === 'reject' || signal.aborted || pending === undefined) return decision
       // An approved review carries out the plan: the next step must reconcile
       // a planning-only goal, write the todos, and start executing.
-      const carryOutApproved = pending.fromApproval === true && pending.active === false
+      const carryOutApproved = pending.fromApproval === true && !pending.active
       const narration = this.narration(agent.session, pending.active)
       try {
         this.onBoundary(agent.session)

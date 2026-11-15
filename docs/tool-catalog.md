@@ -671,7 +671,7 @@ The PTC executor exposes only run_code to the model and declares other visible c
 
 ### `exit_plan_mode`
 
-Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again.
+Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. On approval, carry the plan out starting with your next step: reflect the approved plan into the todo_write list and begin executing it, updating any active goal that still restricts the task to planning only. Or keep planning — the user's feedback comes back in the tool result; revise and present again.
 
 ```json
 {
@@ -1625,7 +1625,7 @@ Update the current goal.
     },
     "action": {
       "type": "string",
-      "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count.",
+      "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count. A goal that used every round is paused (not blocked): resume on it is rejected until you first raise max_goal_rounds with edit. A complete or blocked goal is terminal and cannot be resumed.",
       "enum": [
         "edit",
         "pause",
@@ -2249,6 +2249,51 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     "prompt": {
       "type": "string",
       "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+    },
+    "task_assessment": {
+      "type": "object",
+      "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+      "additionalProperties": false,
+      "properties": {
+        "requiredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preferredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredModalities": {
+          "type": "array",
+          "description": "Inputs needed now or later, such as images captured during visual checks.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contextTokens": {
+          "type": "integer",
+          "description": "Expected total input tokens, including files and other context the child will read."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Expected positive response-token count; omit for the configured allowance."
+        }
+      },
+      "required": [
+        "requiredCapabilities",
+        "contextTokens"
+      ]
+    },
+    "context_image_ids": {
+      "type": "array",
+      "description": "Selected image identifiers from the current subagent image context. Only these stored images accompany the self-contained prompt.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

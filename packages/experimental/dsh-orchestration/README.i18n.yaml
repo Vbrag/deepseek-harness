@@ -3,86 +3,62 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/dsh-orchestration/README.md
 /:
-  en: 6d4ae13d015a3c04
-  zh: 44df513b277abe5f
+  en: 6d9cb6535a627b08
+  zh: bfcd61f1d1b3e747
 /deepseek-ai-dsh-orchestration:
   en: 9f34c994e9217d1e
   zh: 75bb813b498fa800
 /deepseek-ai-dsh-orchestration/summary:
-  en: 417041297dca82f6
-  zh: e5795b94960fbcab
+  en: 26266e326eda68fb
+  zh: 9f52a4a48edf87a7
 /deepseek-ai-dsh-orchestration/table-of-contents:
-  en: d152484eb41ac6b4
-  zh: 09388d293f9be9cb
+  en: b563e4ec4727d0de
+  zh: b7de025a91189679
 /deepseek-ai-dsh-orchestration/use-this-package:
-  en: 6d24293cb51d911b
-  zh: d6d90500886e83b5
-/deepseek-ai-dsh-orchestration/use-this-package/when-to-choose-it:
-  en: 149ffa85b38e180f
-  zh: ecd0d6437e7c002c
-/deepseek-ai-dsh-orchestration/use-this-package/configure-the-pool-and-limits:
-  en: 9a4d479061797601
-  zh: 1d981c62eedea43f
-/deepseek-ai-dsh-orchestration/use-this-package/select-the-session-mode:
-  en: b315749d4389df90
-  zh: 1b2f1cc38131130c
-/deepseek-ai-dsh-orchestration/use-this-package/run-an-orchestration:
-  en: 07ea8a1d991b34f9
-  zh: 7dba66f1e09782bc
-/deepseek-ai-dsh-orchestration/use-this-package/what-success-and-failure-look-like:
-  en: cbb4bc9bf312aacc
-  zh: b49b2cca6c57d9a4
+  en: 5f7f4ff9952ee6b9
+  zh: 2d3917627b371ca1
+/deepseek-ai-dsh-orchestration/use-this-package/session-mode-and-authorization:
+  en: 3107d0ee6ef7a8f4
+  zh: 3f02514478cd83e0
+/deepseek-ai-dsh-orchestration/use-this-package/task-assessment:
+  en: 81d9bad902b03dcb
+  zh: 166a5613aa3e1d15
+/deepseek-ai-dsh-orchestration/use-this-package/configuration:
+  en: ece0e56a8d674ec3
+  zh: e4c5454cff5c7be7
+/deepseek-ai-dsh-orchestration/use-this-package/selection-and-failures:
+  en: 67f7316087c02dc3
+  zh: e461d89dbb7c2494
 /deepseek-ai-dsh-orchestration/understand-the-implementation:
-  en: 6a18034f1ccc247a
-  zh: ad9d59f12d2fea30
-/deepseek-ai-dsh-orchestration/understand-the-implementation/design-philosophy:
-  en: 932f1bd298ddfb54
-  zh: a58fccdfa3d4b596
-/deepseek-ai-dsh-orchestration/understand-the-implementation/source-map:
-  en: a0e0fd39a206870b
-  zh: 0ea6f95e5a8c4ab6
-/deepseek-ai-dsh-orchestration/understand-the-implementation/route-selection-and-failover:
-  en: f2becedd8a864e2d
-  zh: 6bb48cd4b21cda62
-/deepseek-ai-dsh-orchestration/understand-the-implementation/budget-and-cancellation:
-  en: 8e98ab35cee83460
-  zh: fa09d231c1359041
+  en: 089552fa9f3bf8ec
+  zh: d375bd54d68c43dc
 /deepseek-ai-dsh-orchestration/further-exploration:
-  en: c630f16f59fd5df4
-  zh: 833a42c31dc075eb
+  en: a29c00f40a69cacb
+  zh: 175f45355371a729
 /deepseek-ai-dsh-orchestration/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
-/deepseek-ai-dsh-orchestration/model-experience/coordinator-planning:
-  en: 28df8c72ae352cf6
-  zh: 28cca1458a8a188e
-/deepseek-ai-dsh-orchestration/model-experience/coordinator-planning/what-the-model-sees:
-  en: de7637d55b5171b8
-  zh: 79d673d7de1611a1
-/deepseek-ai-dsh-orchestration/model-experience/coordinator-planning/token-effect:
-  en: 09befca5e8ec52d5
-  zh: 90c41f03a920d26e
-/deepseek-ai-dsh-orchestration/model-experience/coordinator-planning/kv-cache-effect:
-  en: ad24509a6790a82a
-  zh: 25ef3985f4610a41
-/deepseek-ai-dsh-orchestration/model-experience/worker-attempts:
-  en: b19ae118f5f8c44a
-  zh: 9247fe43eccf7526
-/deepseek-ai-dsh-orchestration/model-experience/worker-attempts/what-the-model-sees:
-  en: 37b4671cda1d0655
-  zh: f50b5ec2d7478ed5
-/deepseek-ai-dsh-orchestration/model-experience/worker-attempts/token-effect:
-  en: d1737c36a267ddfa
-  zh: 5202a0958ba137ab
-/deepseek-ai-dsh-orchestration/model-experience/worker-attempts/kv-cache-effect:
-  en: e42961d4ebd462dc
-  zh: 3c67aea31d290cb0
+/deepseek-ai-dsh-orchestration/model-experience/task-aware-delegation:
+  en: 29d44710cacce28b
+  zh: f1d42b0990e97b35
+/deepseek-ai-dsh-orchestration/model-experience/task-aware-delegation/what-the-model-sees:
+  en: 1686c3107b4d64b1
+  zh: d33f9eacbc5e79d8
+/deepseek-ai-dsh-orchestration/model-experience/task-aware-delegation/what-the-model-sees/orchestration-runtime-guidance:
+  en: eb0683fb6e297262
+  zh: 02b8107b095be7e1
+/deepseek-ai-dsh-orchestration/model-experience/task-aware-delegation/token-effect:
+  en: 83a5876d8d1e484b
+  zh: 41a5343b96da73b2
+/deepseek-ai-dsh-orchestration/model-experience/task-aware-delegation/kv-cache-effect:
+  en: ee2881e354eeb10a
+  zh: 0fe623dde14f5ea4
 /deepseek-ai-dsh-orchestration/known-limitations-and-deferred-work:
-  en: 691e9a7e84e1ab83
-  zh: 1083d5a45085cfa2
+  en: f6cdaa629e6f628c
+  zh: fb4b9da37baaacc6
 /deepseek-ai-dsh-orchestration/known-limitations-and-deferred-work/dev-note:
   en: 498e4cf9fe5741a7
   zh: d2877493bb4ffa8f
 /deepseek-ai-dsh-orchestration/known-limitations-and-deferred-work/dev-note/promotion:
-  en: 6847b71d2888ed7c
-  zh: 171ca019d0cc1982
+  en: 7984190da8fecfe6
+  zh: 2fe256138f471f66

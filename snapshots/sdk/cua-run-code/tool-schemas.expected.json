@@ -666,6 +666,51 @@
           "prompt": {
             "type": "string",
             "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+          },
+          "task_assessment": {
+            "type": "object",
+            "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+            "additionalProperties": false,
+            "properties": {
+              "requiredCapabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "preferredCapabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "requiredModalities": {
+                "type": "array",
+                "description": "Inputs needed now or later, such as images captured during visual checks.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "contextTokens": {
+                "type": "integer",
+                "description": "Expected total input tokens, including files and other context the child will read."
+              },
+              "outputTokens": {
+                "type": "integer",
+                "description": "Expected positive response-token count; omit for the configured allowance."
+              }
+            },
+            "required": [
+              "requiredCapabilities",
+              "contextTokens"
+            ]
+          },
+          "context_image_ids": {
+            "type": "array",
+            "description": "Selected image identifiers from the current subagent image context. Only these stored images accompany the self-contained prompt.",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -695,6 +740,51 @@
           "prompt": {
             "type": "string",
             "description": "The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new."
+          },
+          "task_assessment": {
+            "type": "object",
+            "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+            "additionalProperties": false,
+            "properties": {
+              "requiredCapabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "preferredCapabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "requiredModalities": {
+                "type": "array",
+                "description": "Inputs needed now or later, such as images captured during visual checks.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "contextTokens": {
+                "type": "integer",
+                "description": "Expected total input tokens, including files and other context the child will read."
+              },
+              "outputTokens": {
+                "type": "integer",
+                "description": "Expected positive response-token count; omit for the configured allowance."
+              }
+            },
+            "required": [
+              "requiredCapabilities",
+              "contextTokens"
+            ]
+          },
+          "context_image_ids": {
+            "type": "array",
+            "description": "Selected image identifiers from the current subagent image context. Only these stored images accompany the self-contained prompt.",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

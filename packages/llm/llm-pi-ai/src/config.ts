@@ -47,6 +47,8 @@ import { buildProvider, supportedProtocols } from './provider.ts'
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+/** Default output-token allowance reserved before a paced request dispatches. */
+export const DEFAULT_RATE_LIMIT_OUTPUT_TOKENS = 4096
 
 /**
  * Default request-level bound on base64-encoded image payload. Every image in
@@ -179,6 +181,8 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
+  /** Output-token allowance for proactive pacing, capped by the request and model output ceilings (default 4096). */
+  rateLimitOutputTokens?: number
   /**
    * Maximum base64-encoded image payload per request. When a request's
    * accumulated images exceed it, the oldest images are replaced by text
@@ -220,6 +224,8 @@ export interface ResolvedPiAiProviderProfile
   apiKeyEnv?: CredentialRef
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
+  /** Positive output-token allowance for proactive pacing after defaulting. */
+  rateLimitOutputTokens: number
   /** Positive request-level base64 image payload bound after defaulting. */
   maxRequestImageBytes: number
   /** Positive request-level retained image count bound after defaulting. */
@@ -392,6 +398,7 @@ const profile = z.object({
   timeoutMs: z.natural(),
   websocketConnectTimeoutMs: z.natural(),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+  rateLimitOutputTokens: z.number().step(1).min(1).default(DEFAULT_RATE_LIMIT_OUTPUT_TOKENS),
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
   maxRequestImages: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGES),
   imageOffloadCountQuantum: z.number().step(1).min(1),
@@ -487,6 +494,10 @@ export function resolveProfiles(
       )
     }
     const maxRequestImageBytes = source.maxRequestImageBytes ?? DEFAULT_MAX_REQUEST_IMAGE_BYTES
+    const rateLimitOutputTokens = source.rateLimitOutputTokens ?? DEFAULT_RATE_LIMIT_OUTPUT_TOKENS
+    if (!Number.isSafeInteger(rateLimitOutputTokens) || rateLimitOutputTokens <= 0) {
+      throw new Error(`llm-pi-ai: provider "${provider}" rateLimitOutputTokens must be a positive safe integer`)
+    }
     if (!Number.isInteger(maxRequestImageBytes) || maxRequestImageBytes <= 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" maxRequestImageBytes must be a positive integer`)
     }
@@ -554,6 +565,7 @@ export function resolveProfiles(
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
       streamIdleTimeoutMs,
+      rateLimitOutputTokens,
       maxRequestImageBytes,
       maxRequestImages,
       imageOffloadCountQuantum,

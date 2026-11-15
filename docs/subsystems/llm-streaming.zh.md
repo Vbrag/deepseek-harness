@@ -390,40 +390,40 @@ interface TokenUsage {
  */
 declare class BlockAssembler {
   /**
-   * Feed one chunk into the assembly state.
-   * @param chunk - the next raw chunk, in stream order.
-   */
+     * Feed one chunk into the assembly state.
+     * @param chunk - the next raw chunk, in stream order.
+     */
   push(chunk: StreamChunk): void;
   /**
-   * Assemble all blocks seen so far, in stream order.
-   * @returns one block per seen index, except that max-token truncation drops
-   *   tool calls that cannot be executed safely; an open block assembles from
-   *   its accumulated deltas (an unknown block type never closed by `block-end` throws).
-   */
+     * Assemble all blocks seen so far, in stream order.
+     * @returns one block per seen index, except that max-token truncation drops
+     *   tool calls that cannot be executed safely; an open block assembles from
+     *   its accumulated deltas (an unknown block type never closed by `block-end` throws).
+     */
   blocks(): ContentBlock[];
   /**
-   * Assemble the prefix an interrupted stream can safely finalize: closed and
-   * open text/reasoning blocks with non-whitespace content, in stream order.
-   * Tool calls are omitted because interruption precedes dispatch; retaining
-   * one would require a fabricated result. Open unknown blocks are also omitted.
-   * @returns the kept blocks; empty when nothing streamed before the interruption.
-   */
+     * Assemble the prefix an interrupted stream can safely finalize: closed and
+     * open text/reasoning blocks with non-whitespace content, in stream order.
+     * Tool calls are omitted because interruption precedes dispatch; retaining
+     * one would require a fabricated result. Open unknown blocks are also omitted.
+     * @returns the kept blocks; empty when nothing streamed before the interruption.
+     */
   interruptedBlocks(): ContentBlock[];
   /** Usage from the `usage` chunk; undefined until one arrives. */
   get usage(): TokenUsage | undefined;
   /** Finish reason from the `finish` chunk; `{kind: 'stop'}` when the stream ended without one. */
   get finish(): FinishReason;
   /**
-   * Replay metadata from the terminal finish chunk, if any, with per-block
-   * entries pruned in step with {@link blocks}. Undefined when the envelope's
-   * entries do not align with the emitted blocks.
-   */
+     * Replay metadata from the terminal finish chunk, if any, with per-block
+     * entries pruned in step with {@link blocks}. Undefined when the envelope's
+     * entries do not align with the emitted blocks.
+     */
   get replayState(): ReplayEnvelope | undefined;
   /**
-   * The assembled assistant message.
-   * @param source - provider/model attribution (without the `kind` tag) for the assembled message.
-   * @returns a frozen assistant-role message over `blocks()` (same open-block assembly rules).
-   */
+     * The assembled assistant message.
+     * @param source - provider/model attribution (without the `kind` tag) for the assembled message.
+     * @returns a frozen assistant-role message over `blocks()` (same open-block assembly rules).
+     */
   message(source: Omit<ModelMessageSource, 'kind'>): AssistantMessage;
 }
 ```
@@ -571,6 +571,12 @@ interface LlmModelInfo {
    * omits it, and no model request or Session event carries it.
    */
   badge?: LlmModelBadge
+  /**
+   * Provider-declared per-minute request/token budget. Absent when the route
+   * publishes no limits; a value here reflects the adapter's configured or
+   * discovered rate limits, not live usage.
+   */
+  rateLimit?: LlmRateLimit
 }
 ```
 
@@ -623,6 +629,8 @@ interface LlmResolvedModelInfo extends LlmModelInfo {
   context?: LlmModelContext
   /** Adapter-configured per-request output cap materialized when callers omit one. */
   defaultMaxTokens?: number
+  /** Provider maximum response tokens when known, independent of configured request defaults. */
+  maxOutputTokens?: number
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
   /** Declared mid-conversation system prompt handling; absent means only a leading system message is read. */
@@ -823,6 +831,8 @@ interface LlmCallControls {
 ```
 
 ```ts type-equiv
+// TODO(call-config-shape): Revisit which fields are epoch-level for cache reuse
+// and where provider-specific request options belong.
 /**
  * Provider, model, reasoning effort, and sampling scalars of one conversation's
  * requests. Every field maps 1:1 onto the same-named `GenerateOptions` field;
@@ -913,79 +923,112 @@ interface PreparedLlmCall {
  */
 declare abstract class LlmAdapter {
   /**
-   * Describe one provider route owned by this adapter.
-   * @param provider - a route passed to `registerAdapter()` for this instance.
-   * @returns detached display metadata whose id must equal `provider`.
-   */
+     * Inspect shared request capacity without reserving it or performing provider I/O.
+     * @param _request - estimated request work for an exact model route.
+     * @returns current admission state; unsupported adapters return `unknown`.
+     */
+  queueAvailability(_request: LlmQueueRequest): Promise<LlmQueueAvailability>;
+  /**
+     * Describe one provider route owned by this adapter.
+     * @param provider - a route passed to `registerAdapter()` for this instance.
+     * @returns detached display metadata whose id must equal `provider`.
+     */
   providerInfo(provider: string): LlmProviderInfo;
   /**
-   * Return the provider-owned retry policy captured with this route.
-   * @param _provider - a route passed to `registerAdapter()` for this instance.
-   * @returns a resolved policy, or `undefined` to use the normal defaults.
-   */
+     * Return the provider-owned retry policy captured with this route.
+     * @param _provider - a route passed to `registerAdapter()` for this instance.
+     * @returns a resolved policy, or `undefined` to use the normal defaults.
+     */
   providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;
   /**
-   * Resolve provider-side request-image pricing for one exact model route.
-   * The default declares none, so consumers fall back to their own neutral
-   * estimate. Implementations must answer synchronously without I/O; the
-   * token meter resolves this per measurement.
-   * @param _provider - a route passed to `registerAdapter()` for this instance.
-   * @param _model - exact model id passed to {@link GenerateOptions.model}.
-   * @returns route-owned image pricing, or `undefined` when the route declares none.
-   */
+     * Resolve provider-side request-image pricing for one exact model route.
+     * The default declares none, so consumers fall back to their own neutral
+     * estimate. Implementations must answer synchronously without I/O; the
+     * token meter resolves this per measurement.
+     * @param _provider - a route passed to `registerAdapter()` for this instance.
+     * @param _model - exact model id passed to {@link GenerateOptions.model}.
+     * @returns route-owned image pricing, or `undefined` when the route declares none.
+     */
   imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;
   /**
-   * Resolve the image dimensions and byte target this adapter sends to the model.
-   * The default preserves normalized images; adapters that resize must override it.
-   * @param _provider - registered provider route.
-   * @param _model - exact model id.
-   * @param image - normalized image whose request projection is being resolved.
-   * @returns the same target used by request serialization, before provider-internal processing.
-   */
+     * Resolve the image dimensions and byte target this adapter sends to the model.
+     * The default preserves normalized images; adapters that resize must override it.
+     * @param _provider - registered provider route.
+     * @param _model - exact model id.
+     * @param image - normalized image whose request projection is being resolved.
+     * @returns the same target used by request serialization, before provider-internal processing.
+     */
   imageRequestTarget(_provider: string, _model: string, image: ImageAttachmentRef): ImageRequestTarget;
   /**
-   * List models this adapter can currently advertise for one owned provider.
-   * Core routing accepts unlisted model ids; catalog-driven entry points such
-   * as the GUI may require membership. Adapters used there must advertise
-   * their available models; the base empty catalog offers no GUI selection.
-   * @param _provider - one provider route owned by this adapter.
-   * @returns discoverable models in adapter-preferred order.
-   */
+     * List models this adapter can currently advertise for one owned provider.
+     * Core routing accepts unlisted model ids; catalog-driven entry points such
+     * as the GUI may require membership. Adapters used there must advertise
+     * their available models; the base empty catalog offers no GUI selection.
+     * @param _provider - one provider route owned by this adapter.
+     * @returns discoverable models in adapter-preferred order.
+     */
   listModels(_provider: string): Promise<readonly LlmModelInfo[]>;
   /**
-   * Resolve all metadata available for one exact model. This query is
-   * independent of the advisory catalog and does not validate request routing.
-   * @param provider - one provider route owned by this adapter.
-   * @param model - exact model id passed to {@link GenerateOptions.model}.
-   * @param _signal - cancellation for this exact-model lookup; asynchronous
-   *   implementations must settle promptly after it aborts.
-   * @returns provider/model identity plus any context, call-default, and reasoning metadata.
-   */
+     * Resolve all metadata available for one exact model. This query is
+     * independent of the advisory catalog and does not validate request routing.
+     * @param provider - one provider route owned by this adapter.
+     * @param model - exact model id passed to {@link GenerateOptions.model}.
+     * @param _signal - cancellation for this exact-model lookup; asynchronous
+     *   implementations must settle promptly after it aborts.
+     * @returns provider/model identity plus any context, call-default, and reasoning metadata.
+     */
   resolveModel(
-    provider: string,
-    model: string,
-    _signal?: AbortSignal,
-  ): Promise<LlmResolvedModelInfo>;
+      provider: string,
+      model: string,
+      _signal?: AbortSignal,
+    ): Promise<LlmResolvedModelInfo>;
   /**
-   * Bind exact model metadata and the eventual request dispatch to one adapter generation.
-   * Dynamic adapters override this so settings changes between preparation and
-   * dispatch cannot combine one generation's capabilities with another's endpoint.
-   * @param provider - registered provider route.
-   * @param model - exact model id.
-   * @param signal - cancellation for model resolution.
-   * @returns model metadata and a one-generation stream entry point.
-   */
+     * Bind exact model metadata and the eventual request dispatch to one adapter generation.
+     * Dynamic adapters override this so settings changes between preparation and
+     * dispatch cannot combine one generation's capabilities with another's endpoint.
+     * @param provider - registered provider route.
+     * @param model - exact model id.
+     * @param signal - cancellation for model resolution.
+     * @returns model metadata and a one-generation stream entry point.
+     */
   async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;
   /**
-   * Stream one model call as raw chunks. The only required method.
-   * @param options - the fully-assembled request; implementations must honor `options.signal`.
-   * @returns the chunk stream, obeying the adapter contract documented on `StreamChunk`.
-   */
+     * Stream one model call as raw chunks. The only required method.
+     * @param options - the fully-assembled request; implementations must honor `options.signal`.
+     * @returns the chunk stream, obeying the adapter contract documented on `StreamChunk`.
+     */
   abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
 }
 ```
 
 `ContentBlockType`（带 `index` 关联的块所携带的键集合）从上文的 [`ContentBlockMap`](#content-blocks-and-messages) 派生。
+
+## 模型请求队列容量
+
+可用性查询仅提供建议，不预留配额。适配器在实际发送时预留配额，所有调用共享同一组提供商与模型统计。未知状态不表示已验证的可用容量。
+
+```ts type-equiv
+/** Estimated work inspected without reserving a provider request. */
+interface LlmQueueRequest {
+  /** Registered provider route. */
+  readonly provider: string
+  /** Exact model id. */
+  readonly model: string
+  /** Estimated input tokens, including system messages and tools. */
+  readonly inputTokens: number
+  /** Requested output ceiling, when explicitly selected. */
+  readonly maxTokens?: number
+}
+```
+
+```ts type-equiv
+/** Advisory admission state; actual dispatch must independently reserve capacity. */
+type LlmQueueAvailability =
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'wait'; readonly waitMs: number }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'impossible'; readonly estimatedTokens: number; readonly tokenLimit: number }
+```
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -1162,6 +1205,13 @@ async resolveModelInfo( provider: string, model: string, signal?: AbortSignal, )
  * @returns a detached config only when a default must be materialized.
  */
 async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>
+
+/**
+ * Inspect the registered adapter's shared queue without reserving a request.
+ * @param request - estimated work for an exact provider/model route.
+ * @returns advisory admission state; dispatch remains responsible for pacing.
+ */
+queueAvailability(request: LlmQueueRequest): Promise<LlmQueueAvailability>
 
 /**
  * Resolve one call under its current adapter registration. The returned

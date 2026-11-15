@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it, vi, type TestContext } from 'vitest'
 import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { runScenario, snapshotSpillRoot, type AgentUnderTest, type InputStep } from '../src/harness.ts'
-import { launchAcpTestAgent } from '../src/launcher.ts'
+import { launchAcpTestAgent, materializeProfilePatch } from '../src/launcher.ts'
 
 const fsControl = vi.hoisted(() => ({
   cleanupFailure: undefined as Error | undefined,
@@ -173,6 +173,47 @@ describe('runScenario', () => {
     await expect(minimal.close('SIGTERM')).rejects.toBe(childFailure)
     // close rejects only after the fallback SIGKILL has produced an exit edge.
     expect(exited).toBe(true)
+  })
+
+  it('keeps installation-owned packages out of temporary profile overrides', async () => {
+    const { dir } = await scenario({})
+    const authored = join(dir, 'authored')
+    const installation = join(dir, 'installation')
+    const stale = join(authored, 'node_modules', '@deepseek-ai', 'dsh-agent')
+    const staleTransitive = join(authored, 'node_modules', '@deepseek-ai', 'dsh-agent-default-model')
+    const current = join(installation, 'node_modules', '@deepseek-ai', 'dsh-agent')
+    const transitive = join(current, 'node_modules', '@deepseek-ai', 'dsh-agent-default-model')
+    const custom = join(authored, 'node_modules', 'fixture-plugin')
+    const generated = join(dir, 'generated')
+    await Promise.all([mkdir(stale, { recursive: true }), mkdir(custom, { recursive: true }),
+      mkdir(staleTransitive, { recursive: true }), mkdir(transitive, { recursive: true }), mkdir(generated)])
+    const source = join(authored, 'cordis.yml')
+    const anchor = join(installation, 'package.json')
+    await Promise.all([
+      writeFile(join(stale, 'package.json'), '{"name":"@deepseek-ai/dsh-agent","version":"0.1.0"}\n'),
+      writeFile(join(staleTransitive, 'package.json'), JSON.stringify({
+        name: '@deepseek-ai/dsh-agent-default-model', version: '0.1.0',
+      })),
+      writeFile(join(current, 'package.json'), JSON.stringify({
+        name: '@deepseek-ai/dsh-agent', version: '0.2.0',
+        peerDependencies: { '@deepseek-ai/dsh-agent-default-model': '0.2.0' },
+      })),
+      writeFile(join(transitive, 'package.json'), JSON.stringify({
+        name: '@deepseek-ai/dsh-agent-default-model', version: '0.2.0',
+        dependencies: { '@deepseek-ai/dsh-agent': '0.2.0' },
+      })),
+      writeFile(join(custom, 'package.json'), '{"name":"fixture-plugin","version":"1.0.0"}\n'),
+      writeFile(anchor, '{"name":"@deepseek-ai/dsh","dependencies":{"@deepseek-ai/dsh-agent":"0.2.0"}}\n'),
+      writeFile(source, ['- insert:', "    - name: '@deepseek-ai/dsh-agent'",
+        "    - name: '@deepseek-ai/dsh-agent-default-model'", '    - name: fixture-plugin', ''].join('\n')),
+    ])
+    const patch = materializeProfilePatch(source, dir, 'sdk', generated, 0, anchor)
+    expect(await readFile(patch, 'utf8')).toContain('@deepseek-ai/dsh-agent')
+    await expect(realpath(join(dir, '.dsh/profiles/sdk/node_modules/@deepseek-ai/dsh-agent')))
+      .rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(realpath(join(dir, '.dsh/profiles/sdk/node_modules/@deepseek-ai/dsh-agent-default-model')))
+      .rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await realpath(join(dir, '.dsh/profiles/sdk/node_modules/fixture-plugin'))).toBe(await realpath(custom))
   })
 
   it('builds dsh profile argv and rebases relative modules in live and replay patches', async () => {

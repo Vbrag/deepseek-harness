@@ -154,6 +154,8 @@ export interface SubagentStartRequest {
   readonly label?: string
   /** Content delivered as the child's user message. */
   readonly prompt: ContentBlock[]
+  /** Parent-assessed task requirements for a composed model-routing policy. */
+  readonly taskAssessment?: SubagentTaskAssessment
   /**
    * The spawning agent. Its effective directory supplies the default cwd;
    * in-process children retain its origin, lineage, and delegation depth.
@@ -194,6 +196,63 @@ export interface SubagentStartRequest {
 export interface ResolvedSubagentStartRequest extends SubagentStartRequest {
   /** Absolute child directory captured from the parent or explicit request. */
   readonly cwd: string
+}
+
+/** Task requirements assessed by the delegating agent, without an extra model call. */
+export interface SubagentTaskAssessment {
+  /** Capabilities every selected model must support; labels belong to the routing provider. */
+  readonly requiredCapabilities: readonly string[]
+  /** Additional task strengths used to rank compatible models. */
+  readonly preferredCapabilities?: readonly string[]
+  /** Input modalities needed now or during the task, including images captured later. */
+  readonly requiredModalities?: readonly string[]
+  /** Expected total input context, including material the worker will read later. */
+  readonly contextTokens: number
+  /** Expected response tokens; omission uses the routing provider's configured allowance. */
+  readonly outputTokens?: number
+}
+
+/** Exact LLM route permitted for a child Session. */
+export interface SubagentModelRoute {
+  readonly provider: string
+  readonly model: string
+}
+
+/** Captured inputs for selecting a fresh local child's model. */
+export interface SubagentModelRoutingContext {
+  readonly parent: Agent
+  readonly childId: SessionId
+  readonly prompt: readonly ContentBlock[]
+  readonly taskAssessment?: SubagentTaskAssessment
+  /** Parent and caller options captured before asynchronous routing starts. */
+  readonly agentOptions: AgentOptions
+  /** Manager-owned startup cancellation, including root shutdown. */
+  readonly signal: AbortSignal
+}
+
+/** Selected options and resources owned until child startup fails or its activation settles. */
+export interface SubagentModelRouting {
+  /** Selected options; omission preserves the caller's captured defaults and explicit choices. */
+  readonly agentOptions?: AgentOptions
+  /** Initialize the unpublished child before its first model request. */
+  readonly setup?: (agent: Agent) => void | Promise<void>
+  /** Return the assignment lease synchronously; must be idempotent and nonthrowing. */
+  readonly release?: () => void
+}
+
+/** Optional policy for selecting models of fresh local, history-independent children. */
+export interface SubagentModelRouter {
+  /**
+   * Select a model or return undefined to preserve ordinary delegation behavior.
+   * @param context - captured task, parent, options, and startup cancellation.
+   * @returns selected options, unpublished initialization, and assignment cleanup.
+   */
+  resolve(context: SubagentModelRoutingContext): Promise<SubagentModelRouting | undefined>
+  /**
+   * Supply defaults to the existing fresh-root authorization writer.
+   * @returns permitted routes for future roots, or undefined to supply no default.
+   */
+  newRootPolicyDefaults?(): readonly SubagentModelRoute[] | undefined
 }
 
 /**

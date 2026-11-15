@@ -1,0 +1,10 @@
+version: 1
+scenario: orchestration-mode
+profile: sdk
+composition: sdk-orchestration-mode
+recording: authored
+header:
+  class: sdk-orchestration-mode
+  pin: true
+  childSystemPrompts: [1, 2]
+  childToolSchemas: [1, 2]

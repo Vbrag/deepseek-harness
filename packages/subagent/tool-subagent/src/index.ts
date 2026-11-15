@@ -9,18 +9,19 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
-import { defineTool, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
+import { defineTool, ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm/types'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { AttachmentAdmissionPart } from '@deepseek-ai/dsh-attachment'
 import {
   assertSubagentMaxDepth,
   delegationDepthOf,
   parentAgentOptionsForDelegation,
   SubagentError,
 } from '@deepseek-ai/dsh-subagent'
-import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
+import type { SubagentProvider, SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
 import {
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
@@ -30,10 +31,6 @@ import {
 import type { DelegationModelRequest } from './model-selection.ts'
 import { registerListSubagentModels } from './list-models.ts'
 import { SubagentPresetSelection, type PresetSelectionConfig, type PresetSelectionRequest } from './preset-selection.ts'
-import {
-  subagentModelSelectionProjectionDefinition,
-  subagentModelSelectionPolicy,
-} from './model-selection-state.ts'
 
 export const name = 'tool-subagent'
 export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
@@ -147,6 +144,7 @@ function providerWording(inheritsConversation: boolean): { description: string; 
  * @param config - delegation-tool configuration.
  * @returns when the plugin is ready.
  */
+// oxlint-disable-next-line typescript/require-await -- Direct callers rely on initialization failures rejecting the returned Promise.
 export async function apply(ctx: Context, config: Config): Promise<void> {
   for (const field of ['persona', 'toolFilter']) {
     if (Object.hasOwn(config, field)) {
@@ -163,7 +161,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const toolName = config.toolName ?? 'subagent'
 
   const modelSelectionEnabled = config.modelSelection === true
-  const subagentModelSelectionProjectionHandle = await ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
     presets.assertProvider(subagentProvider)
@@ -193,7 +190,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const initialProvider = ctx.subagents.getProvider(config.provider)
   if (initialProvider !== undefined) assertSubagentProviderConfiguration(initialProvider)
 
-  if (config.modelDiscovery === true) registerListSubagentModels(ctx, subagentModelSelectionProjectionHandle)
+  if (config.modelDiscovery === true) registerListSubagentModels(ctx)
 
   // Load order and HMR replacement can change provider availability while
   // this fiber remains active.
@@ -237,6 +234,23 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           required: true,
           description: wording.promptDescription,
         },
+        task_assessment: {
+          type: 'object',
+          additionalProperties: false,
+          description: 'Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.',
+          properties: {
+            requiredCapabilities: { type: 'array', items: { type: 'string' }, required: true },
+            preferredCapabilities: { type: 'array', items: { type: 'string' } },
+            requiredModalities: { type: 'array', items: { type: 'string' }, description: 'Inputs needed now or later, such as images captured during visual checks.' },
+            contextTokens: { type: 'integer', required: true, description: 'Expected total input tokens, including files and other context the child will read.' },
+            outputTokens: { type: 'integer', description: 'Expected positive response-token count; omit for the configured allowance.' },
+          },
+        },
+        context_image_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Selected image identifiers from the current subagent image context. Only these stored images accompany the self-contained prompt.',
+        },
         ...presets.choices === undefined ? {} : {
           agent_preset: {
             type: 'string' as const,
@@ -279,11 +293,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           throw new ToolContextUnavailableError('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
-        const routes = subagentModelSelectionPolicy(subagentModelSelectionProjectionHandle, parent.session)
+        const routes = ctx.subagents.modelSelectionPolicyOf(parent.session)
         const modelSelectionPolicy = routes === undefined ? undefined : { routes }
         const agentPreset = presets.resolve(args as PresetSelectionRequest)
         const modelRequest = args as DelegationModelRequest
         const parentOptions = parentAgentOptionsForDelegation(parent)
+        const routed = ctx.subagents.routesModelsFor(config.provider)
         const requiresRoutePreflight = hasDelegationModelRequest(modelRequest)
           || hasConfiguredLlmSelection(config.agentOptions)
         const configuredChildAgentOptions = requiresRoutePreflight && providerRouteDefaults !== undefined
@@ -295,8 +310,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           modelSelectionEnabled,
           modelSelectionPolicy,
           parentOptions,
+          routed,
         )
-        if (requiresRoutePreflight) {
+        if (requiresRoutePreflight && !routed) {
           const llm = ctx.get('llm')
           if (llm === undefined) {
             throw new ToolContextUnavailableError('cannot resolve the selected child LLM route because the `llm` service is unavailable')
@@ -317,10 +333,43 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           }
         }
         exec.signal.throwIfAborted()
+        const assessment: SubagentTaskAssessment | undefined = args.task_assessment
+        if (assessment !== undefined) {
+          for (const [field, value] of [['contextTokens', assessment.contextTokens], ['outputTokens', assessment.outputTokens]] as const) {
+            const minimum = field === 'outputTokens' ? 1 : 0
+            if (value !== undefined && (!Number.isSafeInteger(value) || value < minimum)) {
+              throw new ToolArgsError([`task_assessment.${field} must be a ${minimum === 0 ? 'non-negative' : 'positive'} safe integer`])
+            }
+          }
+        }
+        let prompt: ContentBlock[] = [{ type: 'text', text: args.prompt }]
+        if (args.context_image_ids !== undefined && args.context_image_ids.length > 0) {
+          const available = ctx.subagents.contextImagesOf(parent.session)
+          const attachments = ctx.get('attachments')
+          if (attachments === undefined) throw new ToolContextUnavailableError('forwarding image context requires the attachment service')
+          const selected = new Set<string>()
+          const content: AttachmentAdmissionPart[] = [{ type: 'text', text: args.prompt }]
+          for (const id of args.context_image_ids) {
+            const image = available.find(candidate => candidate.attachmentId === id)
+            if (image === undefined || selected.has(id)) {
+              throw new ToolArgsError([`context_image_ids contains an unavailable or repeated image: ${id}`])
+            }
+            selected.add(id)
+            content.push({ type: 'image', attachment: image, encodedBytes: image.bytes })
+          }
+          const admitted = await attachments.admitPromptContent(content)
+          for (const part of admitted) if (part.type === 'image') await attachments.readImage(part.attachment, exec.signal)
+          exec.signal.throwIfAborted()
+          prompt = admitted
+        }
         const maxDepth = ctx.subagents.resolveMaxDepth(config.maxDepth)
+        if (routed && !ctx.subagents.routesModelsFor(config.provider)) {
+          throw new SubagentError('subagent model routing changed during startup; retry the delegation', 'MODEL_ROUTER_CHANGED')
+        }
         const request = {
           ...args.cwd === undefined ? {} : { cwd: args.cwd },
-          prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
+          prompt,
+          ...assessment === undefined ? {} : { taskAssessment: assessment },
           parent,
           ...agentPreset === undefined ? {} : { agentPreset },
           ...requestedChildAgentOptions !== undefined ? { agentOptions: requestedChildAgentOptions } : {},
@@ -378,6 +427,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (visible[0] !== toolName) return ''
       const names = visible.map(name => `\`${name}\``).join(' or ')
       return `Start independent delegations with ${names} together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.`
+    },
+  })
+  ctx.systemPrompt.context({
+    name: `tool:${toolName}:images`,
+    order: ctx.systemPrompt.getContextOrder('SUBAGENT_DELEGATION'),
+    text: (context) => {
+      if (context.agent === undefined || mounted === undefined
+        || ctx.tools.get(toolName, context.scope) !== mounted.definition) return ''
+      const images = ctx.subagents.contextImagesOf(context.agent.session)
+      if (images.length === 0) return ''
+      return `Image context available to ${toolName} via context_image_ids: ${images.map(image => image.attachmentId).join(', ')}. Select only images needed for the delegated task.`
     },
   })
   ctx.systemPrompt.context({

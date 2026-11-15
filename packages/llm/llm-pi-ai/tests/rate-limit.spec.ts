@@ -8,7 +8,7 @@ import {
   ModelRateLimiter,
 } from '../src/rate-limit.ts'
 
-/** A rejection helper that lets a test observe one pending acquire resolving. */
+/** Observe admission without awaiting a deliberately blocked request. */
 function acquireLater(limiter: ModelRateLimiter, provider: string, model: string, limits: ModelRateLimit | undefined, input: number) {
   let resolved = false
   const promise = limiter.acquire(provider, model, limits, input).then((n) => { resolved = true; return n })
@@ -51,65 +51,126 @@ describe('ModelRateLimiter', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
 
-  it('returns immediately when no limits are declared', async () => {
+  it('leaves unlimited routes advisory-unknown while retaining recent dispatches for later limits', async () => {
     const limiter = new ModelRateLimiter()
-    await expect(limiter.acquire('p', 'm', undefined, 0)).resolves.toBe(0)
+    expect(limiter.availability('p', 'm', undefined, 100)).toEqual({ kind: 'unknown' })
+    const reservation = await limiter.acquire('p', 'm', undefined, 100)
+    reservation.dispatch()
+    reservation.settle()
+    expect(limiter.availability('p', 'm', { rpm: 1 }, 0).kind).toBe('wait')
   })
 
-  it('paces by RPM: a third immediate call waits for the bucket to refill', async () => {
+  it('admits no more than the declared RPM in any rolling minute', async () => {
     const limiter = new ModelRateLimiter()
     const limits: ModelRateLimit = { rpm: 2 }
-    await limiter.acquire('p', 'm', limits, 0)
-    await limiter.acquire('p', 'm', limits, 0)
+    for (let i = 0; i < 2; i += 1) {
+      const reservation = await limiter.acquire('p', 'm', limits, 0)
+      reservation.dispatch()
+      reservation.settle()
+    }
     const third = acquireLater(limiter, 'p', 'm', limits, 0)
-    // Capacity is 2, refill 2/60 per second: only ~30s of waiting to free one.
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(59_999)
     expect(third.resolved).toBe(false)
-    await vi.advanceTimersByTimeAsync(30000)
+    await vi.advanceTimersByTimeAsync(1)
     expect(third.resolved).toBe(true)
+    ;(await third.promise).release()
   })
 
-  it('holds distinct provider+model budgets independently', async () => {
+  it('keeps model, provider, and adapter-instance budgets independent', async () => {
     const limiter = new ModelRateLimiter()
-    const a: ModelRateLimit = { rpm: 1 }
-    const b: ModelRateLimit = { rpm: 1 }
-    await limiter.acquire('p', 'm1', a, 0)
-    // A different model has its own full budget.
-    await expect(limiter.acquire('p', 'm2', b, 0)).resolves.toBe(0)
-    // The same model is now exhausted.
-    const again = acquireLater(limiter, 'p', 'm1', a, 0)
-    expect(again.resolved).toBe(false)
+    const limits = { rpm: 1 }
+    await limiter.acquire('p', 'm1', limits, 0)
+    expect(limiter.availability('p', 'm1', limits, 0).kind).toBe('wait')
+    expect(limiter.availability('p', 'm2', limits, 0)).toEqual({ kind: 'ready' })
+    expect(limiter.availability('other', 'm1', limits, 0)).toEqual({ kind: 'ready' })
+    expect(new ModelRateLimiter().availability('p', 'm1', limits, 0)).toEqual({ kind: 'ready' })
   })
 
-  it('paces by TPM: reserves an input estimate and lets RPM pass when no rpm limit is set', async () => {
+  it('keeps actual usage debt until its rolling minute expires', async () => {
     const limiter = new ModelRateLimiter()
-    const limits: ModelRateLimit = { tpm: 4000 } // refill 4000/60 per second
-    // Reserve 3000 tokens immediately.
-    await limiter.acquire('p', 'm', limits, 3000)
-    const next = acquireLater(limiter, 'p', 'm', limits, 3000)
-    // Only 1000 of the requested 3000 are available; needs ~30s.
-    await vi.advanceTimersByTimeAsync(1000)
+    const limits = { tpm: 1000 }
+    const reservation = await limiter.acquire('p', 'm', limits, 100)
+    reservation.dispatch()
+    await vi.advanceTimersByTimeAsync(30_000)
+    reservation.settle(1500)
+    expect(limiter.availability('p', 'm', limits, 1)).toEqual({ kind: 'wait', waitMs: 60_000 })
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(limiter.availability('p', 'm', limits, 1).kind).toBe('wait')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(limiter.availability('p', 'm', limits, 1)).toEqual({ kind: 'ready' })
+  })
+
+  it('wakes queued calls when actual usage refunds an estimate', async () => {
+    const limiter = new ModelRateLimiter()
+    const limits = { tpm: 800 }
+    const first = await limiter.acquire('p', 'm', limits, 500)
+    first.dispatch()
+    const next = acquireLater(limiter, 'p', 'm', limits, 500)
     expect(next.resolved).toBe(false)
-    await vi.advanceTimersByTimeAsync(30000)
+    first.settle(100)
+    ;(await next.promise).release()
     expect(next.resolved).toBe(true)
-    expect(await next.promise).toBe(3000)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('refunds an over-estimate on settle and charges a deficit', async () => {
+  it('releases RPM-only reservations only before dispatch', async () => {
     const limiter = new ModelRateLimiter()
-    const limits: ModelRateLimit = { tpm: 100000 }
-    // Reserve 1000, then settle with actual 500 (over-estimate): refund 500.
-    await limiter.acquire('p', 'm', limits, 1000)
-    limiter.settle('p', 'm', limits, 1000, 300, 200)
-    // Budget now has room for a fresh 1000 immediately (capacity 100000).
-    await expect(limiter.acquire('p', 'm', limits, 1000)).resolves.toBe(1000)
+    const limits = { rpm: 1 }
+    const beforeDispatch = await limiter.acquire('p', 'm', limits, 0)
+    beforeDispatch.release()
+    const afterDispatch = await limiter.acquire('p', 'm', limits, 0)
+    afterDispatch.dispatch()
+    afterDispatch.release()
+    afterDispatch.settle()
+    expect(limiter.availability('p', 'm', limits, 0)).toEqual({ kind: 'wait', waitMs: 60_000 })
   })
 
-  it('releases a reservation when a call never produces usage', async () => {
+  it('retains conservative usage when a dispatched request reports none', async () => {
     const limiter = new ModelRateLimiter()
-    const limits: ModelRateLimit = { rpm: 1 }
-    await limiter.acquire('p', 'm', limits, 0)
-    limiter.release('p', 'm', 0)
-    await expect(limiter.acquire('p', 'm', limits, 0)).resolves.toBe(0)
+    const limits = { tpm: 1000 }
+    const reservation = await limiter.acquire('p', 'm', limits, 800)
+    reservation.dispatch()
+    reservation.settle()
+    expect(limiter.availability('p', 'm', limits, 300).kind).toBe('wait')
+  })
+
+  it('applies changed limits to outstanding charges without resetting them', async () => {
+    const limiter = new ModelRateLimiter()
+    const first = await limiter.acquire('p', 'm', { tpm: 1000 }, 800)
+    first.dispatch()
+    first.settle()
+    expect(limiter.availability('p', 'm', { tpm: 1500 }, 800).kind).toBe('wait')
+    expect(limiter.availability('p', 'm', { tpm: 2000 }, 800)).toEqual({ kind: 'ready' })
+    expect(limiter.availability('p', 'm', { rpm: 1 }, 0).kind).toBe('wait')
+  })
+
+  it('does not reserve capacity through repeated advisory queries', () => {
+    const limiter = new ModelRateLimiter()
+    expect(limiter.availability('p', 'm', { rpm: 1 }, 0)).toEqual({ kind: 'ready' })
+    expect(limiter.availability('p', 'm', { rpm: 1 }, 0)).toEqual({ kind: 'ready' })
+  })
+
+  it('rejects oversized requests immediately with a typed failure', async () => {
+    const limiter = new ModelRateLimiter()
+    expect(limiter.availability('p', 'm', { tpm: 100 }, 101))
+      .toEqual({ kind: 'impossible', estimatedTokens: 101, tokenLimit: 100 })
+    await expect(limiter.acquire('p', 'm', { tpm: 100 }, 101))
+      .rejects.toMatchObject({ name: 'LlmError', code: 'RATE_LIMIT_REQUEST_TOO_LARGE' })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not charge an already-aborted call and removes cancelled waits', async () => {
+    const limiter = new ModelRateLimiter()
+    const controller = new AbortController()
+    controller.abort(new Error('cancelled'))
+    await expect(limiter.acquire('p', 'm', { rpm: 1 }, 0, controller.signal)).rejects.toThrow('cancelled')
+    const reservation = await limiter.acquire('p', 'm', { rpm: 1 }, 0)
+    const queued = new AbortController()
+    const waiting = limiter.acquire('p', 'm', { rpm: 1 }, 0, queued.signal)
+    const rejected = expect(waiting).rejects.toThrow('stop waiting')
+    queued.abort(new Error('stop waiting'))
+    await rejected
+    expect(vi.getTimerCount()).toBe(0)
+    reservation.release()
   })
 })

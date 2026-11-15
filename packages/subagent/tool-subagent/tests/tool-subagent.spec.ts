@@ -105,10 +105,12 @@ describe('dsh-tool-subagent', () => {
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
     expect(Object.keys(props).sort()).toEqual([
+      'context_image_ids',
       'cwd',
       'description',
       'name',
       'prompt',
+      'task_assessment',
     ])
     expect(schema!.description).not.toContain('job_output')
   })

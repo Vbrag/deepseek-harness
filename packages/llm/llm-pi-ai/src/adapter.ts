@@ -47,6 +47,8 @@ import type {
   GenerateOptions,
   ImageAttachmentAccess,
   LlmModelInfo,
+  LlmQueueRequest,
+  LlmQueueAvailability,
   LlmProviderInfo,
   LlmResolvedModelInfo,
   PreparedAdapterCall,
@@ -59,7 +61,7 @@ import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attac
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
-import type { ModelRateLimit } from './catalog.ts'
+import type { ModelRateReservation } from './rate-limit.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
 import { ModelRateLimiter, estimateRequestInputTokens } from './rate-limit.ts'
@@ -283,7 +285,7 @@ function requestHeaders(
  */
 export class PiAiAdapter extends LlmAdapter {
   private snapshot: PiAiSnapshot | undefined
-  /** Process-wide per-model pacing shared by every chat on this adapter's routes. */
+  /** Instance-owned pacing shared by every chat on this adapter's routes. */
   private readonly rateLimiter = new ModelRateLimiter()
 
   constructor(private readonly config: PiAiAdapterOptions) {
@@ -391,6 +393,7 @@ export class PiAiAdapter extends LlmAdapter {
       name: resolvedModel.name,
       inputModalities: [...resolvedModel.input],
       context: { contextWindow: resolvedModel.contextWindow },
+      maxOutputTokens: resolvedModel.maxTokens,
       ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
       ...reasoningInfo(resolvedModel, defaultLevel),
       ...conversationUpdates(resolvedModel),
@@ -409,6 +412,29 @@ export class PiAiAdapter extends LlmAdapter {
       model: this.modelInfo(snapshot, provider, model),
       stream: options => this.streamWithSnapshot(options, snapshot),
     })
+  }
+
+  override queueAvailability(request: LlmQueueRequest): Promise<LlmQueueAvailability> {
+    return Promise.resolve().then(() => {
+      const snapshot = this.current()
+      const profile = this.profileOf(snapshot, request.provider)
+      const model = this.modelOf(snapshot, request.provider, request.model)
+      return this.rateLimiter.availability(
+        request.provider,
+        request.model,
+        profile.modelRateLimits.get(request.model),
+        request.inputTokens + this.outputAllowance(profile, model, request.maxTokens),
+      )
+    })
+  }
+
+  /** Reserve only a pacing allowance; the request's actual output ceiling remains unchanged. */
+  private outputAllowance(profile: ResolvedPiAiProviderProfile, model: Model<Api>, maxTokens?: number): number {
+    return Math.min(
+      profile.rateLimitOutputTokens,
+      maxTokens ?? profile.configuredMaxTokens.get(model.id) ?? model.maxTokens,
+      model.maxTokens,
+    )
   }
 
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -452,11 +478,8 @@ export class PiAiAdapter extends LlmAdapter {
     const streamIdleTimeoutMs = profile.streamIdleTimeoutMs
     using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
 
-    // Pacing reservation state, hoisted so both the inner stream loop and the
-    // outer error path can release a reservation if the call never reports
-    // usage (aborted, idle-timeout, or a synchronous dispatch failure).
-    let limits: ModelRateLimit | undefined
-    let reservedInput = 0
+    let reservation: ModelRateReservation | undefined
+    let dispatched = false
     let settled = false
 
     try {
@@ -485,34 +508,34 @@ export class PiAiAdapter extends LlmAdapter {
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade, updates.systemPromptUpdate === 'in-history', prefixDigests)
-      limits = profile.modelRateLimits.get(options.model)
-      // Pace the call within the model's per-minute budget before dispatch,
-      // holding it until both the RPM and TPM buckets have room. The wait is
-      // process-wide (shared by every chat on this adapter), so concurrent
-      // sessions never push the route past the gateway's per-model cap. Aborts
-      // propagate through the watchdog signal, so a cancelled call leaves the
-      // queue instead of being held.
-      if (limits !== undefined) {
-        reservedInput = await this.rateLimiter.acquire(
-          options.provider,
-          options.model,
-          limits,
-          estimateRequestInputTokens(request.messages, request.system, request.tools),
-          watchdog.signal,
-        )
+      if (options.signal?.aborted) {
+        yield { type: 'finish', reason: { kind: 'aborted', failure: new LlmError('pi-ai request aborted by caller', 'ABORTED').failure } }
+        return
       }
+      reservation = await this.rateLimiter.acquire(
+        options.provider,
+        options.model,
+        profile.modelRateLimits.get(options.model),
+        estimateRequestInputTokens(request.messages, request.system, request.tools)
+          + this.outputAllowance(profile, model, options.maxTokens),
+        watchdog.signal,
+      )
       const manualThinking = model.reasoning && reasoning !== undefined && reasoning !== 'off'
         && (model as Model<'anthropic-messages'>).compat?.forceAdaptiveThinking !== true
       const { context, digest } = bindThinkingToPrefix(converted, model.api, prefixDigests, manualThinking, (count) => {
         this.config.onThinkingOmitted?.({ provider: options.provider, model: options.model, count })
       })
+      const headers = requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders)
+      watchdog.signal.throwIfAborted()
+      reservation.dispatch()
+      dispatched = true
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
-        headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
+        headers,
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id, digest)[Symbol.asyncIterator]()
       let exhausted = false
@@ -523,18 +546,12 @@ export class PiAiAdapter extends LlmAdapter {
             exhausted = true
             return
           }
-          // The usage chunk reports the request's real token accounting; settle
-          // the TPM budget against it (refunding an over-estimate, charging a
-          // deficit) so the next call to this model sees the true usage.
-          if (result.value.type === 'usage' && limits !== undefined && reservedInput > 0) {
-            this.rateLimiter.settle(
-              options.provider,
-              options.model,
-              limits,
-              reservedInput,
-              result.value.usage.inputTokens,
-              result.value.usage.outputTokens,
-            )
+          if (result.value.type === 'usage') {
+            const usage = result.value.usage
+            const actualTokens = usage.totalTokens
+              ?? usage.inputTokens + usage.outputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+            // pi-ai initializes absent provider counters to zero, including on errors.
+            reservation.settle(actualTokens > 0 ? actualTokens : undefined)
             settled = true
           }
           yield result.value
@@ -557,13 +574,10 @@ export class PiAiAdapter extends LlmAdapter {
       }
       throw error
     } finally {
-      // The call never reported usage — a normal stream records it via `settle`,
-      // while a stopped, aborted, idle-timed-out, or synchronously failing call
-      // does not. Returning the reservation keeps a call that never completed
-      // from silently consuming the model's RPM/TPM budget. This runs even when
-      // the inner stream loop threw before it observed usage.
-      if (limits !== undefined && reservedInput > 0 && !settled) {
-        this.rateLimiter.release(options.provider, options.model, reservedInput)
+      if (!dispatched) reservation?.release()
+      else if (!settled) {
+        // A dispatched call may have consumed provider capacity despite missing usage.
+        reservation?.settle()
       }
       consumer.abort('pi-ai stream consumer stopped')
     }

@@ -63,6 +63,10 @@ For every backend, the runtime automatically delivers the completion notice if t
 
 `maxDepth` caps recursion (`0` forbids delegation); omission reads the current Host `subagent.maxDepth` setting, initially `1`, at each delegation. A numeric depth requires a provider with the `depthLimit` capability; `'provider-managed'` leaves the budget to an out-of-process provider. The tool stays visible at the cap; each attempted start checks the calling agent's current depth and rejects with an errored result.
 
+`task_assessment` supplies required and preferred capability labels, anticipated input modalities, expected context tokens, and an optional response-token estimate to a composed model router. Labels belong to that router; the ordinary tool adds no classifier request. A router may require assessment while its mode is active and replace requested model hints before effective-route authorization and adapter preflight. Other delegation backends preserve explicit-selection behavior.
+
+`context_image_ids` selects stored images retained in the parent's current model context, including earlier screenshots. A runtime-context contribution lists the available identifiers. The tool admits the selected batch through the shared image-count and aggregate-byte policy, verifies its stored images, and forwards only those images with the self-contained prompt; missing or repeated identifiers reject before startup. Reused images count their stored encoded bytes. Images are not inherited implicitly.
+
 <a id="selecting-a-child-preset"></a>
 ### Selecting a child preset
 
@@ -204,6 +208,20 @@ One short contribution per capped tool joins the user-role runtime-context snaps
 #### KV Cache effect
 
 Depth changes do not alter the system prompt or tool schemas. Updated runtime context appends after existing history; the provider still enforces the cap if the model attempts delegation.
+
+### Task assessment and image context
+
+#### What the model sees
+
+The spawn schema accepts the parent's assessment and selected image identifiers. With images available, runtime context names the images eligible for `context_image_ids`; only selected images enter the child's initial user message. The assessment stays in the parent's logged tool call and is passed to the active routing policy.
+
+#### Token effect
+
+Assessment adds tool-argument tokens without a classifier call. Available image identifiers add a short runtime-context contribution; selected image input consumes tokens in the child.
+
+#### KV Cache effect
+
+The tool schema remains stable. Image identifiers update logged runtime context after existing history; forwarding images starts a fresh child request without copying the parent's conversation prefix.
 
 ### Start result
 

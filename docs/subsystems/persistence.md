@@ -284,11 +284,11 @@ declare class SessionPreparation implements Disposable {
   /** The exact Session to use for setup and publication. */
   readonly session: Session;
   /**
-   * Wrap an unpublished Session in one preparation lifetime.
-   * @param session - exact unpublished Session.
-   * @param options - optional provider release behavior.
-   * @returns a preparation disposed after publication or rollback.
-   */
+     * Wrap an unpublished Session in one preparation lifetime.
+     * @param session - exact unpublished Session.
+     * @param options - optional provider release behavior.
+     * @returns a preparation disposed after publication or rollback.
+     */
   static create(session: Session, options?: SessionPreparationOptions): SessionPreparation;
   /** Release provider state once when this preparation leaves its caller. */
   [Symbol.dispose](): void;

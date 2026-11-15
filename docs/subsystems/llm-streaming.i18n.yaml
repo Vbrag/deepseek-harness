@@ -50,3 +50,6 @@
 /llm-streaming/service-and-provider-contracts:
   en: 8dc79d4cc82824c2
   zh: 3ebabd3a117ad717
+/llm-streaming/model-request-queue-capacity:
+  en: 9f6cc7a43d0be6ef
+  zh: 007b9bdf2c98fcdd

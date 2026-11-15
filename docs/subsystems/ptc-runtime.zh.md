@@ -190,10 +190,10 @@ declare class PtcImage {
   /** Stored image selected when the program inspects this value. */
   readonly attachment: Readonly<ImageAttachmentRef>;
   /**
-   * Describe one immutable image file in the execution world.
-   * @param path - Absolute path to the stored image.
-   * @param attachment - Reference to the immutable stored image.
-   */
+     * Describe one immutable image file in the execution world.
+     * @param path - Absolute path to the stored image.
+     * @param attachment - Reference to the immutable stored image.
+     */
   constructor(path: string, attachment: ImageAttachmentRef);
 }
 ```

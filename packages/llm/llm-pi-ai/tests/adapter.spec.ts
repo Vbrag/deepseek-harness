@@ -114,6 +114,97 @@ beforeEach(() => {
 })
 
 describe('PiAiAdapter provider routing', () => {
+  it('queries the dispatch ledger without reserving capacity or making provider calls', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'acme-gateway': {
+          api: 'openai-completions',
+          baseURL: server.url,
+          apiKeyEnv: 'PI_TEST_KEY',
+          models: [{ id: 'limited', maxTokens: 100, rpm: 1, tpm: 1000 }],
+        },
+      },
+    })
+    const query = { provider: 'acme-gateway', model: 'limited', inputTokens: 50 }
+    await expect(ctx.llm.queueAvailability(query)).resolves.toEqual({ kind: 'ready' })
+    await expect(ctx.llm.queueAvailability(query)).resolves.toEqual({ kind: 'ready' })
+    expect(server.requests).toHaveLength(0)
+    const chunks: unknown[] = []
+    for await (const chunk of ctx.llm.stream({ ...query, messages: [] })) chunks.push(chunk)
+    expect(chunks.length).toBeGreaterThan(0)
+    expect(server.requests).toHaveLength(1)
+    await expect(ctx.llm.queueAvailability(query)).resolves.toMatchObject({ kind: 'wait' })
+  })
+
+  it('caps the output allowance by effective ceilings and applies the configured allowance', async () => {
+    const adapter = adapterOf({
+      acme: {
+        api: 'openai-completions', baseURL: 'https://acme.test/v1',
+        models: [{ id: 'limited', maxTokens: 100, tpm: 150 }],
+      },
+      smaller: {
+        api: 'openai-completions', baseURL: 'https://acme.test/v1', rateLimitOutputTokens: 25,
+        models: [{ id: 'limited', maxTokens: 100, tpm: 150 }],
+      },
+    })
+    await expect(adapter.queueAvailability({ provider: 'acme', model: 'limited', inputTokens: 51 }))
+      .resolves.toEqual({ kind: 'impossible', estimatedTokens: 151, tokenLimit: 150 })
+    await expect(adapter.queueAvailability({ provider: 'acme', model: 'limited', inputTokens: 51, maxTokens: 40 }))
+      .resolves.toEqual({ kind: 'ready' })
+    await expect(adapter.queueAvailability({ provider: 'smaller', model: 'limited', inputTokens: 100 }))
+      .resolves.toEqual({ kind: 'ready' })
+    expect(() => resolveProfiles({ acme: { rateLimitOutputTokens: 0 } }))
+      .toThrow('rateLimitOutputTokens must be a positive safe integer')
+  })
+
+  it('reports output capacity independently of a configured request default', async () => {
+    const adapter = adapterOf({
+      acme: {
+        api: 'openai-completions', baseURL: 'https://acme.test/v1', defaultMaxTokens: 100,
+        models: [{ id: 'capacity-only', contextWindow: 10_000 }, { id: 'configured', maxTokens: 80 }],
+      },
+    })
+    const capacityOnly = await adapter.resolveModel('acme', 'capacity-only')
+    expect(capacityOnly).toMatchObject({ context: { contextWindow: 10_000 }, maxOutputTokens: 100 })
+    expect(capacityOnly).not.toHaveProperty('defaultMaxTokens')
+    await expect(adapter.resolveModel('acme', 'configured'))
+      .resolves.toMatchObject({ maxOutputTokens: 80, defaultMaxTokens: 80 })
+  })
+
+  it.each(['missing-usage', 'provider-error'] as const)('retains the dispatched token estimate after %s', async (outcome) => {
+    const server = await mockServer([outcome === 'provider-error'
+      ? { status: 400, body: '{"error":{"message":"invalid request"}}' }
+      : { events: [
+        '{"choices":[{"delta":{"role":"assistant","content":"hello"},"index":0,"finish_reason":null}]}',
+        '{"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}',
+        '[DONE]',
+      ] }])
+    const ctx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        acme: {
+          api: 'openai-completions', baseURL: server.url, apiKeyEnv: 'PI_TEST_KEY', rateLimitOutputTokens: 100,
+          models: [{ id: 'limited', maxTokens: 100, tpm: 1000 }],
+        },
+      },
+    })
+    const query = { provider: 'acme', model: 'limited', inputTokens: 900, maxTokens: 100 }
+    await expect(ctx.llm.queueAvailability(query)).resolves.toEqual({ kind: 'ready' })
+    let zeroUsage = false
+    for await (const chunk of ctx.llm.stream({ provider: 'acme', model: 'limited', messages: [] })) {
+      if (chunk.type === 'usage') zeroUsage = chunk.usage.totalTokens === 0
+    }
+    expect(zeroUsage).toBe(true)
+    expect(server.requests).toHaveLength(1)
+    await expect(ctx.llm.queueAvailability(query)).resolves.toMatchObject({ kind: 'wait' })
+  })
+
   it('resolves a catalog model dynamically and uses a private endpoint', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(server.url)

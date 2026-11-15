@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在会话输入栏中选择默认或编排模式，并在编排设置分区中选择工作模型。输入栏读取会话的主机投影，通过命令服务提交模式选择；它显示等待生效的更改，并报告选择失败，而不会乐观地修改显示的模式。设置面板列出带能力徽章的 Paderborn AI-Gateway 目录，并写入主机共享模型池。通过实验性编排配置包启用这两个控件。
+在会话输入栏中选择默认或编排模式，并在编排设置分区中选择子代理模型。输入栏读取会话的主机投影，通过命令服务提交模式选择；它显示等待生效的更改，并报告选择失败，而不会乐观地修改显示的模式。设置面板列出带能力徽章的 Paderborn AI-Gateway 目录，并写入主机共享模型池。通过实验性编排配置包启用这两个控件。
 
 ## 目录
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-通过 [`@deepseek-ai/dsh-orchestration-profile`](../orchestration-profile/README.zh.md) 启用本包。这个组合包同时提供 Orchestration 服务、工具与本 Web 面板。Web Client loader 挂载 `/client` export；root Host export 不执行行为，本包也没有用户配置字段。
+通过 [`@deepseek-ai/dsh-orchestration-profile`](../orchestration-profile/README.zh.md) 启用本包。这个组合包同时提供 Orchestration 服务与本 Web 面板。Web Client loader 挂载 `/client` export；root Host export 不执行行为，本包也没有用户配置字段。
 
 ### 选择会话模式
 
@@ -62,7 +62,7 @@ Client export 通过 `ctx.remote.$mount` 挂载 `orchestrations` Remote contribu
 
 - [Orchestration 配置包](../orchestration-profile/README.zh.md)——挂载本 Client plugin 的公开 opt-in bundle。
 - [Orchestration 服务](../dsh-orchestration/README.zh.md)——持有模型池的 Host `orchestrations` 服务。
-- [Orchestration 工具](../tool-orchestration/README.zh.md)——由模型池驱动的面向模型的 `run_orchestration` 工具。
+- [子代理工具](../../subagent/tool-subagent/README.zh.md)——通过任务评估与选定上下文执行普通委派。
 - [实验性包](../README.zh.md)——孵化状态与发布规则。
 
 -----
@@ -74,11 +74,11 @@ Client export 通过 `ctx.remote.$mount` 挂载 `orchestrations` Remote contribu
 
 #### 模型所见
 
-面板通过 Host `orchestrations` Remote 命名空间写入所选的多模型模型池。池条目是后续 Orchestration 运行使用的 `provider`/`model` 路由；面板本身不注册任何工具、提示分区或面向模型的输入，选择仅在运行时消费其路由时才进入模型。
+面板通过 Host `orchestrations` Remote 命名空间写入所选的多模型模型池。池条目是编排模式下普通子代理可选择的 `provider`/`model` 路由；面板本身不注册任何工具、提示分区或面向模型的输入，所选路由在子代理启动时记录。
 
 #### Token 影响
 
-面板本身无 Token 消耗。所选模型池驱动后续 `run_orchestration` 调用，这些调用的规划与 worker 请求会通过 Orchestration 服务在所选路线上消耗 token。
+面板本身无 Token 消耗。普通子代理请求在其所选路由上消耗 Token；模型分配不会添加独立的规划请求。
 
 #### KV Cache 影响
 

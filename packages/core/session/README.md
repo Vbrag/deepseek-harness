@@ -71,7 +71,7 @@ Session log positions use two numeric types. `SessionSeq` identifies an existing
 
 ### Write experimental plugin records
 
-`appendPluginRecord(session, type, data)` appends one plugin record for a package under `packages/experimental/`; the `verify-plugin-record-callers` check rejects any other production caller in this repository. Plugins outside this repository must not call it either, although no repository check can inspect them.
+`appendPluginRecord(session, type, data)` delegates to `session.appendPluginRecord(type, data)`, which writes through the owning instance even when the helper and Session come from separately evaluated source and built modules. Both APIs append one plugin record for a package under `packages/experimental/`; the `verify-plugin-record-callers` check rejects any other production caller in this repository. Plugins outside this repository must not call either API, although no repository check can inspect them.
 
 Declare each record in `PluginRecordMap` through `@deepseek-ai/dsh-session/types`, with a description and an explicit payload type annotation in the owning experimental package's `src/`. Names use `plugin:<owner>/<record>`, where `owner` is the package name after removing the legacy `@deepseek-ai/dsh-experimental-` prefix when present, otherwise `@deepseek-ai/dsh-`; for example, `plugin:pi-extensions/entry`. TypeScript checks each name and payload against its declaration; the writer's runtime JSON snapshot rejects values that cannot be preserved losslessly. Put extension-defined or other dynamic names inside the payload of a declared record.
 

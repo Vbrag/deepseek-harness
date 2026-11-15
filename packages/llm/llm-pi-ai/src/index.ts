@@ -92,6 +92,7 @@ export type {
 } from './config.ts'
 export type { ModelBilling, ModelRateLimit } from './catalog.ts'
 export { ModelRateLimiter } from './rate-limit.ts'
+export type { ModelRateReservation } from './rate-limit.ts'
 export { estimateInputTokens, estimateRequestInputTokens } from './rate-limit.ts'
 export { recordKeyFor } from './auth.ts'
 export { supportedProtocols } from './provider.ts'

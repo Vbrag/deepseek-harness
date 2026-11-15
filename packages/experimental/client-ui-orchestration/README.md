@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Select Default or Orchestration from the conversation composer and choose worker models in the Orchestration Settings section. The composer reads the session's host projection and submits mode changes through the command service; it shows queued changes and reports failed selections without changing the displayed mode optimistically. The settings panel lists the Paderborn AI-Gateway catalog with capability badges and writes the shared host model pool. Enable both controls through the experimental Orchestration profile bundle.
+Select Default or Orchestration from the conversation composer and choose subagent models in the Orchestration Settings section. The composer reads the session's host projection and submits mode changes through the command service; it shows queued changes and reports failed selections without changing the displayed mode optimistically. The settings panel lists the Paderborn AI-Gateway catalog with capability badges and writes the shared host model pool. Enable both controls through the experimental Orchestration profile bundle.
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@ Select Default or Orchestration from the conversation composer and choose worker
 <a id="use-this-package"></a>
 ## Use this package
 
-Enable this package through [`@deepseek-ai/dsh-orchestration-profile`](../orchestration-profile/README.md), which supplies the Orchestration service, tool, and this Web panel together. The Web Client loader mounts the `/client` export; the root Host export is inert, and the package has no user configuration fields.
+Enable this package through [`@deepseek-ai/dsh-orchestration-profile`](../orchestration-profile/README.md), which supplies the Orchestration service and this Web panel together. The Web Client loader mounts the `/client` export; the root Host export is inert, and the package has no user configuration fields.
 
 ### Select the session mode
 
@@ -62,7 +62,7 @@ The Client export mounts the `orchestrations` Remote contribution through `ctx.r
 
 - [Orchestration profile bundle](../orchestration-profile/README.md) — the published opt-in bundle that mounts this Client plugin.
 - [Orchestration service](../dsh-orchestration/README.md) — the Host `orchestrations` service that owns the pool.
-- [Orchestration tool](../tool-orchestration/README.md) — the model-facing `run_orchestration` tool the pool drives.
+- [Subagent tools](../../subagent/tool-subagent/README.md) — normal delegation with task assessments and selected context.
 - [Experimental packages](../README.md) — incubation status and publication policy.
 
 -----
@@ -74,11 +74,11 @@ The Client export mounts the `orchestrations` Remote contribution through `ctx.r
 
 #### What the model sees
 
-The panel writes the selected multi-model pool through the Host `orchestrations` Remote namespace. A pool entry is the `provider`/`model` route a later Orchestration run uses; the panel itself registers no tool, prompt section, or model-facing input, and the selection enters the model only when a run consumes its route.
+The panel writes the selected multi-model pool through the Host `orchestrations` Remote namespace. A pool entry is a `provider`/`model` route eligible for normal subagent selection in Orchestration mode; the panel itself registers no tool, prompt section, or model-facing input, and the selected route is recorded when a subagent starts.
 
 #### Token effect
 
-None from the panel. The selected pool drives later `run_orchestration` calls, whose planning and worker requests consume tokens on the chosen routes through the Orchestration service.
+None from the panel. Normal subagent requests consume tokens on their selected routes; model assignment adds no separate planning request.
 
 #### KV Cache effect
 

@@ -54,6 +54,7 @@ export const LLM_FAILURE_CODES = {
   PI_AI_ERROR: {},
   QUOTA: { retryChoice: true },
   RATE_LIMIT: { retryChoice: true },
+  RATE_LIMIT_REQUEST_TOO_LARGE: {},
   REGISTRATION_DISPOSED: {},
   REQUEST_EXTENSION: {},
   REQUEST_HEADERS: {},

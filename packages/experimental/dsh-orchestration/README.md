@@ -1,5 +1,5 @@
 ---
-description: "Decompose one task into parallel subagents over a selected multi-model pool with bounded route failover in experimental Orchestration compositions."
+description: "Select capable, available models for normal subagent delegations in experimental Orchestration mode."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-orchestration` adds an `orchestrations` service that turns one raw task into a plan of independent sub-steps, then runs those steps in parallel as spawn subagents, each assigned a model route from a caller-selected pool. When a worker ends in a failure, an error, or the token limit, the run does not stop: the step is restarted on the next eligible pool route within a bounded attempt budget. The package is experimental and has no stability promise.
+Orchestration mode selects a model for each normal fresh local subagent delegation. The parent assesses the task through the normal subagent tool; this service checks every required capability, expected input modality, and context allowance, then chooses a ready route from the permitted pool. The normal subagent runtime owns execution, cancellation, delivery, and cleanup. This experimental package has no stability promise.
 
 ## Table of Contents
 
@@ -18,141 +18,97 @@ English | [中文](README.zh.md)
 - [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
 
 -----
 
 <a id="use-this-package"></a>
 ## Use this package
 
-Add this package when one session needs to split a goal into parallel sub-tasks across several models, with automatic replacement of a failed or unresponsive model route instead of failing the whole run.
+Mount this service beside the LLM, subagent, agent, session projection, and system-prompt services. It registers a normal subagent model router and a pool settings Remote namespace; it adds no task-planning call or separate orchestration tool.
 
-### When to choose it
+### Session mode and authorization
 
-Choose it for a single self-contained task with multiple independent decomposable parts and a pool of model routes. It does not coordinate dependencies between steps, persist the plan across restarts, or recover work-in-progress.
+Select Orchestration in the conversation composer or run /orchestration on. Run /orchestration off to retain normal parent-route inheritance and authorized explicit or configured child model choices. A selection made between turns applies immediately. A selection made within a turn is recorded durably and applies at the next accepted, nonempty, nonaborted step. Restart and plugin replacement retain pending selections.
 
-### Configure the pool and limits
+The selected mode is logged in each Session. Fresh local children inherit the parent's mode captured when their delegation was admitted, including through deeper delegation chains; changing the parent while a child is starting does not change that captured mode. Forks and external providers retain their existing routing behavior.
 
-The service accepts validated deployment limits in its configuration:
+Every selection must fit the parent's recorded child-model authorization. The configured pool supplies defaults for new root Sessions. Saving another pool changes defaults and routing candidates without widening existing Sessions; a historical Session without recorded authorization permits only its parent route.
 
-| Field | Default | Meaning |
-|---|---|---|
-| `maxConcurrency` | `3` | Maximum worker sub-steps running at once |
-| `maxAttemptsPerStep` | `2` | Maximum attempts per step across all eligible routes |
-| `workerTimeoutMs` | `120,000` | Abandon an attempt that runs longer than this, then fail over |
-| `defaultToOrchestrator` | `false` | Default orchestration mode for a session with no explicit `/orchestration` selection; the `run_orchestration` tool refuses to delegate outside it |
+### Task assessment
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-orchestration) is the exhaustive source for every accepted field and its JSDoc.
+In Orchestration mode, every fresh local delegation requires task_assessment. requiredCapabilities lists every necessary specialty: coding, reasoning, vision, allrounder, or european. preferredCapabilities lists optional strengths. Unsupported required or preferred labels and modalities other than text/image raise ORCHESTRATION_INVALID_ASSESSMENT before route inspection, so callers can correct typos. A model must satisfy every required specialty; reasoning does not substitute for coding.
 
-### Select the session mode
+contextTokens estimates the complete input the worker will need, including files it will read later. requiredModalities lists inputs needed throughout the task; include image for browser or computer screenshots even when the initial prompt contains only text. outputTokens optionally supplies the expected response allowance.
 
-Orchestration is a per-session mode. A Default session runs the normal single-model loop; selecting Orchestration lets `run_orchestration` delegate. Choose the mode from the conversation composer's Default/Orchestration menu, or issue `/orchestration on` or `/orchestration off`. The selection is logged as an `orchestration/mode` session event and folded by the `orchestration` projection, so it survives a restart. Between turns a selection applies immediately; during an open turn it stays pending ("Applies from the next step") until the next accepted boundary commits it. `defaultToOrchestrator` seeds sessions that have never made an explicit selection.
+### Configuration
 
-### Run an orchestration
+The pool field lists exact provider/model routes. routeCapabilities supplies verified specialties for an exact route and replaces its curated specialty list; an empty list clears those specialties. Duplicate exact-route declarations are rejected. The settings client reads curated gateway choices through getCatalog rather than importing Host data.
 
-Call `ctx.orchestrations.run(parent, task, pool, signal)`. The pool is the ordered list of route choices; each route names a `provider` and `model`. Capability routing is resolved from the investigated provider catalog, not from per-route tags.
+contextOverheadTokens defaults to 8192 tokens for child instructions, tools, and request wrappers. The input estimate uses the larger of contextTokens and the initial prompt's text/image estimate, then adds this overhead. Actual inline images require image capability even when the assessment omits it. outputReserveTokens defaults to 4096 when the assessment omits outputTokens; a larger explicit child output cap increases the context allowance. Both allowances are validated deployment settings. The input estimate plus output allowance must fit the model's combined context capacity. Routing preserves the child's actual output cap; normal request preparation and provider limits still apply.
 
-```ts
-import type { PoolRoute } from '@deepseek-ai/dsh-orchestration'
+defaultToOrchestrator defaults to false and seeds the logged mode only for Sessions without a recorded selection. Pool selection is exposed through getPool, setPool, and persistPool. persistPool applies the selection in memory and attempts to save it to the profile; a refused settings write produces a warning and retains the in-memory selection for the process.
 
-const pool: readonly PoolRoute[] = [
-  { provider: 'uni-paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
-  { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash' },
-]
-const result = await ctx.orchestrations.run(parent, 'review the diff and draft a fix', pool, signal)
-```
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-orchestration) documents every accepted setting.
 
-The coordinator plans the task using the parent's selected model and reasoning effort; workers use the separate selected pool. Every step runs as a spawn subagent under `parent`. The returned `OrchestrationResult` lists each step's outcome, routes attempted, replacement attempts, and failed steps.
+### Selection and failures
 
-### What success and failure look like
+The service intersects the pool with recorded authorization, then checks strict task capabilities, anticipated modalities, and context capacity. A known maximum output capacity must also cover the response allowance; an unknown output capacity imposes no additional limit. The current transport admits text and images. Exact adapter metadata takes precedence over curated gateway facts: an explicitly text-only route cannot serve an image task. Curated facts apply only to the known gateway provider; another provider using the same model id requires its own verified specialty declarations and capacity metadata.
 
-A step succeeds when a worker finishes with `completed`, and its assistant output is returned. A step fails when its attempts are exhausted or a worker ends in `refusal`; a `refusal` is never routed around, so policy-denied work surfaces as a failed step rather than silently re-running. An empty pool or a pool that resolves to no usable routes rejects with a `CoordinatorError` before any worker starts; an unparseable or empty plan rejects before any worker starts.
+Ready capable routes rank by preferred task strengths, live child work across Sessions, least recent assignment, and pool order. Live load is read from active or queued child turns, including after plugin replacement; idle continuable children add no load. Unpublished assignments count until publication or rollback. A rate-limited route does not block another ready capable route. When every capable route is busy, admission waits cancellably and rechecks the shared queue at most every availabilityPollMs milliseconds (default 1000), so early capacity refunds can resume work before a rolling-window estimate expires. Missing assessment, unavailable route metadata, or no capable permitted route raises a structured OrchestrationError before a child starts. Routes whose single-request estimate exceeds the token-per-minute capacity are excluded.
+
+The service inspects the LLM adapter's shared queue availability; the adapter remains responsible for actual dispatch admission and request/token accounting. An adapter without availability reporting returns unknown and is eligible only when no capable route reports ready capacity. Unknown capacity is considered before waiting for known throttled routes. A failed or refused worker is never automatically replayed on another model.
 
 -----
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-<details>
-<summary>Implementation internals — click to expand</summary>
+The service registers its selector with SubagentRuntime. It returns the selected child options, a setup callback recording the captured mode, and an idempotent assignment release callback. The runtime validates final authorization and owns startup rollback and assignment release after child teardown. Orchestration retains no worker promises or child execution loop.
 
-This section explains the design decisions behind the service and points at the code that realizes them; the observable behavior is fully covered in [Use this package](#use-this-package).
-
-### Design philosophy
-
-The service composes the stable `ctx.llm` and `ctx.subagents` seams and lives entirely outside the agent loop. Task splitting is a single read-only model call never logged to a Session. Route selection is deterministic and disjoint across attempts, so a replacement never reuses a route that already failed that step.
-
-### Source map
-
-| File | Role |
-|---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, `orchestrations` service, run and per-step execution |
-| [`src/plan.ts`](src/plan.ts) | Pure route ordering, eligibility, and bounded-attempt logic |
-| [`src/coordinator.ts`](src/coordinator.ts) | One-shot LLM task decomposition into a validated plan |
-| [`src/types.ts`](src/types.ts) | Public pool, config, plan, worker, and result types |
-
-### Route selection and failover
-
-Each step matches a worker route by required domains, modalities, and context size. Among routes that tie for the best capability match, the scheduler prefers the least-used model so parallel steps spread across the pool instead of piling onto one model; a no-domain step round-robins over every usable route. Attempts for one step never repeat a model. Settled `error`, `aborted`, and `max-tokens` results can start a replacement within `maxAttemptsPerStep`; `refusal` never does. Caller cancellation prevents new attempts but waits for the current activation to settle. A rejected worker start ends that step without failover: it may represent a policy denial or an unknown partial start. `failovers` counts replacement attempts, not failed steps or intentions to retry.
-
-### Budget and cancellation
-
-Worker concurrency is bounded by a simple semaphore at `maxConcurrency`. Each attempt has a `workerTimeoutMs` ceiling; exceeding it disposes the activation and counts as a failed attempt for failover. The run never waits on an activation whose result settles after its timeout, so a non-responding worker cannot hang a step. The caller's `signal` is forwarded to every activation and the coordinator call.
-
-</details>
+The orchestration projection folds applied mode, durable pending requests, and historical command settlements. Its state version changes when recovery semantics change. Routing decisions record the task assessment, selected exact route, token allowances, and selection reason in informational plugin records. These records do not enter model history.
 
 -----
 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Experimental package reference](../AGENTS.md) — placement, publication, and dependency isolation.
-- [Subagent activation](../../../docs/subsystems/subagent.md) — the `spawn` provider and `delivery: caller` semantics the workers rely on.
+- [Subagent runtime](../../../docs/subsystems/subagent.md) owns normal delegation and model-selection authorization.
+- [LLM runtime](../../../docs/subsystems/llm-streaming.md) owns exact model metadata and request dispatch.
+- [Experimental packages](../AGENTS.md) defines isolation and promotion requirements.
 
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-### Coordinator planning
+### Task-aware delegation
 
 #### What the model sees
 
-One read-only model call splits the raw task into a JSON plan of independent steps. The planning call and its plaintext task are never logged to a Session; the model sees only the resulting plan as structured output, not as a conversation message.
+Active mode adds the following logged runtime guidance about `task_assessment`. The parent decomposes work through ordinary reasoning and normal subagent tools; no extra planning request is sent.
+
+##### Orchestration runtime guidance
+
+```markdown
+Orchestration mode is active. Delegate independent tasks through the normal subagent tools. For every fresh local child, supply task_assessment with requiredCapabilities (coding, reasoning, vision, allrounder, european), contextTokens for expected input including files the child will read, and requiredModalities for inputs needed throughout the task. Include image for screenshots the child may capture later. Use preferredCapabilities for optional strengths and outputTokens for the expected response allowance. Every required capability must be supported; reasoning alone does not establish coding ability. Model selection automatically considers the allowed pool, capabilities, live load, and request/token queue availability.
+```
 
 #### Token effect
 
-Each run issues one planning request on the parent's selected route, retaining its selected reasoning effort. A planning failure produces no step outcomes and consumes only that one request.
+Routing performs metadata and queue inspection without a model call. Each selected child consumes tokens through the ordinary subagent execution. The configured context and output allowances reserve routing headroom; actual requests retain the normal adapter accounting.
 
 #### KV Cache effect
 
-None. The planning call shares no prompt prefix with any later worker and is not part of the Session log.
-
-### Worker attempts
-
-#### What the model sees
-
-Each planned step runs as a fresh, self-contained spawn subagent whose prompt is the step description alone; the worker model sees no parent history. A routed step is delivered with `caller` semantics, so the orchestrator awaits each attempt before deciding a replacement.
-
-#### Token effect
-
-Every worker attempt consumes model tokens on its assigned route. A settled failure that fails over issues a new request on the next eligible route, up to `maxAttemptsPerStep`; each attempt is billed independently.
-
-#### KV Cache effect
-
-No cross-attempt prefix. Each worker is an independent spawn; a failover restarts the step from scratch with no retained KV prefix of the failed attempt.
+Each fresh child has its normal independent history. Routing does not rewrite parent history or replay completed child work. Runtime mode guidance follows normal logged context updates.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Flat dependency-free split** — the coordinator emits an independent step set with no ordering, dependency, or merge phase; dependences between steps must be folded into a single step's prompt.
-- **No durability** — the plan and step outcomes are not persisted; a process restart does not resume an orchestrated run.
-- **Coordinator call is not logged** — the planning model call and the routing decisions are not emitted as Session events, so the model-visible planning input is not reconstructable from the session log; the outer `run_orchestration` tool call does not capture them. This must be addressed before the mode can be relied on for auditability.
-- **Mode is session-scoped, logged, recovered, and command-driven** — orchestration mode is a per-Session selection folded from the `orchestration/mode` session event and the `/orchestration` command lifecycle by the `orchestration` projection, so a restart restores the selection. The `run_orchestration` tool refuses to delegate outside Orchestration mode, so a Default session runs normally. `defaultToOrchestrator` seeds sessions with no explicit selection.
-- **Attempts can replay side effects** — failover restarts a step from scratch, so a step that partially completed a side-effecting action before failing may repeat it. Steps must be written idempotently.
-- **No same-step in-loop failover** — the framework routes only future steps; replacement is a fresh spawn worker on the next settled failure.
-- **Experimental prototype with no stability promise** — the package is public, but its contracts can change freely while it incubates.
+- Task requirements and future context are estimates supplied by the parent; the service cannot infer files or tool-produced images the parent omits.
+- Availability inspection is advisory and does not reserve provider capacity. Another request may consume capacity before dispatch, where the shared limiter remains authoritative.
+- Curated specialties cover one gateway. Other providers need verified route declarations, and unknown modality or context facts cannot establish eligibility.
+- Model selection happens before a fresh local child starts. It does not migrate an active worker, rerun failed side effects, or resume abandoned work on another model.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -164,6 +120,6 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 
 #### Promotion
 
-Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A durable plan/task board is the natural next step.
+Promotion requires reviewing the public behavior, limitations, real-composition evidence, release payload, runtime consumers, and stable ownership under the [experimental subtree rules](../AGENTS.md).
 
 </details>

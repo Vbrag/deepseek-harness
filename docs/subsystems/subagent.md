@@ -88,6 +88,8 @@ interface SubagentStartRequest {
   readonly label?: string
   /** Content delivered as the child's user message. */
   readonly prompt: ContentBlock[]
+  /** Parent-assessed task requirements for a composed model-routing policy. */
+  readonly taskAssessment?: SubagentTaskAssessment
   /**
    * The spawning agent. Its effective directory supplies the default cwd;
    * in-process children retain its origin, lineage, and delegation depth.
@@ -418,6 +420,77 @@ type SubagentDescendantListEntry = SubagentListEntry & {
 
 
 
+## Task assessment and model routing
+
+An optional router selects models for normal fresh subagents inside managed startup. The runtime owns cancellation, authorization, descriptor recording, and assignment cleanup; the policy plugin defines capability labels.
+
+```ts type-equiv
+/** Task requirements assessed by the delegating agent, without an extra model call. */
+interface SubagentTaskAssessment {
+  /** Capabilities every selected model must support; labels belong to the routing provider. */
+  readonly requiredCapabilities: readonly string[]
+  /** Additional task strengths used to rank compatible models. */
+  readonly preferredCapabilities?: readonly string[]
+  /** Input modalities needed now or during the task, including images captured later. */
+  readonly requiredModalities?: readonly string[]
+  /** Expected total input context, including material the worker will read later. */
+  readonly contextTokens: number
+  /** Expected response tokens; omission uses the routing provider's configured allowance. */
+  readonly outputTokens?: number
+}
+```
+
+```ts type-equiv
+/** Exact LLM route permitted for a child Session. */
+interface SubagentModelRoute {
+  readonly provider: string
+  readonly model: string
+}
+```
+
+```ts type-equiv
+/** Captured inputs for selecting a fresh local child's model. */
+interface SubagentModelRoutingContext {
+  readonly parent: Agent
+  readonly childId: SessionId
+  readonly prompt: readonly ContentBlock[]
+  readonly taskAssessment?: SubagentTaskAssessment
+  /** Parent and caller options captured before asynchronous routing starts. */
+  readonly agentOptions: AgentOptions
+  /** Manager-owned startup cancellation, including root shutdown. */
+  readonly signal: AbortSignal
+}
+```
+
+```ts type-equiv
+/** Selected options and resources owned until child startup fails or its activation settles. */
+interface SubagentModelRouting {
+  /** Selected options; omission preserves the caller's captured defaults and explicit choices. */
+  readonly agentOptions?: AgentOptions
+  /** Initialize the unpublished child before its first model request. */
+  readonly setup?: (agent: Agent) => void | Promise<void>
+  /** Return the assignment lease synchronously; must be idempotent and nonthrowing. */
+  readonly release?: () => void
+}
+```
+
+```ts type-equiv
+/** Optional policy for selecting models of fresh local, history-independent children. */
+interface SubagentModelRouter {
+  /**
+   * Select a model or return undefined to preserve ordinary delegation behavior.
+   * @param context - captured task, parent, options, and startup cancellation.
+   * @returns selected options, unpublished initialization, and assignment cleanup.
+   */
+  resolve(context: SubagentModelRoutingContext): Promise<SubagentModelRouting | undefined>
+  /**
+   * Supply defaults to the existing fresh-root authorization writer.
+   * @returns permitted routes for future roots, or undefined to supply no default.
+   */
+  newRootPolicyDefaults?(): readonly SubagentModelRoute[] | undefined
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -461,6 +534,40 @@ startActivation(spec: SubagentActivationSpec & { readonly childId: SessionId }):
  * @returns activation with a message id only for local children.
  */
 startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation>
+
+/**
+ * Register the sole fresh-child model policy in the caller's Cordis lifetime.
+ * @param router - task-aware selector and optional fresh-root authorization defaults.
+ * @returns exact registration disposer; accepted assignments retain their cleanup.
+ */
+registerModelRouter(router: SubagentModelRouter): () => void
+
+/**
+ * Whether a backend delegates fresh local children through the active model policy.
+ * @param providerName - registered subagent backend name.
+ * @returns true when original route resolution belongs to the active router.
+ */
+routesModelsFor(providerName: string): boolean
+
+/**
+ * Read recorded child-route authorization without widening historical Sessions.
+ * @param session - parent Session whose policy is read.
+ * @returns detached permitted routes, or undefined to permit only the parent route.
+ */
+modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined
+
+/**
+ * Read router defaults for the existing fresh-root policy writer.
+ * @returns detached defaults, or undefined when the router supplies none.
+ */
+modelRoutingDefaults(): SubagentModelRoute[] | undefined
+
+/**
+ * Read retained model-context images for explicit child-context selection.
+ * @param session - calling parent's Session.
+ * @returns detached, deduplicated stored references from the Session's cached message projection.
+ */
+contextImagesOf(session: Session): readonly ImageAttachmentRef[]
 
 /**
  * Resolve the root shared by an Agent and its other agents in its subagent tree.
@@ -615,7 +722,7 @@ registerProvider(provider: SubagentProvider): () => void
 getProvider(name: string): SubagentProvider | undefined
 ```
 
-Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md)
+Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [ImageAttachmentRef](attachment.md) · [MessageId](llm-streaming.md) · [Session](session.md) · [SessionId](core.md)
 
 Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
 

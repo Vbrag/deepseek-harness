@@ -23,6 +23,7 @@ import {
   formatToolSchemasSnapshot,
   latestPersistedSessionPaths,
   materializeProfilePatch,
+  normalizeSessionLog,
   normalizeSessionSnapshots,
   normalizedHeaders,
   normalizedSystemPrompts,
@@ -192,7 +193,7 @@ function contextOf(logs: readonly string[]): NormalizeContext {
   return {
     sessionIds: headers.flatMap(header => typeof header.id === 'string' ? [header.id] : []),
     cwd,
-    cwdAliases: [cwd.split(sep).join('/')],
+    cwdAliases: [cwd.split(sep).join('/'), JSON.stringify(cwd).slice(1, -1)],
   }
 }
 
@@ -1062,6 +1063,15 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
 }
 
 describe('headless recorded-session snapshots', () => {
+  it('normalizes only captured workspace spellings inside JSON-quoted Windows context', () => {
+    const cwd = 'C:\\work\\generated-root'
+    const content = JSON.stringify({ type: 'session', cwd }) + '\n'
+      + JSON.stringify({ text: 'Working directory: ' + JSON.stringify(cwd) + '; unrelated C:\\other\\file' }) + '\n'
+    const rows = records(normalizeSessionLog(content, contextOf([content])))
+    expect(rows[0]?.cwd).toBe('{{cwd}}')
+    expect(rows[1]?.text).toBe('Working directory: "{{cwd}}"; unrelated C:\\other\\file')
+  })
+
   it('bootstraps only live recordings with no Session files', () => {
     expect(recordingFixtureNames(['snapshot.yml'], 'record')).toEqual([])
     expect(() => recordingFixtureNames(['snapshot.yml'], 'replay')).toThrow('missing parent')
@@ -1451,7 +1461,7 @@ describe('headless recorded-session snapshots', () => {
             if (scenario.manifest.workspace?.parent === 'outside-temp') assertWorkspaceOutsideTemp(cwd)
             await mkdir(join(cwd, patchRoot), { recursive: true })
             patchSources.forEach((source, index) => {
-              materializeProfilePatch(source, cwd, 'headless', join(cwd, patchRoot), index)
+              materializeProfilePatch(source, cwd, 'headless', join(cwd, patchRoot), index, join(repoRoot, 'apps/cli/package.json'))
             })
             if (scenario.name === 'plugin-manager-mcp') {
               const profileDir = join(cwd, '.dsh/profiles/headless')

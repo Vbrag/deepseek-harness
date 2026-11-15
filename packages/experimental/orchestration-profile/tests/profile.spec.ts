@@ -5,10 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as yaml from 'js-yaml'
-import { capabilityOf, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
+import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot'
+import { capabilityOf, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 
 describe('Orchestration profile bundle', () => {
-  it('declares a public parseable layer with the service, model tool, and pool picker', () => {
+  it('declares a public parseable layer with normal subagent routing and the pool picker', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       private?: boolean
@@ -22,7 +23,6 @@ describe('Orchestration profile bundle', () => {
     expect(manifest.dependencies).toMatchObject({
       '@deepseek-ai/dsh-client-ui-orchestration': 'workspace:*',
       '@deepseek-ai/dsh-orchestration': 'workspace:*',
-      '@deepseek-ai/dsh-tool-orchestration': 'workspace:*',
     })
 
     const parsed = yaml.load(
@@ -36,19 +36,13 @@ describe('Orchestration profile bundle', () => {
     expect(inserted.find(entry => entry.id === 'orchestration')).toMatchObject({
       name: '@deepseek-ai/dsh-orchestration',
     })
-    expect(inserted.find(entry => entry.id === 'tool-orchestration')).toMatchObject({
-      name: '@deepseek-ai/dsh-tool-orchestration',
-    })
+    expect(inserted.some(entry => entry.id === 'tool-orchestration')).toBe(false)
     expect(inserted.find(entry => entry.id === 'ui-orchestration')).toMatchObject({
       name: '@deepseek-ai/dsh-client-ui-orchestration',
     })
 
-    // The shipped layer seeds a provider-aligned default pool so run_orchestration
-    // works on a fresh profile without a prior GUI Save. Every route must name
-    // the harness provider route the base profile mounts (POOL_PROVIDER) and a
-    // catalogued model id, so a stale route or a typoed model fails the bundle.
-    const toolOrchestration = inserted.find(entry => entry.id === 'tool-orchestration')
-    const pool = toolOrchestration?.config?.pool as { provider: string; model: string }[] | undefined
+    const orchestration = inserted.find(entry => entry.id === 'orchestration')
+    const pool = orchestration?.config?.pool as { provider: string; model: string }[] | undefined
     expect(pool).toBeDefined()
     expect(pool?.length).toBeGreaterThan(0)
     for (const route of pool ?? []) {
@@ -56,4 +50,14 @@ describe('Orchestration profile bundle', () => {
       expect(capabilityOf(route.model)).toBeDefined()
     }
   })
+
+  it.each(['orchestration-profile', 'dsh-orchestration', 'client-ui-orchestration'])(
+    'rejects the old host before importing %s and admits the supported runtime', (directory) => {
+      const manifest = JSON.parse(readFileSync(new URL(`../../${directory}/package.json`, import.meta.url), 'utf8')) as object
+      expect(evaluatePluginCompatibility(manifest, {}, '0.2.1-rc.2')?.requirements).toEqual({
+        'engines.dsh': '>=0.2.2-rc.3',
+      })
+      expect(evaluatePluginCompatibility(manifest, {}, '0.2.2-rc.3')).toBeUndefined()
+    },
+  )
 })

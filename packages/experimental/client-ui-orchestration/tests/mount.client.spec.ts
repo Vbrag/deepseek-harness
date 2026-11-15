@@ -2,14 +2,14 @@
 import assert from 'node:assert/strict'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { CommandId } from '@deepseek-ai/dsh-commands/brand'
+import { CommandId } from '@deepseek-ai/dsh-commands'
 import type { CommandExecution } from '@deepseek-ai/dsh-commands'
 import { OrchestrationModeControl, type OrchestrationModeInjected } from '../src/client/OrchestrationModeControl.tsx'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
-import { POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/src/capabilities.ts'
+import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { expect, it, vi, type Mock } from 'vitest'
@@ -53,6 +53,7 @@ async function buildCtx(options: {
   const persistPool = (options.persistPool ?? vi.fn(async (_pool: readonly PoolRoute[]) =>
     ({ ok: true as const, value: true }))) as Mock<(pool: readonly PoolRoute[]) => Promise<RemoteResult<boolean>>>
   ctx.provide('remote.orchestrations', {
+    getCatalog: vi.fn(async () => ({ ok: true as const, value: { provider: POOL_PROVIDER, models: PADERBORN_CATALOG } })),
     getPool: options.getPool ?? vi.fn(async () => ({ ok: true as const, value: INITIAL })),
     persistPool,
   })
@@ -138,6 +139,7 @@ it('registers the section through the client apply entry and withdraws it on dis
 it('seeds the face from getPool and persists a replacement through persistPool', async () => {
   const f = await mount()
   expect(f.injected().pool).toEqual(INITIAL)
+  expect(f.injected().catalog).toEqual({ provider: POOL_PROVIDER, models: PADERBORN_CATALOG })
   await expect(f.injected().setPool([])).resolves.toBe(true)
   expect(f.persistPool).toHaveBeenCalledWith([])
   await f.dispose()

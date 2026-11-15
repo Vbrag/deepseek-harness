@@ -390,6 +390,25 @@ export interface LlmModelInfo {
   rateLimit?: LlmRateLimit
 }
 
+/** Estimated work inspected without reserving a provider request. */
+export interface LlmQueueRequest {
+  /** Registered provider route. */
+  readonly provider: string
+  /** Exact model id. */
+  readonly model: string
+  /** Estimated input tokens, including system messages and tools. */
+  readonly inputTokens: number
+  /** Requested output ceiling, when explicitly selected. */
+  readonly maxTokens?: number
+}
+
+/** Advisory admission state; actual dispatch must independently reserve capacity. */
+export type LlmQueueAvailability =
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'wait'; readonly waitMs: number }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'impossible'; readonly estimatedTokens: number; readonly tokenLimit: number }
+
 /** Provider-owned context capacity for one exact provider/model route. */
 export interface LlmModelContext {
   /** Maximum combined request and response context in tokens. */
@@ -470,6 +489,8 @@ export interface LlmResolvedModelInfo extends LlmModelInfo {
   context?: LlmModelContext
   /** Adapter-configured per-request output cap materialized when callers omit one. */
   defaultMaxTokens?: number
+  /** Provider maximum response tokens when known, independent of configured request defaults. */
+  maxOutputTokens?: number
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
   /** Declared mid-conversation system prompt handling; absent means only a leading system message is read. */

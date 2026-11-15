@@ -11,6 +11,8 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
   GenerateOptions,
+  LlmQueueRequest,
+  LlmQueueAvailability,
   RequestMessage,
   LlmConfigurableProvider,
   LlmDiscoveredModel,
@@ -222,6 +224,15 @@ export interface PreparedAdapterCall {
  * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
  */
 export abstract class LlmAdapter {
+  /**
+   * Inspect shared request capacity without reserving it or performing provider I/O.
+   * @param _request - estimated request work for an exact model route.
+   * @returns current admission state; unsupported adapters return `unknown`.
+   */
+  queueAvailability(_request: LlmQueueRequest): Promise<LlmQueueAvailability> {
+    return Promise.resolve({ kind: 'unknown' })
+  }
+
   /**
    * Describe one provider route owned by this adapter.
    * @param provider - a route passed to `registerAdapter()` for this instance.
@@ -869,6 +880,14 @@ export class LlmRuntime extends TypertRemoteService {
         'INVALID_MODEL_MAX_TOKENS',
       )
     }
+    const maxOutputTokens = resolved.maxOutputTokens
+    if (maxOutputTokens !== undefined
+      && (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0)) {
+      throw new LlmError(
+        `adapter returned invalid maximum output capacity for provider "${provider}" model "${model}"`,
+        'INVALID_MODEL_MAX_TOKENS',
+      )
+    }
     const info: LlmResolvedModelInfo = {
       provider,
       id: model,
@@ -877,6 +896,7 @@ export class LlmRuntime extends TypertRemoteService {
       ...inputModalities === undefined ? {} : { inputModalities },
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
+      ...maxOutputTokens === undefined ? {} : { maxOutputTokens },
       ...resolved.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: resolved.systemPromptUpdate },
       ...resolved.toolUpdate === undefined ? {} : { toolUpdate: resolved.toolUpdate },
       ...resolved.rateLimit === undefined ? {} : { rateLimit: this.normalizedRateLimit(provider, model, resolved.rateLimit) },
@@ -938,6 +958,15 @@ export class LlmRuntime extends TypertRemoteService {
    */
   async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig> {
     return (await this.resolveCallFor(this.registration(config.provider), config, signal)).config
+  }
+
+  /**
+   * Inspect the registered adapter's shared queue without reserving a request.
+   * @param request - estimated work for an exact provider/model route.
+   * @returns advisory admission state; dispatch remains responsible for pacing.
+   */
+  queueAvailability(request: LlmQueueRequest): Promise<LlmQueueAvailability> {
+    return this.registration(request.provider).adapter.queueAvailability(request)
   }
 
   private async resolveCallFor(

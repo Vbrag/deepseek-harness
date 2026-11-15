@@ -17,41 +17,6 @@
       "source": "packages/compaction/compaction-image-offload/src/projection.ts"
     },
     {
-      "doc": "docs/subsystems/orchestration.md",
-      "symbol": "PoolRoute",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/orchestration.md",
-      "symbol": "OrchestrationStepId",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/orchestration.md",
-      "symbol": "PlannedStep",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/orchestration.md",
-      "symbol": "WorkerAttempt",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/orchestration.md",
-      "symbol": "StepOutcome",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/orchestration.md",
-      "symbol": "OrchestrationResult",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/orchestration.md",
-      "symbol": "TaskDomain",
-      "source": "packages/experimental/dsh-orchestration/src/capabilities.ts"
-    },
-    {
       "doc": "docs/subsystems/core.md",
       "symbol": "Branded",
       "source": "packages/util/brand/src/index.ts"
@@ -3027,6 +2992,41 @@
       "doc": "docs/subsystems/forge.md",
       "symbol": "ForgeAnnotationSource",
       "source": "packages/experimental/client-ui-forge/src/client/changes-service.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "source": "packages/llm/llm/src/types.ts",
+      "symbol": "LlmQueueRequest"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "source": "packages/llm/llm/src/types.ts",
+      "symbol": "LlmQueueAvailability"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "source": "packages/subagent/subagent/src/types.ts",
+      "symbol": "SubagentTaskAssessment"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "source": "packages/subagent/subagent/src/types.ts",
+      "symbol": "SubagentModelRoute"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "source": "packages/subagent/subagent/src/types.ts",
+      "symbol": "SubagentModelRoutingContext"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "source": "packages/subagent/subagent/src/types.ts",
+      "symbol": "SubagentModelRouting"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "source": "packages/subagent/subagent/src/types.ts",
+      "symbol": "SubagentModelRouter"
     }
   ]
 }

@@ -675,7 +675,7 @@ PTC 执行器只向模型公开 run_code，并在生成的 TypeScript SDK 中声
 
 ### `exit_plan_mode`
 
-仅在规划模式下使用。提交计划供用户评审，并在获批后退出规划模式。用户可以批准（从你的下一步骤起执行计划），也可以要求继续规划；其反馈会通过工具结果返回，请修改后再次提交。
+仅在规划模式下使用。提交计划供用户评审，并在获批后退出规划模式。获批后，从下一步骤开始执行计划：将获批计划写入 todo_write 列表并开始执行，同时更新仍将任务限制为仅规划的活跃目标。用户也可以要求继续规划；其反馈会通过工具结果返回，请修改后再次提交。
 
 ```json
 {
@@ -1631,7 +1631,7 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
     },
     "action": {
       "type": "string",
-      "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count.",
+      "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count. A goal that used every round is paused (not blocked): resume on it is rejected until you first raise max_goal_rounds with edit. A complete or blocked goal is terminal and cannot be resumed.",
       "enum": [
         "edit",
         "pause",
@@ -2255,6 +2255,51 @@ subagent_oar 工具在为外部提供方配置的别名之间选择。本目录�
     "prompt": {
       "type": "string",
       "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+    },
+    "task_assessment": {
+      "type": "object",
+      "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+      "additionalProperties": false,
+      "properties": {
+        "requiredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preferredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredModalities": {
+          "type": "array",
+          "description": "Inputs needed now or later, such as images captured during visual checks.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contextTokens": {
+          "type": "integer",
+          "description": "Expected total input tokens, including files and other context the child will read."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Expected positive response-token count; omit for the configured allowance."
+        }
+      },
+      "required": [
+        "requiredCapabilities",
+        "contextTokens"
+      ]
+    },
+    "context_image_ids": {
+      "type": "array",
+      "description": "Selected image identifiers from the current subagent image context. Only these stored images accompany the self-contained prompt.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

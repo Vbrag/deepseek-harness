@@ -39,7 +39,8 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
 import { Remote, RemoteError, TypertRemoteService, principalOf, type Principal } from '@deepseek-ai/dsh-typert-protocol'
 import {
@@ -62,6 +63,10 @@ import type {
   SubagentRunInfo,
   SubagentSendMessageOptions,
   SubagentStartRequest,
+  SubagentModelRoute,
+  SubagentModelRouter,
+  SubagentModelRoutingContext,
+  SubagentModelRouting,
 } from './types.ts'
 import { SubagentError } from './error.ts'
 import { assertSubagentMaxDepth } from './depth.ts'
@@ -73,6 +78,8 @@ import type { SubagentDescendantListEntry } from './list-children.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
 import { subagentCatalogProjectionDefinition } from './catalog.ts'
 import { ROOT_AGENT_NAME } from './names.ts'
+import { assertAllowedModelRoutes, subagentModelSelectionPolicy, subagentModelSelectionProjectionDefinition } from './model-selection-policy.ts'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 export type {} from './catalog.ts'
 export type {} from './projection.ts'
@@ -96,6 +103,11 @@ export type {
   ResolvedSubagentStartRequest,
   SubagentStopReason,
   SubagentStopReasonMap,
+  SubagentTaskAssessment,
+  SubagentModelRoute,
+  SubagentModelRouter,
+  SubagentModelRoutingContext,
+  SubagentModelRouting,
 } from './types.ts'
 export {
   foldSubagentDescriptor,
@@ -199,6 +211,8 @@ export class SubagentRuntime extends TypertRemoteService {
   static inject = ['workingDirectory', 'sessionProjections']
   private providers = new Map<string, SubagentProvider>()
   private manager: SubagentManager | undefined
+  private modelRouter: SubagentModelRouter | undefined
+  private modelPolicy: ProjectionHandle<SubagentModelRoute[] | null> | undefined
   /**
    * The contained lifecycle-edge publisher. Built here because scoped dispatch
    * keys its carrier by this exact service instance, whose own context filter
@@ -216,12 +230,15 @@ export class SubagentRuntime extends TypertRemoteService {
     const catalogProjection = await ctx.sessionProjections.register(subagentCatalogProjectionDefinition)
     await ctx.sessionProjections.register(subagentTimingProjectionDefinition)
     const identityProjection = await ctx.sessionProjections.register(subagentIdentityProjectionDefinition)
+    this.modelPolicy = await ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
     if (ctx.fiber.uid === null) return
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentManager(childCtx, {
         identityOf: session => identityProjection.stateOf(session).identity,
         catalogOf: session => subagentCatalogProjectionDefinition.wire.view(catalogProjection.stateOf(session)),
         emitLifecycle: this.emitLifecycle,
+        resolveModelRouting: context => this.resolveModelRouting(context),
+        modelSelectionPolicyOf: session => this.modelSelectionPolicyOf(session),
       }, () => this.config.maxActiveSubagents.get())
       this.manager = manager
       childCtx.effect(() => () => {
@@ -281,7 +298,7 @@ export class SubagentRuntime extends TypertRemoteService {
       return manager.startLocal(spec, (request) => {
         this.assertProviderCurrent(provider)
         return prepare(request)
-      })
+      }, !provider.inheritsParentContext && this.modelRouter !== undefined)
     }
     // oxlint-disable-next-line typescript/no-non-null-assertion -- registerProvider requires start when prepareContinuable is absent.
     const start = provider.start!.bind(provider)
@@ -289,6 +306,78 @@ export class SubagentRuntime extends TypertRemoteService {
       this.assertProviderCurrent(provider)
       return start(request)
     })
+  }
+
+  /**
+   * Register the sole fresh-child model policy in the caller's Cordis lifetime.
+   * @param router - task-aware selector and optional fresh-root authorization defaults.
+   * @returns exact registration disposer; accepted assignments retain their cleanup.
+   */
+  registerModelRouter(router: SubagentModelRouter): () => void {
+    // oxlint-disable-next-line typescript/no-misused-promises -- Router withdrawal is synchronous; return Cordis's exact disposer.
+    return this.ctx.effect(() => {
+      if (this.modelRouter !== undefined) throw new SubagentError('a subagent model router is already registered', 'DUPLICATE_MODEL_ROUTER')
+      this.modelRouter = router
+      return () => { if (this.modelRouter === router) this.modelRouter = undefined }
+    }, 'subagents.registerModelRouter()')
+  }
+
+  /**
+   * Whether a backend delegates fresh local children through the active model policy.
+   * @param providerName - registered subagent backend name.
+   * @returns true when original route resolution belongs to the active router.
+   */
+  routesModelsFor(providerName: string): boolean {
+    const provider = this.providers.get(providerName)
+    return this.modelRouter !== undefined && provider?.prepareContinuable !== undefined && !provider.inheritsParentContext
+  }
+
+  /**
+   * Read recorded child-route authorization without widening historical Sessions.
+   * @param session - parent Session whose policy is read.
+   * @returns detached permitted routes, or undefined to permit only the parent route.
+   */
+  modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined {
+    if (this.modelPolicy === undefined) throw new Error('subagent model policy is not ready')
+    return subagentModelSelectionPolicy(this.modelPolicy, session)
+  }
+
+  /**
+   * Read router defaults for the existing fresh-root policy writer.
+   * @returns detached defaults, or undefined when the router supplies none.
+   */
+  modelRoutingDefaults(): SubagentModelRoute[] | undefined {
+    const routes = this.modelRouter?.newRootPolicyDefaults?.()
+    if (routes === undefined || routes.length === 0) return undefined
+    assertAllowedModelRoutes(routes)
+    return routes.map(route => ({ ...route }))
+  }
+
+  /**
+   * Read retained model-context images for explicit child-context selection.
+   * @param session - calling parent's Session.
+   * @returns detached, deduplicated stored references from the Session's cached message projection.
+   */
+  contextImagesOf(session: Session): readonly ImageAttachmentRef[] {
+    const images = new Map<string, ImageAttachmentRef>()
+    for (const message of session.deriveMessages()) {
+      for (const block of message.content) {
+        if (block.type === 'image') images.set(block.attachment.attachmentId, block.attachment)
+      }
+    }
+    return [...images.values()].map(image => ({ ...image }))
+  }
+
+  /** Resolve against one registration and release an assignment withdrawn during its wait. */
+  private async resolveModelRouting(context: SubagentModelRoutingContext): Promise<SubagentModelRouting | undefined> {
+    const router = this.modelRouter
+    if (router === undefined) return undefined
+    const selection = await router.resolve(context)
+    if (this.modelRouter !== router) {
+      selection?.release?.()
+      throw new SubagentError('subagent model routing changed during startup; retry the delegation', 'MODEL_ROUTER_CHANGED')
+    }
+    return selection
   }
 
   /**

@@ -7,7 +7,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 摘要
+## 概述
 
 本包提供一个内置技能 `frontend-patterns`，用于指导模型编写 React 和 Next.js 的前端与 GUI 代码：组件组合、复合组件、自定义钩子、基于 context 与 reducer 的状态管理、性能优化、表单处理、动画和无障碍访问。它是纯指令型知识技能——不新增工具、可执行文件或运行时服务。将其与技能注册表和 `dsh-tool-skill` 一起挂载，该技能便会与其他内置技能一同出现在模型技能目录中。
 
@@ -18,7 +18,7 @@ kind: "package-reference"
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
 - [已知限制与待办工作](#known-limitations-and-deferred-work)
-- [开发者说明](#dev-note)
+- [开发备注](#dev-note)
 
 -----
 
@@ -91,7 +91,7 @@ kind: "package-reference"
 - **框架范围**——这些模式面向 React/Next.js 生态，并非通用的 GUI 工具包。
 
 <a id="dev-note"></a>
-### 开发者说明
+### 开发备注
 
 <details>
 <summary>维护者的工作上下文——点击展开</summary>

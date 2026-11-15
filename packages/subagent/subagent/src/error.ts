@@ -15,6 +15,10 @@ export type SubagentErrorCode =
   | 'UNSUPPORTED_CAPABILITY'
   /** A provider with the same name is already registered. */
   | 'DUPLICATE_PROVIDER'
+  /** More than one policy attempts to select models for fresh local children. */
+  | 'DUPLICATE_MODEL_ROUTER'
+  /** The model policy changed while it was selecting a child's route. */
+  | 'MODEL_ROUTER_CHANGED'
   /** No subagent provider is registered under the requested name. */
   | 'NO_PROVIDER'
   /** The provider was removed or replaced while a delegation was starting; retry against the current registration. */

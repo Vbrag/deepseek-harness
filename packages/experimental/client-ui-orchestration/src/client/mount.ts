@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-orchestration/remote'
-import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { OrchestrationCatalog, PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { OrchestrationPanel, type OrchestrationInjected } from './OrchestrationPanel.tsx'
 import { en, ja, es, fr, de, ru, pt, NS, zh, type OrchestrationKey } from './locales.ts'
@@ -43,7 +43,7 @@ async function readPool(ctx: Context): Promise<readonly PoolRoute[]> {
   return pooled.ok ? pooled.value : []
 }
 
-function registerUi(ctx: Context, initial: readonly PoolRoute[]): void {
+function registerUi(ctx: Context, initial: readonly PoolRoute[], catalog: OrchestrationCatalog): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'client-ui-orchestration: dictionaries')
   let pool = initial
   const setPool = async (next: readonly PoolRoute[]): Promise<boolean> => {
@@ -52,7 +52,7 @@ function registerUi(ctx: Context, initial: readonly PoolRoute[]): void {
       ctx.logger.warn(`orchestration: persistPool refused: ${messageOf(result.error)}`)
       return false
     }
-    if (result.value !== true) return false
+    if (!result.value) return false
     pool = next
     return true
   }
@@ -62,7 +62,7 @@ function registerUi(ctx: Context, initial: readonly PoolRoute[]): void {
     order: 30,
     label: () => ctx.locale.bind(NS)('title'),
     locale: NS,
-    inject: (): OrchestrationInjected => ({ pool, setPool }),
+    inject: (): OrchestrationInjected => ({ pool, catalog, setPool }),
   }, OrchestrationPanel))
   ctx.inject(['remote.commands'], (commandCtx) => {
     commandCtx.slots.inject('conversation.input.left', () => commandCtx.slots.register({
@@ -91,7 +91,12 @@ function registerUi(ctx: Context, initial: readonly PoolRoute[]): void {
 export async function mountOrchestration(ctx: Context, contribution: TypertRemoteContribution): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(contribution)
   const ui = ctx.inject(['remote.orchestrations', 'slots', 'locale'], async (plugin: Context) => {
-    registerUi(plugin, await readPool(plugin))
+    const [pool, catalog] = await Promise.all([readPool(plugin), plugin.remote.orchestrations.getCatalog()])
+    if (!catalog.ok) {
+      plugin.logger.warn(`orchestration: getCatalog refused: ${messageOf(catalog.error)}`)
+      throw catalog.error
+    }
+    registerUi(plugin, pool, catalog.value)
   })
   try {
     await ui

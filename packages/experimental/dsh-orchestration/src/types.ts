@@ -1,142 +1,93 @@
-/**
- * Public contracts for the orchestration capability: the selected model pool,
- * the capability-aware plan the coordinator produces, and the settled outcome
- * of one orchestrated run.
- *
- * @module @deepseek-ai/dsh-orchestration/types
- */
+/** Session mode, selected routes, and deployment policy for normal subagent routing. */
+import type { CommandId } from '@deepseek-ai/dsh-commands/types'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
+import type { ModelCapability, TaskDomain } from './capabilities.ts'
 
-import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { SubagentStopReason } from '@deepseek-ai/dsh-subagent'
-import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
-import type { Modality, TaskDomain } from './capabilities.ts'
-
-/** Identifies one planned substep within an orchestration. */
-export type OrchestrationStepId = Branded<'OrchestrationStepId'>
-
-/**
- * One model route in the selected pool. `provider` and `model` form the exact
- * route passed to a subagent's `agentOptions`; capability matching is resolved
- * from the provider's investigated catalog, not from per-route tags.
- */
+/** One exact registered LLM route eligible for orchestration. */
 export interface PoolRoute {
-  /** Provider route registered on `ctx.llm`. */
+  /** Registered LLM provider. */
   readonly provider: string
-  /** Exact API model id as passed to the provider. */
+  /** Exact model id accepted by the provider. */
   readonly model: string
 }
 
-/** Accepted deployment limits for one orchestration; every field is optional and defaults on validation. */
+/** Curated gateway choices shown by the pool settings client. */
+export interface OrchestrationCatalog {
+  /** Exact registered provider associated with these gateway model ids. */
+  readonly provider: string
+  /** Read-only model facts; exact adapter metadata takes precedence during routing. */
+  readonly models: readonly ModelCapability[]
+}
+
+/** Explicit specialty facts for a route, replacing its curated specialties. */
+export interface RouteCapabilities extends PoolRoute {
+  /** Every specialty the route may satisfy; an empty list clears curated facts. */
+  readonly capabilities: readonly TaskDomain[]
+}
+
+/** Validated deployment policy; session selections take precedence over defaults. */
 export interface OrchestrationConfig {
-  /**
-   * Persisted multi-model pool. Seeded into the service at load and written by
-   * {@link OrchestrationService.persistPool} on GUI change, so the selection
-   * survives restart. Execution reads the service's selected pool, which is
-   * restored from this field on boot.
-   */
+  /** Default pool for new root-session model policies and the pool picker. */
   readonly pool?: PoolRoute[]
-  /** Maximum concurrent workers, sampled before each run. */
-  readonly maxConcurrency?: number
-  /** Maximum attempts per planned step before the step is reported failed. */
-  readonly maxAttemptsPerStep?: number
-  /** Timeout, in milliseconds, budgeted per worker attempt before it is abandoned. */
-  readonly workerTimeoutMs?: number
-  /**
-   * Seed the per-Agent (session) orchestration-mode default. A session with no
-   * explicit {@link OrchestrationService.setMode} or `select` selection falls
-   * back to this value, which `run_orchestration` consumes as its delegation
-   * gate. The selection is recorded as a Session `orchestration/mode` event and
-   * recovered from the `orchestration` session projection after restart, so an
-   * explicit selection always wins over this default.
-   */
+  /** Exact-route specialties for models outside the curated gateway catalog. */
+  readonly routeCapabilities?: RouteCapabilities[]
+  /** Input-token allowance for child instructions, tool schemas, and request wrappers; defaults to 8192. */
+  readonly contextOverheadTokens?: number
+  /** Output-token allowance when the assessment omits outputTokens; defaults to 4096. */
+  readonly outputReserveTokens?: number
+  /** Maximum milliseconds before rechecking busy routes after capacity refunds; defaults to 1000. */
+  readonly availabilityPollMs?: number
+  /** Initial mode logged for a session with no recorded selection; defaults to false. */
   readonly defaultToOrchestrator?: boolean
 }
 
-/**
- * One planned step from the coordinator. `description` is a self-contained
- * task sent verbatim to a spawned worker; `requiredDomains` drive capability
- * matching against the provider catalog.
- */
-export interface PlannedStep {
-  readonly id: OrchestrationStepId
-  /** Self-contained worker prompt; stands alone with no parent conversation. */
-  readonly description: string
-  /** Capability domains this sub-task requires, from the provider catalog. */
-  readonly requiredDomains: readonly TaskDomain[]
-  /** Input modalities this sub-task needs; absent means text-only routing. */
-  readonly requiredModalities?: readonly Modality[]
-  /** Estimated input tokens this sub-task needs; absent means no window constraint. */
-  readonly contextTokens?: number
-  /** Reasons this step cannot run; an errored plan rejects before workers start. */
-  readonly error?: string
+/** Logged evidence for one automatic child-model selection. */
+export interface OrchestrationRouteDecision {
+  /** Fresh child that receives the selected route. */
+  readonly childId: SessionId
+  /** Parent's declared task needs, including anticipated tool-produced images. */
+  readonly assessment: SubagentTaskAssessment
+  /** Selected exact LLM route. */
+  readonly selected: PoolRoute
+  /** Deterministic selection priority among ready capable routes. */
+  readonly reason: 'task-fit' | 'active-load' | 'diversity' | 'pool-order'
+  /** Estimated input including the configured instruction allowance. */
+  readonly inputTokens: number
+  /** Conservative response allowance used for context eligibility. */
+  readonly outputTokens: number
 }
 
-/** One attempt of one step against one pool route. */
-export interface WorkerAttempt {
-  readonly stepId: OrchestrationStepId
-  /** Provider/model route actually used. */
-  readonly provider: string
-  readonly model: string
-  /** Child session id, available after publication. */
-  readonly childId?: string
-  readonly stopReason: SubagentStopReason
-  /** Non-assistant failure detail when present; never routed on programmatically. */
-  readonly diagnostic?: string
-}
-
-/** One step after its attempts: the accepted output or why it failed. */
-export interface StepOutcome {
-  readonly step: PlannedStep
-  readonly attempts: readonly WorkerAttempt[]
-  /** Assistant output of the accepted attempt, or `[]` on failure. */
-  readonly output: readonly ContentBlock[]
-  /** True when the step exhausted its attempts or was never started validly. */
-  readonly failed: boolean
-  /** True when a model route change occurred between attempts. */
-  readonly failedOver: boolean
-}
-
-/** The terminal result of one orchestrated run. */
-export interface OrchestrationResult {
-  /** Every step in plan order with its outcome. */
-  readonly steps: readonly StepOutcome[]
-  /** True when every step completed successfully. */
-  readonly succeeded: boolean
-  /** Number of model route changes across all steps. */
-  readonly failovers: number
-  /** Number of steps that never completed. */
-  readonly failedSteps: number
-}
-
-/**
- * The orchestration projection's wire value. `active` is the logged mode in
- * force (the last `orchestration/mode`, inactive before the first); `pending`
- * is true while a `/orchestration selection` targets a state other than
- * `active`, has not failed through its paired `command/done`, and no later
- * `orchestration/mode` event has recorded that state. Capability absence
- * (orchestration not composed) is the key's absence, never a value.
- */
+/** Browser view of the logged mode and an outstanding selection. */
 export interface OrchestrationProjection {
   active: boolean
   pending: boolean
 }
 
-/** Host state used to derive {@link OrchestrationProjection}. */
+/** Recoverable mode and legacy command lifecycle state. */
 export interface OrchestrationUnitState {
-  /** Logged orchestration mode. */
+  /** Mode applied to new delegations. */
   active: boolean
-  /** The selection's target mode; null when no selection is outstanding. */
+  /** Durable selection waiting for an accepted step; null when absent. */
   wanted: boolean | null
-  /** The latest orchestration command awaiting its paired settlement. */
+  /** Legacy command selection awaiting its settlement. */
   running: { commandId: CommandId; wanted: boolean } | null
-  /** Whether a logged `orchestration/mode` selection (on or off) has been recorded in this Session. */
+  /** Whether an explicit or default mode was logged. */
   entered: boolean
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface PluginRecordMap {
+    /** Durable mode selection queued during an open turn. */
+    'plugin:orchestration/mode-request': { active: boolean }
+    /** Informational routing evidence; never changes model history. */
+    'plugin:orchestration/route': OrchestrationRouteDecision
+  }
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
-    /** Orchestration mode state folded from the command lifecycle and `orchestration/mode` events. */
+    /** Applied and pending orchestration mode. */
     orchestration: OrchestrationProjection
   }
 }

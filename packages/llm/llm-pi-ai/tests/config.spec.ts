@@ -158,7 +158,7 @@ describe('per-model pacing limits and billing', () => {
       models: [{ id: 'm', rpm }],
     })
     const programmatic = { providers: { 'acme-gateway': provider(0) } } as Options
-    expect(() => assertServiceable(programmatic)).toThrow(/positive integer/)
+    expect(() => { assertServiceable(programmatic) }).toThrow(/positive integer/)
     expect(() => resolveProfiles({ 'acme-gateway': provider(0) })).toThrow(/positive integer/)
   })
 })

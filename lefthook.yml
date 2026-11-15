@@ -8,17 +8,17 @@ pre-commit:
       glob: '*.i18n.yaml'
       exclude:
         - '.agents/notes/archived/**'
-      run: node_modules/.bin/tsx scripts/verify-translation-pairing.ts --cached {staged_files}
+      run: node --import tsx/esm scripts/verify-translation-pairing.ts --cached {staged_files}
 
     - name: archived agent notes
       glob: '.agents/notes/archived/**'
-      run: node_modules/.bin/tsx scripts/verify-archived-agent-notes.ts
+      run: node --import tsx/esm scripts/verify-archived-agent-notes.ts
 
     - name: lint (staged)
       glob: '*.{ts,tsx,mts,cts,mjs}'
       exclude:
         - 'vendor/*/src/**'
-      run: node_modules/.bin/tsx scripts/run-oxlint.ts --config .oxlintrc.staged.json --fix --no-error-on-unmatched-pattern {staged_files}
+      run: node --import tsx/esm scripts/run-oxlint.ts --config .oxlintrc.staged.json --fix --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
 
     - name: whitespace (staged)
@@ -26,10 +26,10 @@ pre-commit:
 
     - name: pi-ai provider metadata
       glob: '{pnpm-lock.yaml,packages/llm/llm-pi-ai/package.json,packages/llm/llm-pi-ai/scripts/gen-provider-data.ts,packages/llm/llm-pi-ai/src/provider-data.generated.ts}'
-      run: node_modules/.bin/tsx packages/llm/llm-pi-ai/scripts/gen-provider-data.ts --check --cached
+      run: node --import tsx/esm packages/llm/llm-pi-ai/scripts/gen-provider-data.ts --check --cached
 
     - name: vendor manifest guard
-      run: scripts/check-vendor-manifest.sh
+      run: node scripts/check-vendor-manifest.mjs
 
 pre-merge-commit:
   jobs:
@@ -37,11 +37,11 @@ pre-merge-commit:
       glob: '*.i18n.yaml'
       exclude:
         - '.agents/notes/archived/**'
-      run: node_modules/.bin/tsx scripts/verify-translation-pairing.ts --cached {staged_files}
+      run: node --import tsx/esm scripts/verify-translation-pairing.ts --cached {staged_files}
 
     - name: archived agent notes
       glob: '.agents/notes/archived/**'
-      run: node_modules/.bin/tsx scripts/verify-archived-agent-notes.ts
+      run: node --import tsx/esm scripts/verify-archived-agent-notes.ts
 
 pre-push:
   jobs:

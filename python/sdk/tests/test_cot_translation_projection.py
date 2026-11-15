@@ -16,6 +16,7 @@ EXPECTED_ROOT = Path(__file__).parent / "expected"
 @pytest.mark.parametrize("fixture, event_types", [
     ("cot-translation-projection.json", ("plugin:translator/request", "plugin:translator/result")),
     ("team-mode-projection.json", ("team/mode",)),
+    ("orchestration-projection.json", ("orchestration/mode", "plugin:orchestration/route")),
 ])
 def test_session_records_retain_raw_events_and_original_main_response(
     tmp_path: Path, fixture: str, event_types: tuple[str, ...],
@@ -47,7 +48,8 @@ for line in sys.stdin:
             "data": {"message": {"role": "assistant", "content": [{"type": "text", "text": os.environ["MAIN_RESPONSE"]}]}}}})
         for event in json.loads(os.environ["AUDIT_EVENTS"]):
             notify("session.event", {"sessionId": session_id, "event": event})
-        notify("session.event", {"sessionId": session_id, "event": {"type": "turn/end", "seq": 5, "time": 0,
+        final_seq = max(event["seq"] for event in json.loads(os.environ["AUDIT_EVENTS"])) + 1
+        notify("session.event", {"sessionId": session_id, "event": {"type": "turn/end", "seq": final_seq, "time": 0,
             "data": {"turn": 0, "reason": {"kind": "completed"}}}})
         notify("session.status", {"sessionId": session_id, "status": "idle"})
         continue
@@ -77,7 +79,7 @@ for line in sys.stdin:
                            for block in event["data"]["message"]["content"] if block["type"] == "text"],
     }
     assert projection == expected
-    assert len(projection["auditEvents"]) == 2
+    assert len(projection["auditEvents"]) == len(expected["auditEvents"])
     for event in projection["auditEvents"]:
         assert "surfaceOp" not in event
         assert "sourceEventSeqs" not in event

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-11-15-orchestration-routing.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-11-15-orchestration-routing.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-11-15-orchestration-routing:
+  en: 5dd3a5f1760adccf
+  zh: 22e5cd6dc1a93390
+/2026-11-15-orchestration-routing/summary:
+  en: 998b26ab60a349eb
+  zh: 20117f84162ea78e
+/2026-11-15-orchestration-routing/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-11-15-orchestration-routing/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-11-15-orchestration-routing/compatibility:
+  en: 0c2f36f8b3608e6c
+  zh: 42b677ba77f7c137
+/2026-11-15-orchestration-routing/verification:
+  en: be552ab6cbe18095
+  zh: 572a746792883a1b
+/2026-11-15-orchestration-routing/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

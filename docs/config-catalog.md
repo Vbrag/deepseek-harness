@@ -2064,7 +2064,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:261`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:267`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2153,6 +2153,8 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
+  /** Output-token allowance for proactive pacing, capped by the request and model output ceilings (default 4096). */
+  rateLimitOutputTokens?: number
   /**
    * Maximum base64-encoded image payload per request. When a request's
    * accumulated images exceed it, the oldest images are replaced by text
@@ -2738,47 +2740,42 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-orchestration`
 
-- `inject`: `llm` · `subagents` · `sessionProjections` · `agents`
-- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:31`](../packages/experimental/dsh-orchestration/src/types.ts)
+- `inject`: `llm` · `subagents` · `sessionProjections` · `agents` · `systemPrompt`
+- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:30`](../packages/experimental/dsh-orchestration/src/types.ts)
 
 ```ts config-catalog
-/** Accepted deployment limits for one orchestration; every field is optional and defaults on validation. */
+/** Validated deployment policy; session selections take precedence over defaults. */
 export interface OrchestrationConfig {
-  /**
-   * Persisted multi-model pool. Seeded into the service at load and written by
-   * {@link OrchestrationService.persistPool} on GUI change, so the selection
-   * survives restart. Execution reads the service's selected pool, which is
-   * restored from this field on boot.
-   */
+  /** Default pool for new root-session model policies and the pool picker. */
   readonly pool?: PoolRoute[]
-  /** Maximum concurrent workers, sampled before each run. */
-  readonly maxConcurrency?: number
-  /** Maximum attempts per planned step before the step is reported failed. */
-  readonly maxAttemptsPerStep?: number
-  /** Timeout, in milliseconds, budgeted per worker attempt before it is abandoned. */
-  readonly workerTimeoutMs?: number
-  /**
-   * Seed the per-Agent (session) orchestration-mode default. A session with no
-   * explicit {@link OrchestrationService.setMode} or `select` selection falls
-   * back to this value, which `run_orchestration` consumes as its delegation
-   * gate. The selection is recorded as a Session `orchestration/mode` event and
-   * recovered from the `orchestration` session projection after restart, so an
-   * explicit selection always wins over this default.
-   */
+  /** Exact-route specialties for models outside the curated gateway catalog. */
+  readonly routeCapabilities?: RouteCapabilities[]
+  /** Input-token allowance for child instructions, tool schemas, and request wrappers; defaults to 8192. */
+  readonly contextOverheadTokens?: number
+  /** Output-token allowance when the assessment omits outputTokens; defaults to 4096. */
+  readonly outputReserveTokens?: number
+  /** Maximum milliseconds before rechecking busy routes after capacity refunds; defaults to 1000. */
+  readonly availabilityPollMs?: number
+  /** Initial mode logged for a session with no recorded selection; defaults to false. */
   readonly defaultToOrchestrator?: boolean
 }
 
-/**
- * One model route in the selected pool. `provider` and `model` form the exact
- * route passed to a subagent's `agentOptions`; capability matching is resolved
- * from the provider's investigated catalog, not from per-route tags.
- */
+/** One exact registered LLM route eligible for orchestration. */
 export interface PoolRoute {
-  /** Provider route registered on `ctx.llm`. */
+  /** Registered LLM provider. */
   readonly provider: string
-  /** Exact API model id as passed to the provider. */
+  /** Exact model id accepted by the provider. */
   readonly model: string
 }
+
+/** Explicit specialty facts for a route, replacing its curated specialties. */
+export interface RouteCapabilities extends PoolRoute {
+  /** Every specialty the route may satisfy; an empty list clears curated facts. */
+  readonly capabilities: readonly TaskDomain[]
+}
+
+/** The discipline a sub-task is best served by. */
+export type TaskDomain = 'coding' | 'reasoning' | 'vision' | 'allrounder' | 'european'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-orchestration -->
 
@@ -3909,7 +3906,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 - `inject`: `workingDirectory` · `sessionProjections`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:186`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:198`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */
@@ -4679,35 +4676,6 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-office -->
 
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-orchestration -->
-<a id="deepseek-aidsh-tool-orchestration"></a>
-
-## `@deepseek-ai/dsh-tool-orchestration`
-
-- `inject`: `agents` · `orchestrations` · `tools`
-- `source`: [`packages/experimental/tool-orchestration/src/index.ts:24`](../packages/experimental/tool-orchestration/src/index.ts)
-
-```ts config-catalog
-/** Tool routing configuration. */
-export interface Config {
-  /**
-   * Seed pool of provider/model routes: used only to set the service pool when
-   * it is empty on plugin load, so a deployment without the GUI panel can still
-   * run. Execution always reads the service's selected pool.
-   */
-  readonly pool: PoolRouteConfig[]
-}
-
-/** One provider/model route in the configured Orchestration pool. */
-export interface PoolRouteConfig {
-  /** Provider route registered on `ctx.llm`; must match a catalogued route. */
-  readonly provider: string
-  /** Exact API model id passed to the provider; must match a catalogued model. */
-  readonly model: string
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-orchestration -->
-
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-present -->
 <a id="deepseek-aidsh-tool-present"></a>
 
@@ -4863,7 +4831,7 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt` · `sessionProjections`
 - `refs`: [`AgentOptions`](subsystems/core.md)
-- `source`: [`packages/subagent/tool-subagent/src/index.ts:46`](../packages/subagent/tool-subagent/src/index.ts)
+- `source`: [`packages/subagent/tool-subagent/src/index.ts:43`](../packages/subagent/tool-subagent/src/index.ts)
 
 ```ts config-catalog
 /** Config: which registered provider this tool delegates to, plus child defaults. */

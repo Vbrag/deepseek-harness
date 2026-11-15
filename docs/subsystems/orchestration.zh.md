@@ -1,106 +1,26 @@
-# Orchestration
+# 编排
 
 [English](orchestration.md) | 中文
 
-实验性 Orchestration Mode 将一个任务拆分为多个并行子步骤，并从 Paderborn AI-Gateway 上选定的多模型池中，将每个子步骤分配给能力匹配的模型；当某个子步骤失败或无响应时，它会故障转移到具有相似能力的另一个模型，而不是直接失败。本页记录 [`packages/experimental/dsh-orchestration/src/types.ts`](../../packages/experimental/dsh-orchestration/src/types.ts) 与 [`packages/experimental/dsh-orchestration/src/capabilities.ts`](../../packages/experimental/dsh-orchestration/src/capabilities.ts) 中持久且模型可见的约定。
+编排模式根据任务评估、所需输入、上下文估算和可用容量，为普通新建子代理分配获准的模型路由。主代理保留会话模型。默认模式保留普通委派行为。[服务参考](../../packages/experimental/dsh-orchestration/README.zh.md)定义配置；[子代理运行时](subagent.zh.md)负责准入、子代理执行和清理。
 
-## 模型池
+## 任务评估与资格
 
-`PoolRoute` 命名所选池中的一条路由。`provider` 是在 `ctx.llm` 上注册的路由；`model` 是传给 provider 的确切 API 模型 id。能力匹配从 provider 的已调研目录中解析，从不依赖按路由打上的标签，因此任何池路由都必须命名 provider 目录能识别的模型。
+普通启动请求携带必需和偏好的能力、包含预期视觉输入的所需模态、上下文 Token 估算及可选输出要求。必需能力取交集：编码加视觉验证要求同时具备编码和图像理解能力。仅有推理专长不能满足编码要求。未知能力不能证明符合条件。
 
-```ts type-equiv
-/**
- * One model route in the selected pool. `provider` and `model` form the exact
- * route passed to a subagent's `agentOptions`; capability matching is resolved
- * from the provider's investigated catalog, not from per-route tags.
- */
-interface PoolRoute {
-  /** Provider route registered on `ctx.llm`. */
-  readonly provider: string
-  /** Exact API model id as passed to the provider. */
-  readonly model: string
-}
-```
+适配器提供精确路由元数据。显式限制优先于整理的能力资料；配置的任务专长覆盖仅作用于精确的提供商与模型组合。路由器结合传递内容和主代理估算，考虑配置的提示与工具开销及响应预留。在组装子代理提示和工具后，仍以实际请求验证为准。
 
-```ts type-equiv
-/** Identifies one planned substep within an orchestration. */
-type OrchestrationStepId = Branded<'OrchestrationStepId'>
-```
+## 容量与模型生命周期
 
-## 计划与结果
+符合条件且可立即使用的路由先按任务匹配度排序，再考虑活跃分配数量和模型池顺序。兼容但需等待的路由优先于不兼容但可立即使用的路由。分配统计衡量跨会话负载；只有适配器在实际发送时预留请求和 Token 配额。已启动子代理保持其路由；配额压力不会在另一模型上重放其工作。
 
-一次运行会规划带有必需能力域的子步骤，针对某条路由执行，并报告每个子步骤的结果与最终运行结果。
+## 模式与授权
 
-```ts type-equiv
-/**
- * One planned step from the coordinator. `description` is a self-contained
- * task sent verbatim to a spawned worker; `requiredDomains` drive capability
- * matching against the provider catalog.
- */
-interface PlannedStep {
-  readonly id: OrchestrationStepId
-  /** Self-contained worker prompt; stands alone with no parent conversation. */
-  readonly description: string
-  /** Capability domains this sub-task requires, from the provider catalog. */
-  readonly requiredDomains: readonly TaskDomain[]
-  /** Input modalities this sub-task needs; absent means text-only routing. */
-  readonly requiredModalities?: readonly Modality[]
-  /** Estimated input tokens this sub-task needs; absent means no window constraint. */
-  readonly contextTokens?: number
-  /** Reasons this step cannot run; an errored plan rejects before workers start. */
-  readonly error?: string
-}
-```
+已提交的会话模式会记录并投影。轮次中的选择在下一个被接受且未取消的步骤生效。新建子代理在准入等待前保存父代理已提交的模式，并在第一次请求前记录此选择。之后修改父代理模式不会改变现有子代理的模式。
 
-```ts type-equiv
-/** One attempt of one step against one pool route. */
-interface WorkerAttempt {
-  readonly stepId: OrchestrationStepId
-  /** Provider/model route actually used. */
-  readonly provider: string
-  readonly model: string
-  /** Child session id, available after publication. */
-  readonly childId?: string
-  readonly stopReason: SubagentStopReason
-  /** Non-assistant failure detail when present; never routed on programmatically. */
-  readonly diagnostic?: string
-}
-```
+已有模型权限限制路由，历史记录中缺少策略时仅允许父路由。现有模型选择设置所有者根据显式设置或路由器所选池初始化新根会话的权限。修改模型池不会扩大已有会话的权限。
 
-```ts type-equiv
-/** One step after its attempts: the accepted output or why it failed. */
-interface StepOutcome {
-  readonly step: PlannedStep
-  readonly attempts: readonly WorkerAttempt[]
-  /** Assistant output of the accepted attempt, or `[]` on failure. */
-  readonly output: readonly ContentBlock[]
-  /** True when the step exhausted its attempts or was never started validly. */
-  readonly failed: boolean
-  /** True when a model route change occurred between attempts. */
-  readonly failedOver: boolean
-}
-```
-
-```ts type-equiv
-/** The terminal result of one orchestrated run. */
-interface OrchestrationResult {
-  /** Every step in plan order with its outcome. */
-  readonly steps: readonly StepOutcome[]
-  /** True when every step completed successfully. */
-  readonly succeeded: boolean
-  /** Number of model route changes across all steps. */
-  readonly failovers: number
-  /** Number of steps that never completed. */
-  readonly failedSteps: number
-}
-```
-
-```ts type-equiv
-/** The discipline a sub-task is best served by. */
-type TaskDomain = 'coding' | 'reasoning' | 'vision' | 'allrounder' | 'european'
-```
-
-Gateway 的能力调研把这些域映射到每个 provider 模型所支持的内容；子步骤会路由到最佳匹配的可用模型，并在 worker 失败或无响应时，在子步骤被报告为失败前，故障转移到能力最相似的下一条路由。
+主机目录端点返回 `OrchestrationCatalog`，包含提供商标识及整理的模型能力记录。Web 面板通过 Remote 读取这些内容，而不导入主机运行时值。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -114,96 +34,48 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.orchestrations` — `OrchestrationService`
 
-Orchestration service; injects the seams it composes and exposes the pool over Remote.
+Mode and pool owner; one registered selector serves every normal local delegation.
 
 ```ts cordis-catalog
-/**
- * Whether the orchestration mode is selected for the calling Agent's session.
- * An explicit logged `orchestration/mode` selection wins; a session with no
- * selection falls back to the deployment `defaultToOrchestrator`. The
- * selection is session-scoped (an Agent is 1:1 with its Session) rather than
- * a global flag, and it is folded from the logged `orchestration/mode` event
- * by the `orchestration` projection, so restart recovery restores it.
- * @param agent - the Agent whose session mode is read.
- * @returns true when orchestration should be available to this session.
+/** Read the applied logged mode; pending selections affect only the next accepted step.
+ * @param agent - Session owner.
+ * @returns Applied mode for new delegations.
  */
 modeOf(agent: Agent): boolean
 
-/**
- * Select orchestration mode for the calling Agent's session, recording the
- * selection as a durable `orchestration/mode` Session event and updating the
- * live projected value. A failed durable append propagates so a selection is
- * never silently unrecorded; the projection reads the log, so a failed append
- * leaves the mode unchanged. This is the between-turns commit path; use
- * {@link OrchestrationService.select} to queue a mid-turn selection.
- * @param agent - the Agent whose session mode is set.
- * @param active - true to enable orchestration mode for this session.
+/** Record a selection immediately between turns, or queue it durably within a turn.
+ * @param agent - Session owner.
+ * @param active - Desired mode.
  */
 setMode(agent: Agent, active: boolean): void
 
-/**
- * Select orchestration mode, distinguishing how the selection lands. Between
- * turns the method appends `orchestration/mode` immediately because no
- * in-turn boundary will run until another prompt starts a turn. The open-turn
- * fold is the idle signal: agent status stays `running` through post-turn
- * checkpointing, when no further in-turn boundary runs. During an open turn
- * the selection remains pending until the next accepted boundary commits it.
- * Repeated selection of the current or already-pending state is a no-op.
- * @param agent - the Agent to switch.
- * @param active - true to enable orchestration mode for this session.
- * @returns what happened: `committed` (logged now), `queued` (awaiting the
- * next boundary), `cancelled` (an opposite pending selection was cleared and
- * the logged state already matches), or `noop` (already in that state).
+/** Select mode without losing pending intent on restart or plugin replacement.
+ * @param agent - Session owner.
+ * @param active - Desired mode.
+ * @returns Whether the selection committed, queued, cancelled a pending choice, or already matched.
  */
 select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'noop'
 
-/**
- * The currently selected multi-model pool, read live by orchestration runs.
- * @returns the selected provider/model routes; may be empty.
+/** Read the default pool; recorded Session policies independently constrain every delegation.
+ * @returns Detached exact routes in configured order.
  */
 @Remote('getPool') getPool(): readonly PoolRoute[]
 
-/**
- * Replace the selected multi-model pool in memory only, without persisting.
- * An empty pool clears the selection; later runs then fail loud rather than
- * silently running nothing. This is the non-persisted setter used by the
- * headless `tool-orchestration` seed; the GUI panel persists a selection
- * through {@link OrchestrationService.persistPool}.
- * @param pool - provider/model routes to select.
+/** Read curated gateway choices without importing Host catalog values into the browser.
+ * @returns Detached provider identity and model facts used by the pool picker.
+ */
+@Remote('getCatalog') getCatalog(): OrchestrationCatalog
+
+/** Replace the pool in memory; existing Session authorization is never widened.
+ * @param pool - Exact routes, possibly empty to disable automatic selection.
  */
 @Remote('setPool') setPool(pool: readonly PoolRoute[]): void
 
-/**
- * Persist a replacement pool to Host settings (`orchestration.pool` in the
- * profile), restoring it after restart. The pool is always applied in memory
- * so the selection takes effect immediately; the profile write is best-effort
- * and a refused write (a settings conflict, a profile override, or a layered
- * entry the config editor cannot rewrite) is logged as a warning and keeps
- * the pool live for the session without blocking the selection. When the
- * settings service is absent (settings-less boots), the pool is applied in
- * memory with a warning so the call still lands.
- * @param pool - provider/model routes to select.
- * @returns true when the pool was applied (always, after an in-memory apply).
+/** Apply the pool and attempt to persist it in this profile's settings.
+ * @param pool - New default routes; existing Session authorization remains fixed.
+ * @returns True after memory apply; a failed settings write is reported as a warning.
  */
 @Remote('persistPool') async persistPool(pool: readonly PoolRoute[]): Promise<boolean>
-
-/**
- * Split a task into a plan with the coordinator and run every step as a
- * parallel spawn worker, failing over each settled failure to the next
- * capability-similar eligible pool route within a bounded attempt budget.
- *
- * Workers do not inherit orchestration mode: the delegation gate reads the
- * calling agent's own session mode only, and spawned workers receive just
- * provider/model options (no orchestration flag), so orchestration never
- * recursively enables itself inside worker chains.
- * @param parent - exact live Agent providing worker lineage for every step.
- * @param task - the raw goal to decompose and execute.
- * @param pool - optional selected model routes; defaults to the value set with
- *   {@link OrchestrationService.setPool}, so the GUI-selected pool drives runs.
- * @param signal - caller cancellation.
- * @returns every step outcome plus run-level counts.
- */
-async run( parent: Agent, task: string, pool: readonly PoolRoute[] | undefined, signal: AbortSignal, ): Promise<OrchestrationResult>
 ```
 
 Types: [Agent](core.zh.md)

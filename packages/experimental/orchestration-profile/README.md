@@ -1,5 +1,5 @@
 ---
-description: "Opt-in Orchestration Mode experimental profile bundle: split one task into parallel subagents over a selected multi-model pool with bounded route failover."
+description: "Add task-aware model selection for normal subagents to an opted-in Harness profile."
 kind: "package-bundle"
 ---
 
@@ -9,70 +9,74 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-orchestration-profile` is an opt-in profile layer that enables **Orchestration Mode** in one bundle. Applied after `dsh-base`, it mounts the Orchestration service and its `run_orchestration` tool with a selected multi-model pool, so a session can split a goal into independent parallel sub-tasks across several models and restart any failed sub-task on the next eligible model route instead of failing the whole run. It is experimental and ships only when explicitly opted into; it is never part of the default bundles.
+Enable Orchestration mode to assign normal subagents to models suited to their tasks and available capacity. This optional experimental layer adds the mode control and shared model pool to a profile built on `dsh-base`. The lead agent stays on the session's selected model. Default mode retains normal delegation. The bundle requires a compatible host runtime and is absent from default profiles.
 
 ## Table of Contents
 
-- [Use this profile](#use-this-profile)
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
-<a id="use-this-profile"></a>
-## Use this profile
+<a id="use-this-package"></a>
+## Use this package
 
-Install this bundle and apply its patch over `dsh-base` to add Orchestration Mode to the host. The patch inserts the service and tool and seeds a provider-aligned default pool; the pool is replaced with the GUI panel or a `tool-orchestration` config:
+Apply this bundle after `dsh-base` in an opted-in profile. Its [patch](cordis.patch.yml) mounts the orchestration service with a seed model pool and the optional Web controls. Replace the service's `pool` through profile configuration or the Orchestration settings panel.
 
-```yaml
-- id: tool-orchestration
-  name: '@deepseek-ai/dsh-tool-orchestration'
-  config:
-    pool:
-      - provider: uni-paderborn
-        model: gwdg.deepseek-v4-flash-0731
-      - provider: uni-paderborn
-        model: gwdg.glm-5.3-flash
-```
+Select Orchestration from the conversation composer or use `/orchestration on`; use Default or `/orchestration off` to return to normal delegation. The normal subagent tools carry the task assessment and selected context. Required capabilities are enforced together: a coding task with visual verification needs both coding and image understanding. The [service reference](../dsh-orchestration/README.md) owns assessment fields and routing rules.
 
-Because Experimental isolation forbids shipping experimental packages in default bundles, this profile is opt-in by construction. It does not disable normal subagent delegation; orchestration is an additional capability the model can choose with `run_orchestration`.
+-----
 
-### Enable Orchestration mode for a session
+<a id="understand-the-implementation"></a>
+## Understand the implementation
 
-`run_orchestration` only delegates while the session is in Orchestration mode; a Default session refuses the tool so the normal single-model loop is never silently replaced. Turn the mode on per session from the conversation composer's Default/Orchestration menu, or with `/orchestration on`, and leave it with `/orchestration off`. The selection is logged and restored across restarts.
+<details>
+<summary>Implementation internals — click to expand</summary>
 
-### What success and failure look like
+The bundle inserts the orchestration service and Web panel alongside the existing subagent runtime and tools. The service supplies a model-routing policy through the runtime's registered extension. The normal activation manager owns child startup, cancellation, results, and teardown. The bundle does not add another task executor.
 
-A session in Orchestration Mode completes its goal by splitting it into parallel sub-tasks, aggregating each sub-task's output, and integrating the results. A run succeeds when every sub-task completes; a refused sub-task is never re-routed and surfaces as a failed step.
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+- [Orchestration service](../dsh-orchestration/README.md) — mode, pool, task matching, and configuration.
+- [Normal subagent tools](../../subagent/tool-subagent/README.md) — delegation and context handoff.
+- [Web controls](../client-ui-orchestration/README.md) — mode selection and pool settings.
 
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-### Delegated run_orchestration
+### Delegation routing
 
 #### What the model sees
 
-This bundle mounts the `run_orchestration` tool and its Orchestration service alongside the rest of the profile. The model-facing tool schema, sub-task prompts, and results belong to `@deepseek-ai/dsh-tool-orchestration` and `@deepseek-ai/dsh-orchestration`; the profile layer itself contributes no prompt or tool text.
+The service contributes routing guidance to normal `subagent` calls; the subagent tool owns the task assessment and selected image context. The [service reference](../dsh-orchestration/README.md#model-experience) describes the exact guidance.
 
 #### Token effect
 
-No direct token effect from the bundle. Planning and worker calls consume tokens on the routes configured in the mounted `tool-orchestration` pool.
+Normal lead and subagent requests consume tokens on their selected routes. The bundle adds no separate planning request.
 
 #### KV Cache effect
 
-No direct effect. The composed service and tool own any model-visible context; the profile layer adds none.
+Fresh subagents start their own request history. Selecting a route does not transfer the lead's KV prefix.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Pool is seeded provider-aligned, then GUI-editable** — the layer ships a default pool naming the base profile's mounted provider route; the GUI panel replaces it through `persistPool`, which applies it in memory and writes the profile best-effort. A refused profile write leaves the session pool live.
-- **Mode is selected per session, not a dedicated roster entry** — the session is switched with the composer's Default/Orchestration menu or `/orchestration on|off`, not a first-class picker row yet.
-- **No durability** — a run is not resumed across restart; each invocation re-plans.
-- **No keyless recorded-session snapshot yet** — the Loader boot test covers the composed model-visible surface deterministically, but a recorded `run_orchestration` session snapshot still requires a keyed maintainer run (`test:snapshot:record`).
-- **Experimental prototype with no stability promise** — the package is public, but its contracts and placement can change freely while it incubates.
+- Existing recorded model permissions restrict routing; pool edits only supply permission defaults for future sessions.
+- Live quota accounting covers the running Harness instance, not other clients sharing the same credentials.
+- The Web picker lists the Paderborn gateway catalog; other routes require explicit service configuration.
+- The package is experimental and has no stability promise.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -80,10 +84,6 @@ No direct effect. The composed service and tool own any model-visible context; t
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-This Dev Note is working context for maintainers and is explicitly non-authoritative.
-
-#### Promotion
-
-Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A first-class Mode picker row and a recorded-session snapshot are natural next steps.
+None.
 
 </details>

@@ -672,15 +672,17 @@ export function exactEditState(text: string, find: string, replace: string, expe
 }
 
 /**
- * List tracked paths that the rescope checks or rewrites.
+ * List present tracked paths and retain missing mandatory targets for fail-loud checks.
  * @param repoRoot - Git working directory.
  * @param env - Git's environment; omitted, Git inherits this process's environment.
- * @returns eligible repository-relative paths, including large tracked corpora.
+ * @returns eligible repository-relative paths, excluding ordinary working-tree deletions.
  */
 export function listRescopeFiles(repoRoot: string, env?: NodeJS.ProcessEnv): string[] {
+  const required = new Set([...EXACT_EDITS.map(edit => edit.file), ...POSTCONDITIONS.map(check => check.file)])
   return execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
     .split('\0')
     .filter(file => file !== '' && !isRescopeExcluded(file))
+    .filter(file => required.has(file) || existsSync(resolve(repoRoot, file)))
 }
 
 function main(): void {

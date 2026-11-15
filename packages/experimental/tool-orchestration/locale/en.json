@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Orchestration Tool",
-    "description": "Split a task into parallel subagents over a selected multi-model pool."
-  }
-}

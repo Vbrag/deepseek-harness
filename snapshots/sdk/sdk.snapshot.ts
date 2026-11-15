@@ -68,6 +68,7 @@ import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 
 const corpusRoot = fileURLToPath(new URL('../', import.meta.url))
+const installAnchor = fileURLToPath(new URL('../../apps/cli/package.json', import.meta.url))
 
 const MINIMAL_SYSTEM_PROMPT = 'You are the environment-selected minimal software engineer.'
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
@@ -120,6 +121,8 @@ interface SdkAssertions {
   waitForProviderTitle?: boolean
   /** Final response required from a completed turn before updating goldens. */
   expectedFinalResponse?: string
+  /** Exact child request configurations for scenarios that route children to other models. */
+  expectedChildConfigs?: Readonly<Record<number, Readonly<Record<string, unknown>>>>
   /** Environment overrides passed to the runtime subprocess. */
   environment?: Readonly<Record<string, string>>
   /** A separate DSH SDK child whose persisted session joins the evidence. */
@@ -140,6 +143,11 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'orchestration-mode': {
+    expectedFinalResponse: 'ORCHESTRATION_OFF_OK',
+    expectedChildConfigs: { 1: { provider: 'snapshot-workers', model: 'coder' } },
+    environment: { DEEPSEEK_BASE_URL: 'http://127.0.0.1:9' },
+  },
   'team-default-enabled': {
     expectedFinalResponse: 'TEAM_CONFIG_OK',
     patches: [
@@ -431,7 +439,16 @@ function contextOf(logs: readonly { content: string; header: Record<string, unkn
   return {
     sessionIds: logs.flatMap(log => typeof log.header.id === 'string' ? [log.header.id] : []),
     cwd,
+    cwdAliases: [JSON.stringify(cwd).slice(1, -1)],
   }
+}
+
+/** Tokenize the exact JSON-quoted Windows workspace spelling in runtime-context text. */
+function tokenizeSdkFixtureCwd(content: string, cwd?: string): string {
+  const newline = content.indexOf('\n')
+  const header = JSON.parse(content.slice(0, newline)) as { cwd: string }
+  const escaped = JSON.stringify(cwd ?? header.cwd).slice(1, -1)
+  return tokenizeSessionFixtureCwd(JSON.stringify({ ...header, cwd: escaped }) + content.slice(newline))
 }
 
 function contextOfContents(contents: readonly string[]): NormalizeContext {
@@ -456,9 +473,25 @@ async function hydrateReplayFixtures(scenario: CorpusScenario, cwd: string): Pro
   await mkdir(root, { recursive: true })
   return Promise.all((await fixtureFiles(scenario)).map(async (source) => {
     const destination = join(root, basename(source))
-    await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', cwd))
+    await writeFile(destination, hydrateFixtureCwd(await readFile(source, 'utf8'), cwd))
     return destination
   }))
+}
+
+/** Expand path tokens in JSON values while preserving nested tool-argument JSON. */
+function hydrateFixtureCwd(content: string, cwd: string): string {
+  const visit = (value: unknown, field?: string): unknown => {
+    if (typeof value === 'string') {
+      return value.replaceAll('{{cwd}}', field === 'arguments' || field === 'args'
+        ? JSON.stringify(cwd).slice(1, -1) : cwd)
+    }
+    if (Array.isArray(value)) return value.map(item => visit(item, field))
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, visit(item, key)]))
+    }
+    return value
+  }
+  return content.trimEnd().split('\n').map(line => JSON.stringify(visit(JSON.parse(line)))).join('\n') + '\n'
 }
 
 /**
@@ -782,13 +815,13 @@ async function runScenario(scenario: CorpusScenario): Promise<{
     ...assertions.patches ?? [],
     ...scenario.name === 'session-resume' && !recording ? [join(scenario.dir, 'replay.cordis.yml')] : [],
   ]
-    .map((patch, index) => materializeProfilePatch(patch, cwd, scenario.manifest.profile, patchRoot, index))
+    .map((patch, index) => materializeProfilePatch(patch, cwd, scenario.manifest.profile, patchRoot, index, installAnchor))
   let childSessionsRoot: string | undefined
   let childEnvironment: Record<string, string> = {}
   if (assertions.dshSdkChild !== undefined) {
     const childHome = join(cwd, '.child-dsh')
-    const legacyChildPatch = materializeProfilePatch(legacySdkContextPatch, cwd, 'sdk', patchRoot, patches.length)
-    const childPatch = materializeProfilePatch(assertions.dshSdkChild.config, cwd, 'sdk', patchRoot, patches.length + 1)
+    const legacyChildPatch = materializeProfilePatch(legacySdkContextPatch, cwd, 'sdk', patchRoot, patches.length, installAnchor)
+    const childPatch = materializeProfilePatch(assertions.dshSdkChild.config, cwd, 'sdk', patchRoot, patches.length + 1, installAnchor)
     await mkdir(childHome, { recursive: true })
     childSessionsRoot = join(childHome, 'sessions')
     childEnvironment = {
@@ -1120,6 +1153,7 @@ async function verifyHeaders(
   ordered: readonly PersistedLog[],
   ctx: NormalizeContext,
   dshSdkChildConfig?: Readonly<Record<string, unknown>>,
+  childConfigs?: Readonly<Record<number, Readonly<Record<string, unknown>>>>,
 ): Promise<void> {
   const pin = headerPin(scenario)
   const [pinFixturePath] = await fixtureFiles(pin)
@@ -1161,8 +1195,9 @@ async function verifyHeaders(
     for (const [index, header] of headers.entries()) {
       const selectedSchemas = childSchemas.get(logIndex)?.[index]
       const base = reconstructed[index] ?? reconstructed[0]
-      const configured = logIndex === 1 && dshSdkChildConfig !== undefined
-        ? { ...base as JsonObject, config: dshSdkChildConfig }
+      const childConfig = childConfigs?.[logIndex] ?? (logIndex === 1 ? dshSdkChildConfig : undefined)
+      const configured = childConfig !== undefined
+        ? { ...base as JsonObject, config: childConfig }
         : base
       const expected = selectedSchemas === undefined
         ? configured
@@ -1177,6 +1212,21 @@ async function verifyHeaders(
 }
 
 describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
+  it.each(['/tmp/work', 'C:\\work\\quoted-directory'])('hydrates fixture JSON and tool arguments for %s', (cwd) => {
+    const fixture = JSON.stringify({ cwd: '{{cwd}}', arguments: '{"path":"{{cwd}}/file"}', args: ['{"path":"{{cwd}}/file"}'] })
+    const hydrated = JSON.parse(hydrateFixtureCwd(fixture, cwd)) as { cwd: string; arguments: string; args: string[] }
+    expect(hydrated.cwd).toBe(cwd)
+    expect(JSON.parse(hydrated.arguments)).toEqual({ path: cwd + '/file' })
+    expect(JSON.parse(hydrated.args[0]!)).toEqual({ path: cwd + '/file' })
+  })
+  it('tokenizes only captured workspace spellings inside JSON-quoted Windows context', () => {
+    const cwd = 'C:\\work\\generated-root'
+    const fixture = JSON.stringify({ type: 'session', cwd }) + '\n'
+      + JSON.stringify({ text: 'Working directory: ' + JSON.stringify(cwd) + '; unrelated C:\\other\\file' }) + '\n'
+    const rows = records(tokenizeSdkFixtureCwd(fixture))
+    expect(rows[0]?.cwd).toBe('{{cwd}}')
+    expect(rows[1]?.text).toBe('Working directory: "{{cwd}}"; unrelated C:\\other\\file')
+  })
   it('restores the retained V3 max-tokens recording after an interrupted next-turn restart', async () => {
     const path = join(corpusRoot, 'sdk/max-tokens-continue/session.v3.jsonl')
     const fixture = await readFile(path, 'utf8')
@@ -1217,6 +1267,11 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           ? files.map((_, index) => writerSnapshotName(index)).sort() : [])
       }
       const { results, notifications, observedMethods, logs, initialWorkspace, finalWorkspace, cwd, modelRequests } = await runScenario(scenario)
+      if (scenario.name === 'orchestration-mode') {
+        const toolResults = logs.flatMap(log => records(log.content).filter(event => event.type === 'tool/result'
+          || event.type === 'orchestration/mode' || event.type === 'plugin:orchestration/mode-request'))
+        expect(logs, 'orchestration Sessions; tool results: ' + JSON.stringify(toolResults)).toHaveLength(3)
+      }
       const ordered = orderLogs(
         logs,
         recording ? logs.length : files.length,
@@ -1224,6 +1279,28 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       )
       reconcileCatalogCreationTimes(ordered.map(log => log.content), 'validate')
       const actualContext = contextOf(ordered, cwd)
+      if (scenario.name === 'orchestration-mode') {
+        const parent = ordered[0]!
+        const events = records(parent.content)
+        expect(events.filter(event => event.type === 'orchestration/mode').map(event => event.data))
+          .toEqual([{ active: false }, { active: true }, { active: false }])
+        const decisions = events.filter(event => event.type === 'plugin:orchestration/route')
+        expect(decisions).toHaveLength(1)
+        expect(decisions[0]?.data).toMatchObject({
+          childId: ordered[1]!.header.id,
+          assessment: { requiredCapabilities: ['coding'], contextTokens: 100, outputTokens: 100 },
+          selected: { provider: 'snapshot-workers', model: 'coder' },
+          reason: 'pool-order',
+        })
+        expect(records(ordered[1]!.content).find(event => event.type === 'orchestration/mode')?.data)
+          .toEqual({ active: true })
+        expect(records(ordered[2]!.content).find(event => event.type === 'orchestration/mode')?.data)
+          .toEqual({ active: false })
+        expect(assembledTools(parent).map(tool => tool.name)).toContain('subagent')
+        expect(assembledTools(parent).map(tool => tool.name)).not.toContain('run_orchestration')
+        expect(notifications.some(notification => notification.method === 'session.event'
+          && notification.params.event.type === 'plugin:orchestration/route')).toBe(true)
+      }
       if (scenario.name === 'team-default-enabled') {
         const parent = ordered[0]!
         const events = parseSessionLog(parent.content)
@@ -1631,7 +1708,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
 
       if (recording) {
         expectedContents = redactSessionSnapshotIds(stabilizeFixtureMessageIds(
-          ordered.map(log => scrubSessionSnapshot(tokenizeSessionFixtureCwd(log.content))),
+          ordered.map(log => scrubSessionSnapshot(tokenizeSdkFixtureCwd(log.content))),
           expectedContents,
         ))
       }
@@ -1647,8 +1724,9 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const refreshed = ordered.map((log, index) => {
           const existing = expectedContents[index]
           if (existing === undefined) throw new Error(`no fixture for persisted log ${index}`)
-          return scrubSessionSnapshot(tokenizeSessionFixtureCwd(
+          return scrubSessionSnapshot(tokenizeSdkFixtureCwd(
             stabilizeRefreshLog(log.content, existing, replacements, actualContext),
+            cwd,
           ))
         })
         expectedContents = redactSessionSnapshotIds(stabilizeFixtureMessageIds(reconcileCatalogCreationTimes(refreshed, 'preserve-headers'), expectedContents))
@@ -1683,7 +1761,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext, { nativeWriterOutput: true })
       const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext, { nativeWriterOutput: true })
       expect(actualSnapshots.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
-      await verifyHeaders(scenario, ordered, actualContext, assertions.dshSdkChild?.agentConfig)
+      await verifyHeaders(scenario, ordered, actualContext, assertions.dshSdkChild?.agentConfig, assertions.expectedChildConfigs)
 
       // Genuine SDK protocol cases retain their secondary wire projections.
       const finalResult = results.at(-1)

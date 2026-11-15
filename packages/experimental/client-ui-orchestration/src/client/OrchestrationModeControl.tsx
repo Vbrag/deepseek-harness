@@ -11,7 +11,7 @@ import css from './OrchestrationModeControl.module.css'
 /** Session-bound command operation provided by the registration. */
 export interface OrchestrationModeInjected {
   /** Select a mode; false means the command was refused or unavailable. */
-  selectMode(active: boolean): Promise<boolean>
+  selectMode(this: void, active: boolean): Promise<boolean>
 }
 
 /** Derived composer slot, command operation, and localized labels. */

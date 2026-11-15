@@ -123,7 +123,8 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
     libBin: agent.libBinScript,
     configArgs: agent.profile === undefined
       ? ['--config', selectedConfig]
-      : profileArgs(agent.profile, agent.configPath, selectedConfig, options.env?.DSH_SNAPSHOT, cwd),
+      : profileArgs(agent.profile, agent.configPath, selectedConfig, options.env?.DSH_SNAPSHOT, cwd,
+        resolve(dirname(agent.binScript), '../package.json')),
     tsconfigPath: agent.tsconfigPath,
     ...agent.profile === undefined ? {} : { sourceImport: 'tsx/esm' },
     env: {
@@ -346,6 +347,7 @@ function profileArgs(
   selectedPatch: string,
   snapshotMode: string | undefined,
   cwd: string,
+  installAnchor: string,
 ): string[] {
   const base = resolve(cwd, basePatch)
   const selected = resolve(cwd, selectedPatch)
@@ -357,7 +359,8 @@ function profileArgs(
   const materializedRoot = join(cwd, '.dsh-profile-patches')
   mkdirSync(materializedRoot, { recursive: true })
   const materializedDir = mkdtempSync(join(materializedRoot, 'launch-'))
-  const materialized = patches.map((file, index) => materializeProfilePatch(file, cwd, profile, materializedDir, index))
+  const materialized = patches.map((file, index) => materializeProfilePatch(file, cwd, profile, materializedDir, index,
+    existsSync(installAnchor) ? installAnchor : undefined))
   return ['--profile', profile, ...materialized.flatMap(file => ['--patch', file])]
 }
 
@@ -383,12 +386,39 @@ function packageDirFromPatch(source: string, packageName: string): string | unde
   return undefined
 }
 
+/** Collect packages supplied by the selected installation's runtime dependency graph. */
+function installationPackageNames(installAnchor: string | undefined): ReadonlySet<string> {
+  const names = new Set<string>()
+  if (installAnchor === undefined) return names
+  const anchors = [installAnchor]
+  for (const anchor of anchors) {
+    const manifest = JSON.parse(readFileSync(anchor, 'utf8')) as {
+      dependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+      optionalDependencies?: Record<string, string>
+    }
+    for (const dependencies of [manifest.dependencies, manifest.peerDependencies, manifest.optionalDependencies]) {
+      for (const name of Object.keys(dependencies ?? {})) {
+        if (names.has(name)) continue
+        const packageDir = packageDirFromPatch(anchor, name)
+        if (packageDir === undefined) continue
+        names.add(name)
+        anchors.push(join(packageDir, 'package.json'))
+      }
+    }
+  }
+  return names
+}
+
 /**
  * Install an authored patch's resolvable bare package into the temporary
  * profile. This mirrors `dsh plugin` while retaining the bare entry
  * name and package identity used by request metadata.
  */
-function linkProfilePackage(source: string, cwd: string, profile: string, packageName: string): void {
+function linkProfilePackage(
+  source: string, cwd: string, profile: string, packageName: string, installationPackages: ReadonlySet<string>,
+): void {
+  if (installationPackages.has(packageName)) return
   const packageDir = packageDirFromPatch(source, packageName)
   // The package may instead belong to the dsh installation; profile boot heals those links.
   if (packageDir === undefined) return
@@ -411,18 +441,20 @@ function linkProfilePackage(source: string, cwd: string, profile: string, packag
  * @param profile - profile whose local package lookup receives the test links.
  * @param targetDir - existing directory that owns the materialized patch.
  * @param index - stable patch ordinal used in the output filename.
+ * @param installAnchor - chosen dsh manifest; its transitive runtime dependencies retain installation-owned resolution.
  * @returns absolute materialized patch path.
  */
 export function materializeProfilePatch(
-  source: string, cwd: string, profile: string, targetDir: string, index: number,
+  source: string, cwd: string, profile: string, targetDir: string, index: number, installAnchor?: string,
 ): string {
   const parsed = parseEntryYaml(readFileSync(source, 'utf8'))
   if (!Array.isArray(parsed)) throw new Error(`snapshot profile patch must be a top-level array: ${source}`)
   const patches = parsed as PatchOptions[]
   const baseDir = dirname(source)
+  const installationPackages = installationPackageNames(installAnchor)
   const resolveName = (value: string): string => {
     const packageName = barePackageName(value)
-    if (packageName !== undefined) linkProfilePackage(source, cwd, profile, packageName)
+    if (packageName !== undefined) linkProfilePackage(source, cwd, profile, packageName, installationPackages)
     return value.startsWith('./') || value.startsWith('../')
       ? pathToFileURL(resolve(baseDir, value)).href
       : value

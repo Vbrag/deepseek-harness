@@ -70,7 +70,7 @@ class CatalogAdapter extends LlmAdapter {
       id: model,
       name: model,
       ...this.reasoning === undefined ? {} : { reasoning: this.reasoning },
-      ...this.rateLimitForModel[model] === undefined ? {} : { rateLimit: this.rateLimitForModel[model]! },
+      ...this.rateLimitForModel[model] === undefined ? {} : { rateLimit: this.rateLimitForModel[model] },
     })
   }
 

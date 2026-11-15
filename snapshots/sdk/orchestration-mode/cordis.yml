@@ -1,0 +1,45 @@
+# Normal SDK delegation with task-aware mode selected between recorded turns.
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false
+
+- id: llm-deepseek
+  disabled: true
+
+- id: tool-skill
+  disabled: true
+
+- id: time-context
+  disabled: true
+
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+- id: tool-subagent
+  config:
+    provider: spawn
+    toolName: subagent
+    maxDepth: 1
+
+- insert:
+    - id: orchestration
+      name: '../../../packages/experimental/dsh-orchestration/lib/index.js'
+      config:
+        pool:
+          - provider: deepseek-official
+            model: deepseek-v4-flash
+          - provider: snapshot-workers
+            model: coder
+        routeCapabilities:
+          - provider: deepseek-official
+            model: deepseek-v4-flash
+            capabilities: [allrounder]
+          - provider: snapshot-workers
+            model: coder
+            capabilities: [coding]
+    - id: await-sdk-subagents
+      name: '../../../packages/test-support/session-snapshot/tests/fixtures/subagent-settlement-barrier.ts'
+    - id: orchestration-session-mode-fixture
+      name: './session-mode-fixture.ts'

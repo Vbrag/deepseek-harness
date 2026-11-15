@@ -1,25 +1,21 @@
 - insert:
     - id: orchestration-mock-llm
       name: './orchestration-mock-llm.ts'
-
     - id: orchestration
       name: '@deepseek-ai/dsh-orchestration'
-
-    - id: tool-orchestration
-      name: '@deepseek-ai/dsh-tool-orchestration'
       config:
         pool:
-          - provider: orchestration-mock
-            model: gwdg.glm-5.3-flash
-          - provider: orchestration-mock
-            model: gwdg.qwen3-coder-next
-
+          - { provider: orchestration-mock, model: gwdg.glm-5.3-flash }
+          - { provider: orchestration-mock, model: gwdg.gemma-4-31b-it }
+          - { provider: orchestration-mock, model: gwdg.qwen3.5-397b-a17b }
+        routeCapabilities:
+          - { provider: orchestration-mock, model: gwdg.glm-5.3-flash, capabilities: [coding] }
+          - { provider: orchestration-mock, model: gwdg.gemma-4-31b-it, capabilities: [vision] }
+          - { provider: orchestration-mock, model: gwdg.qwen3.5-397b-a17b, capabilities: [coding, vision] }
 - id: headless-startup
   disabled: true
-
 - id: headless-runner
   disabled: true
-
 - id: sandbox-policy
   inject: []
   config:

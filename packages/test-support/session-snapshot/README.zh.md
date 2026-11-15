@@ -84,6 +84,8 @@ Headless/ACP 与 SDK 适配器在规范化之前，将原始目录中的子创�
 
 `pnpm run test:snapshot:record` 调用在线 LLM（大语言模型），并在规范具名版本文件下写入收集到的当前 generation。record 与 refresh 绝不重命名或删除已完成的 generation，即使后续运行不再产生某个 child 角色也一样；受审阅的源树整理只有在同角色存在已验证的当前替代文件后才移除前代。显式声明 `sessionFormat` 的场景在录制模式下保持只读。`pnpm run test:snapshot:refresh` 保持无密钥，运行选定的最高 replay 输入，并写入 stdout、各 pin 自有的提示词与工具 schema 伴随文件，以及新鲜当前 generation 的可比较 Session 输出；保留历史输入的场景写入单独的 writer 输出比较基准，而非规范当前格式 replay 代际。Headless 与 SDK 场景可通过本地 `runtime.cordis.yml` patch 添加执行 fixture。每个组合 owner 把 replay patch 放在 live patch 旁；顶层 `snapshots/` 拥有 Session 驱动场景，其他预期输出留在其 package owner 旁。[`dsh-llm-replay`](../llm-replay/README.zh.md) 提供通过 `DSH_SNAPSHOT_*` 环境值选择的已记录流。
 
+profile patch 物化保留所选 dsh 安装的传递运行时依赖，包括 peer 和可选依赖。将其 package manifest 作为 `materializeProfilePatch()` 的安装锚点；仅供 fixture 使用的包仍从原始 patch 所在位置解析。祖先目录的 `node_modules` 安装不能成为这些安装所属包的临时 profile 覆盖项。
+
 首次录制尚无 Session 文件的 headless 在线场景时，临时在 `snapshot.yml` 设置 `input.task`，由在线组合选择模型。录制后移除该输入，让选定 Session 拥有任务文本。回放与刷新必须已有规范 Session 文件，格式错误或缺少 parent 的角色仍会报错。
 
 嵌套的 `workspace.expected/<directory>/.empty` 标记表示空目录；实际 workspace 中的同名文件仍按普通文件比较。

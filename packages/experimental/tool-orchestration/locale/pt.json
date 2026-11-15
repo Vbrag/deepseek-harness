@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Ferramenta de orquestração",
-    "description": "Divide uma tarefa em subagentes paralelos executados sobre um conjunto de modelos selecionado."
-  }
-}

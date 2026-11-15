@@ -7,14 +7,11 @@ import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import { ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
+import type { SubagentModelRoute } from '@deepseek-ai/dsh-subagent'
+import { assertAllowedModelRoutes as assertSharedAllowedModelRoutes } from '@deepseek-ai/dsh-subagent/model-selection-policy'
 
 /** One exact child LLM route authorized by a user setting. */
-export interface AllowedModelRoute {
-  /** Registered LLM provider id. */
-  readonly provider: string
-  /** Provider-owned exact model id. */
-  readonly model: string
-}
+export type AllowedModelRoute = SubagentModelRoute
 
 /** Schema shared by the Host setting and its deployment base. */
 export const AllowedModelRouteSchema: z<AllowedModelRoute> = z.object({
@@ -43,25 +40,7 @@ export function modelRouteKey(route: AllowedModelRoute): string {
  * @returns an assertion that the candidate is a validated exact-route array.
  */
 export function assertAllowedModelRoutes(routes: unknown): asserts routes is readonly AllowedModelRoute[] {
-  if (!Array.isArray(routes)) {
-    throw new Error('subagent model selection requires an array of routes')
-  }
-  const seen = new Set<string>()
-  const candidates: readonly unknown[] = routes
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)
-      || !('provider' in candidate) || typeof candidate.provider !== 'string'
-      || !('model' in candidate) || typeof candidate.model !== 'string'
-      || candidate.provider.length === 0 || candidate.model.length === 0) {
-      throw new Error('subagent model selection requires non-empty provider and model ids')
-    }
-    const route = { provider: candidate.provider, model: candidate.model }
-    const key = modelRouteKey(route)
-    if (seen.has(key)) {
-      throw new Error(`subagent model selection repeats route "${route.provider}/${route.model}"`)
-    }
-    seen.add(key)
-  }
+  assertSharedAllowedModelRoutes(routes)
 }
 
 /** Model-facing child LLM route fields. */
@@ -98,6 +77,7 @@ function assertNonEmpty(value: string | undefined, field: keyof DelegationModelR
  * @param enabled - Whether this tool instance permits model-facing selection.
  * @param policy - Session allowlist; omission permits only the current parent route.
  * @param parentOptions - Current parent route used when no policy is recorded.
+ * @param routed - Whether the shared model router owns final authorization and preflight.
  * @returns Child Agent options, preserving omission when no layer contributes one.
  * @throws {SubagentError} `MODEL_SELECTION_DISABLED` when this tool instance
  *   forbids selection, or `MODEL_ROUTE_NOT_ALLOWED` when the Session does not allow the route.
@@ -109,6 +89,7 @@ export function requestedAgentOptions(
   enabled: boolean,
   policy: ModelSelectionPolicy | undefined,
   parentOptions: AgentOptions,
+  routed = false,
 ): AgentOptions | undefined {
   if (!hasDelegationModelRequest(request)) return configured
   if (!enabled) {
@@ -123,7 +104,7 @@ export function requestedAgentOptions(
       : 'child LLM `reasoning_effort` requires both `provider` and `model`; supply both or omit all three fields'])
   }
 
-  assertAllowedModelSelection(policy, parentOptions, { provider: request.provider, model: request.model })
+  if (!routed) assertAllowedModelSelection(policy, parentOptions, { provider: request.provider, model: request.model })
   return {
     ...configured,
     provider: request.provider,

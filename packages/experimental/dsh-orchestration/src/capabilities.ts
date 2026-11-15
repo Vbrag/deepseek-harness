@@ -3,10 +3,10 @@
  * catalog was investigated (Paderborn AI-Gateway). The provider's `/models`
  * endpoint exposes only model ids, so the capability facts (modalities,
  * reasoning, coding/vision/allrounder tags, context window, rate limits,
- * health) come from a curated table derived from the provider investigation,
- * not from guessing names. Context-window and rate-limit numbers are static
- * catalog defaults (routing-only, not a live quota); a live-override seam is
- * reserved for a gateway that later reports current per-model limits.
+ * health) come from a curated table derived from the provider investigation.
+ * Exact adapter facts take precedence over these hints. Static rate limits
+ * describe the catalog; queue availability and dispatch admission belong to
+ * the LLM adapter's shared limiter.
  *
  * @module @deepseek-ai/dsh-orchestration/capabilities
  */
@@ -16,6 +16,9 @@ export type CapabilityHealth = 'routeable' | 'unhealthy' | 'upcoming' | 'non-cha
 
 /** The discipline a sub-task is best served by. */
 export type TaskDomain = 'coding' | 'reasoning' | 'vision' | 'allrounder' | 'european'
+
+/** Task specialty labels accepted by orchestration assessments and route declarations. */
+export const TASK_DOMAINS: readonly TaskDomain[] = ['coding', 'reasoning', 'vision', 'allrounder', 'european']
 
 /** One input modality a model accepts. Text is universal; the rest are additive. */
 export type Modality = 'text' | 'image' | 'audio' | 'video'
@@ -33,13 +36,10 @@ export interface ModelRateLimits {
 }
 
 /**
- * The harness provider route every pool route must name for a worker to reach
- * the Paderborn AI-Gateway adapter. The pool's `provider` field is passed
- * verbatim as a worker's `agentOptions.provider`, which selects a registered
- * `ctx.llm` adapter route; an unregistered route throws `NO_ADAPTER` on the
- * worker's first request. The shipped profile mounts this route as
- * `uni-paderborn`; a deployment that mounts the gateway under a different
- * route must change this constant and the panel's source of truth together.
+ * Exact gateway provider whose investigated specialty and capacity facts may
+ * supplement adapter metadata. Other providers, including renamed gateway
+ * routes, supply verified specialties through routeCapabilities and resolve
+ * capacities through their own adapter metadata.
  */
 export const POOL_PROVIDER = 'uni-paderborn'
 
@@ -75,8 +75,8 @@ export interface ModelCapability {
  * usable through the DSH chat pipeline or the current gateway key. The
  * media-capable Omni entry lists its catalog audio/video tags, but DSH does
  * not add audio/video transport and no attachment is forwarded by the
- * orchestration service, so a step requesting audio/video cannot actually be
- * served today; the modality list is a routing hint only.
+ * orchestration service. Routing falls back only to catalog text/image facts;
+ * other modalities are excluded until DSH can carry them.
  */
 export const PADERBORN_CATALOG: readonly ModelCapability[] = [
   // Context-window and rate-limit figures are transcribed from the gateway's
@@ -103,140 +103,10 @@ export const PADERBORN_CATALOG: readonly ModelCapability[] = [
   { id: 'gwdg.meta-llama-3.1-8b-instruct', name: 'Llama 3.1 8B Instruct', imageInput: false, reasoning: false, domains: ['allrounder'], modalities: ['text'], contextWindow: 128_000, rateLimits: { rpm: 10, tpm: 500_000 }, health: 'routeable', suggested: 'Lightweight fast general conversation, straightforward questions, basic assistance.' },
 ]
 
-/** Look up one model's capability facts from the catalog by id. */
+/** Look up one model's capability facts from the catalog by id.
+ * @param id - Exact gateway model id.
+ * @returns Curated facts, or undefined when no entry is known.
+ */
 export function capabilityOf(id: string): ModelCapability | undefined {
   return PADERBORN_CATALOG.find(c => c.id === id)
-}
-
-/** Whether every required input modality is served by the model. */
-export function coversModalities(capability: ModelCapability, required: readonly Modality[]): boolean {
-  return required.every(m => capability.modalities.includes(m))
-}
-
-/** Whether the model's documented context window fits the required input tokens. */
-export function fitsContext(capability: ModelCapability, tokens: number): boolean {
-  return capability.contextWindow >= tokens
-}
-
-/** Whether one model's rpm/tpm ceiling leaves the field clear for one more attempt. */
-export function underRateBudget(
-  capability: ModelCapability,
-  usedRpm: number,
-  usedTpm: number,
-  attemptTpm: number,
-): boolean {
-  const { rpm, tpm } = capability.rateLimits ?? {}
-  if (rpm !== undefined && usedRpm + 1 > rpm) return false
-  if (tpm !== undefined && usedTpm + attemptTpm > tpm) return false
-  return true
-}
-
-/** The disciplines a model can serve, as a set for similarity comparison. */
-function domainMask(capability: ModelCapability): ReadonlySet<TaskDomain> {
-  return new Set(capability.domains)
-}
-
-/**
- * Similarity between one model's capabilities and a task domain.
- * A model that explicitly serves the domain scores the highest; otherwise
- * the model's breadth (number of overlapping general disciplines) breaks ties.
- * @returns Score; higher is a better match for the domain.
- */
-export function domainScore(capability: ModelCapability, domain: TaskDomain): number {
-  if (domain === 'vision') {
-    return capability.imageInput ? 2 + (capability.domains.includes('vision') ? 1 : 0) : 0
-  }
-  const mask = domainMask(capability)
-  if (mask.has(domain)) return 2
-  // Partial credit for serving the target through a closely related discipline.
-  if (domain === 'coding' && mask.has('reasoning')) return 1
-  return 0
-}
-
-/**
- * Similarity between two models' capability sets, for failover: a replacement
- * whose domains overlap the failed model's the most is preferred.
- * @param a - failed model's capabilities.
- * @param b - candidate replacement's capabilities.
- * @returns Overlap count of shared domains, modality agreement, plus image-input agreement.
- */
-export function capabilitySimilarity(a: ModelCapability, b: ModelCapability): number {
-  const shared = [...a.domains].filter(d => b.domains.includes(d)).length
-  const imageAgreement = a.imageInput === b.imageInput ? 1 : 0
-  const modalityAgreement = a.modalities.filter(m => b.modalities.includes(m)).length
-  return shared + imageAgreement + modalityAgreement
-}
-
-/** A model route is unusable for one selection round. */
-export interface ExcludedRoute {
-  /** Exact model id excluded from this round. */
-  readonly model: string
-  /** Human reason, for diagnostics. */
-  readonly reason: string
-}
-
-/**
- * Route one required list of capabilities to the best candidate that is
- * routeable, not already tried, not excluded (rate-limited or otherwise
- * unavailable), capable of every required modality, and large enough for the
- * required context tokens.
- * @param candidates - the selected pool's capabilities (already resolved).
- * @param tried - models already attempted for this step.
- * @param domains - required domains.
- * @param options - modality, context, and budget constraints on routing.
- * @returns The best-matching model, or undefined when none remains.
- */
-export function bestCapabilityMatch(
-  candidates: readonly ModelCapability[],
-  tried: readonly string[],
-  domains: readonly TaskDomain[],
-  options: {
-    readonly requiredModalities?: readonly Modality[]
-    readonly contextTokens?: number
-    readonly unavailable?: readonly string[]
-    readonly budget?: Record<string, { attempts: number; tokens: number }>
-    /**
-     * Per-run count of first-attempt steps already assigned to each model, used
-     * to break capability ties toward the least-used model so parallel steps
-     * spread across the pool instead of piling onto one model. Absent means no
-     * load signal, so selection falls back to pool order on ties.
-     */
-    readonly assigned?: Readonly<Record<string, number>>
-  } = {},
-): ModelCapability | undefined {
-  const triedSet = new Set(tried)
-  const unavailableSet = new Set(options.unavailable ?? [])
-  const usable = candidates.filter((c) => {
-    if (c.health !== 'routeable' || triedSet.has(c.id) || unavailableSet.has(c.id)) return false
-    if (options.requiredModalities !== undefined && !coversModalities(c, options.requiredModalities)) return false
-    if (options.contextTokens !== undefined && !fitsContext(c, options.contextTokens)) return false
-    const usage = options.budget?.[c.id] ?? { attempts: 0, tokens: 0 }
-    if (usage.attempts > 0 && c.rateLimits?.rpm !== undefined && usage.attempts >= c.rateLimits.rpm) return false
-    return true
-  })
-  if (usable.length === 0) return undefined
-  if (domains.length === 0) {
-    // No requirement: every usable route is an acceptable default, so spread
-    // parallel steps by least-used model first and prefer the broadest routeable
-    // model only to break an equal-load tie.
-    const load = ({ id }: ModelCapability): number => options.assigned?.[id] ?? 0
-    return [...usable].sort(
-      (a, b) => (load(a) - load(b)) || (b.domains.length - a.domains.length),
-    )[0]
-  }
-  const scoring = usable.map(candidate => ({
-    candidate,
-    score: domains.reduce((sum, d) => sum + domainScore(candidate, d), 0),
-  }))
-  scoring.sort((a, b) => {
-    const byScore = b.score - a.score
-    if (byScore !== 0) return byScore
-    const aLoad = options.assigned?.[a.candidate.id] ?? 0
-    const bLoad = options.assigned?.[b.candidate.id] ?? 0
-    return aLoad - bLoad
-  })
-  const top = scoring[0]
-  /* v8 ignore next -- reachable only if scoring were empty, which the earlier usable-empty return already prevents. */
-  if (top === undefined) return undefined
-  return top.score === 0 ? undefined : top.candidate
 }

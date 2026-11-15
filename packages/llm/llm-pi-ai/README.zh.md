@@ -104,7 +104,7 @@ profile 的 `models` 列表会替换而非扩展路由的已安装目录；每�
 
 ### 在模型速率限制内为调用定速
 
-网关（如大学 AI 网关）会发布按模型划分的限制：每分钟最大请求数（RPM）与每分钟最大 token 数（TPM）。在 `models` 或 `modelOverrides` 条目上声明 `rpm` 和/或 `tpm`，会让适配器主动为对该模型的调用定速，因此共享该路由的并发会话永远无法把请求推过网关的按模型上限，而在对话中途被拒绝（HTTP 429）。其余字段是给配置界面使用的计费元数据：`free: true` 标注无成本模型，`pricing: { input, output }` 记录付费模型每 1M token 的费率。
+网关（如大学 AI 网关）会发布按模型划分的限制：每分钟最大请求数（RPM）与每分钟最大 token 数（TPM）。在 `models` 或 `modelOverrides` 条目上声明 `rpm` 和/或 `tpm`，会为共享路由的并发调用定速。token 估算可能与提供方计数不同，因此仍可能遇到提供方限流错误。其余字段是给配置界面使用的计费元数据：`free: true` 标注无成本模型，`pricing: { input, output }` 记录付费模型每 1M token 的费率。
 
 ```yaml
 providers:
@@ -129,16 +129,17 @@ providers:
         input: [text, image]
         free: true
 ```
-本模块随附一条开箱即用的 Uni Paderborn AI-Gateway 路由，带其完整聊天模型目录，位于 [`UPB_GATEWAY_PROFILE`](../src/upb-gateway.ts)（作为 `UPB_GATEWAY_MODELS`、`UPB_GATEWAY_PROVIDER`、`UPB_GATEWAY_BASE_URL`、`UPB_GATEWAY_API_KEY_ENV` 重新导出）。只需以 `UPB_AI_GATEWAY_KEY` 导出 API key 即可启用；随附目录已从网关的公共模型列表为每个模型声明 `rpm` / `tpm` 预算。
+
+本模块随附一条开箱即用的 Uni Paderborn AI-Gateway 路由，带其完整聊天模型目录，位于 [`UPB_GATEWAY_PROFILE`](src/upb-gateway.ts)（作为 `UPB_GATEWAY_MODELS`、`UPB_GATEWAY_PROVIDER`、`UPB_GATEWAY_BASE_URL`、`UPB_GATEWAY_API_KEY_ENV` 重新导出）。只需以 `UPB_AI_GATEWAY_KEY` 导出 API key 即可启用；随附目录已从网关的公共模型列表为每个模型声明 `rpm` / `tpm` 预算。
 
 
-定速预算按进程为每个 provider+model 计：调用同一模型的每个会话、每个代理步骤共享一个滚动分钟预算，因此多个会话无法集体超过单个会话允许的额度。当当前分钟的 RPM 或 TPM 预算耗尽时，适配器会保持该调用直到预算补充完毕（至多一个滚动分钟），而非让其失败；已中止或取消的请求会离开队列并归还其预留，而不扣减预算。TPM 预留取自发送前请求序列化文本的估算，并在完成时按提供方报告的用量对账，因此低估会记入下一个调用，而非静默超出分钟预算。若只要定速而不限制 token，只声明 `rpm`；若只限制 token，只声明 `tpm`。两者都不声明的模型在分派时不等待。
+同一适配器实例按 provider/model 维护滚动 60 秒账本，供每个会话和步骤共享。分派时预留一次请求、估算的输入 token，以及提供方的 `rateLimitOutputTokens` 输出预留量（默认 4096，不超过有效输出上限）。额度耗尽时调用排队；估算超出整个 TPM 预算时立即以 `RATE_LIMIT_REQUEST_TOO_LARGE` 失败。分派前取消会归还预留；已分派但用量未知的调用保留估算。提供方报告的用量会替换估算，包括超额欠账，并在结算后继续计入 60 秒。活动调用在结算前保留 token 预留。配置变更保留已有扣减。只声明 `rpm` 或 `tpm` 可限制单个维度；两者都不声明时直接分派。`ctx.llm.queueAvailability()` 查询同一账本，不预留额度。
 
 ### 带推理（reasoning）与协议兼容运行
 
 `reasoningEfforts` 声明模型可选择的 thinking 等级：每个键都是选择器提供的等级，其值是分派时在协议中发送的拼写，因此 `max: ultra` 可以为拥有自有词汇的网关重命名等级。省略该字段时保留已安装目录条目的能力；`false` 声明非推理模型。对于 pi-ai 无法识别的端点，`compat` 开关重塑请求——哪个角色携带系统提示词、哪个字段限制输出、thinking 等级如何传递——可逐路由、逐模型配置。条目与已安装目录都没有尺寸的模型，会采用路由的 `defaultContextWindow` 与 `defaultMaxTokens` 回退值。
 
-确切模型元数据将 `reasoning.efforts` 按可选强度从低到高排列。配置函数可从该列表中选择，再由 `prepareCall()` 校验具体强度。适配器只接收解析后的控制项。选择 `off` 不保证禁用推理：以省略推理字段表达该值的协议会沿用网关默认行为。所选等级下产生的推理 token 都计入该请求的输出上限。
+确切模型元数据通过 `maxOutputTokens` 提供解析后的输出容量，独立于配置的请求 `defaultMaxTokens`，并将 `reasoning.efforts` 按可选强度从低到高排列。配置函数可从该列表中选择，再由 `prepareCall()` 校验具体强度。适配器只接收解析后的控制项。选择 `off` 不保证禁用推理：以省略推理字段表达该值的协议会沿用网关默认行为。所选等级下产生的推理 token 都计入该请求的输出上限。
 
 对于自托管 Chat Completions 端点，`thinkingTokenBudgetField` 选择推理预算参数，`vllmPriority` 在服务端启用优先级调度时设置整数调度优先级。模板参数接受 `$var: thinking.budget`。`openai-responses` 网关可设置 `supportsMaxOutputTokens: false` 来省略 `max_output_tokens`；Azure 与 Codex 传输会忽略这个共享兼容字段。这些控制均需显式启用；目录拥有的 Anthropic effort 和回退能力不是可配置开关。
 
@@ -194,7 +195,7 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 | [`src/catalog.ts`](src/catalog.ts) | 已安装目录集成与漂移门禁 |
 | [`src/provider-data.ts`](src/provider-data.ts) | 配置界面使用的认证与端点生成数据 |
 | [`src/models.ts`](src/models.ts) | 基于 pi-ai 窄入口的 model collection、静态 provider 与 reasoning level |
-| [`src/rate-limit.ts`](src/rate-limit.ts) | 按进程、按模型的 RPM/TPM 令牌桶定速与请求 token 估算 |
+| [`src/rate-limit.ts`](src/rate-limit.ts) | 适配器拥有的滚动分钟 RPM/TPM 计数与请求 token 估算 |
 | [`src/provider.ts`](src/provider.ts) | 受支持协议表与提供方构建 |
 | [`src/context.ts`](src/context.ts) | Harness 到 pi-ai 的上下文转换、图片处理、回放恢复 |
 | [`src/stream.ts`](src/stream.ts) | 把 pi-ai 事件转换为 harness `StreamChunk` 值 |
@@ -302,7 +303,7 @@ pi-ai 事件变成 harness 的推理、文本、工具调用、用量与 finish 
 - **未认证路由取决于其协议**——不点名凭据的路由解析为已配置但无密钥，但 pi-ai 的 OpenAI 兼容实现仍要求 API 密钥或 `Authorization` 标头，因此无密钥本地服务器需要由 `apiKeyEnv` 引用或 `headers` 中的 `Authorization` 条目提供的占位凭据。pi-ai 的 Gemini 实现会拒绝没有 API 密钥的请求，因此 `google-generative-ai` 路由始终需要 `apiKeyEnv`，其值以 `x-goog-api-key` 发送。
 - **Gemini 只接受四个推理等级**——在 `google-generative-ai` 上，pi-ai 的 Gemini 实现只发送 `minimal`、`low`、`medium` 或 `high`（不区分大小写），`reasoningEfforts` 的值为其他名称时请求失败；[模型页](../../client/ui-settings-models/README.zh.md)只为此类路由提供这些档位。不带等级的请求（包括 `off`）会发送 pi-ai 的关闭思考配置，无法关闭思考的模型（例如 Gemini 2.5 Pro）可能拒绝该请求。
 - **不支持 `GenerateOptions.stop`**——pi-ai 的通用流式选项无法跨提供方保证停止序列行为。
-- **TPM 定速在分派时估算**——请求的输入 token 预留取自其序列化文本的近似值（无提供方分词器），输出 token 在响应报告后再行结算，因此在下一个调用被限流前，单个超大请求可能会超过分钟 TPM。
+- **TPM 定速使用估算**——输入 token 使用文本和图像启发式估算，配置的输出预留量可能低于实际输出。报告的超额会成为后续调用的欠账。不同适配器实例、进程和外部客户端不共享此本地账本。
 - **对话更新支持只来自已安装的 pi-ai 目录**——原生系统与工具更新需要目录模型的对话中 compat 标志，profile 不能设置这些标志。手工声明的路由与未标记的模型会以用户角色提醒接收后续系统文本，并在每次请求开头接收完整的当前工具列表。
 - **图片只在 user 与工具结果消息中被接受**——system、developer 或 assistant 历史中的图片在两条转换路径上都会以 `UNSUPPORTED_CONTENT` 失败。
 - **提供方 HTTP 状态不可用**——pi-ai 错误事件不跨提供方暴露稳定 HTTP 状态，失败按错误文本分类。信息以 4xx 或 5xx 状态码开头时（Anthropic 与 OpenAI SDK 的错误即如此），状态码规则只读取该状态码。其他格式（如 `Mistral API error (<status>): <body>`）仍会匹配信息中任意位置引用的状态码；配额、限流与无效请求的措辞规则读取整条信息，因此网关在 5xx 响应体中转述上游的 `insufficient_quota` 或 `invalid_request_error` 时，会分类为不重试的 `QUOTA` 或 `INVALID_REQUEST`。

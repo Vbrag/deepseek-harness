@@ -68,7 +68,7 @@ export class SubagentModelSelectionConfig extends Service {
         // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
         && target.eventAt(SessionSeq(0))?.type !== 'session/end-seed') {
         const current = this.current()
-        allowedModels = current.enabled ? current.allowedModels : undefined
+        allowedModels = current.enabled ? current.allowedModels : ctx.get('subagents')?.modelRoutingDefaults()
       }
       if (allowedModels !== undefined) target.append('subagent/model-selection-policy', { allowedModels })
     })

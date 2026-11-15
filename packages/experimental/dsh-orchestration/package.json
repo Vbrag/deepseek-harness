@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-orchestration",
-  "description": "Automated multi-model orchestration: capability-aware task splitting into parallel subagents with bounded route failover",
+  "description": "Task-aware model selection for normal subagent delegation with shared queue availability",
   "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
@@ -11,6 +11,10 @@
     "directory": "packages/experimental/dsh-orchestration"
   },
   "type": "module",
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.3"
+  },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
@@ -22,6 +26,10 @@
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
+    },
+    "./capabilities": {
+      "types": "./lib/types/capabilities.d.ts",
+      "default": "./lib/types/capabilities.js"
     },
     "./client": {
       "types": "./lib/types/client.d.ts",
@@ -64,7 +72,9 @@
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-commands": "workspace:*"
@@ -84,10 +94,13 @@
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-settings": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-subagent-spawn-in-process": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",

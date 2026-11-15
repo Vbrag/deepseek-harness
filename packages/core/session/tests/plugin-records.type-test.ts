@@ -27,6 +27,11 @@ declare module '@deepseek-ai/dsh-session/types' {
 export function checkPluginRecordWriteTypes(session: Session, request: PluginRequestFixture): void {
   appendPluginRecord(session, 'plugin:test/request', request)
   appendPluginRecord(session, 'plugin:test.bridge/entry_1', ['a', 2] as const)
+  session.appendPluginRecord('plugin:test/request', request)
+  // @ts-expect-error -- the instance method accepts only declared record names.
+  session.appendPluginRecord('plugin:test/undeclared', request)
+  // @ts-expect-error -- instance dispatch retains the record's exact payload type.
+  session.appendPluginRecord('plugin:test/state', 1)
   // @ts-expect-error -- an undeclared record name has no writable payload type.
   appendPluginRecord(session, 'plugin:test/undeclared', request)
   // @ts-expect-error -- the payload must match the selected record's declaration.

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-todo-reconcile-driver` reconciles a persisted to-do list when a session is resumed or restarted with work still outstanding. The `dsh-tool-todo` list survives across turns and restarts; when the harness re-opens a session that carries a non-empty list and a current goal, this driver issues **one** model prompt presenting the persisted list plus the goal state and asks the model to reconcile the statuses via `todo_write` — instead of asking the human to re-derive the plan. It takes no configuration. Mount it beside `dsh-tool-todo` and `dsh-goal` so a recovered plan keeps its statuses honest and the model can pick up the next step.
+`dsh-todo-reconcile-driver` reconciles a persisted to-do list when a session is resumed or restarted with work still outstanding. The `dsh-tool-todo` list survives across turns and restarts; when the harness re-opens a session that carries a non-empty list and a goal, this driver issues **one** model prompt presenting the persisted list plus the goal state and asks the model to reconcile the statuses via `todo_write` — instead of asking the human to re-derive the plan. It takes no configuration. Mount it beside `dsh-tool-todo` and `dsh-goal` so a recovered plan keeps its statuses honest and the model can pick up the next step.
 
 ## Table of Contents
 

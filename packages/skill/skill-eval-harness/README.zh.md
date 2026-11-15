@@ -7,7 +7,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 摘要
+## 概述
 
 本包提供一个内置技能 `eval-harness`，用于指导模型实践评估驱动开发（EDD）：在实现前定义预期行为、在开发过程中持续运行能力评估与回归评估、使用代码、模型或人工评估器进行评分，并对照基线跟踪 pass@k 与 pass^k 指标。它是纯指令型知识技能——不新增工具、可执行文件或运行时服务。将其与技能注册表和 `dsh-tool-skill` 一起挂载，该技能便会与其他内置技能一同出现在模型技能目录中。
 
@@ -18,7 +18,7 @@ kind: "package-reference"
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
 - [已知限制与待办工作](#known-limitations-and-deferred-work)
-- [开发者说明](#dev-note)
+- [开发备注](#dev-note)
 
 -----
 
@@ -91,7 +91,7 @@ kind: "package-reference"
 - **门禁接入由调用方负责**——该技能告知模型应将机械式评估器接入哪些仓库门禁，但并未提供仓库的具体门禁命令或 CI 配置。
 
 <a id="dev-note"></a>
-### 开发者说明
+### 开发备注
 
 <details>
 <summary>维护者的工作上下文——点击展开</summary>

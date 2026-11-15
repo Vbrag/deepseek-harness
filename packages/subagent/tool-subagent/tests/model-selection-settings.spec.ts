@@ -86,6 +86,32 @@ async function capturePolicy(ctx: Context) {
 }
 
 describe('SubagentModelSelectionConfig', () => {
+  it('samples router defaults only for fresh roots and preserves historical parent-only children', async () => {
+    const ctx = await boot(false)
+    const { agent: historical } = await ctx.agents.create({ sessionId: brandString<SessionId>('before-router') })
+    ctx.subagents.registerModelRouter({
+      resolve: async () => undefined,
+      newRootPolicyDefaults: () => ALLOWED_MODELS,
+    })
+    expect(await capturePolicy(ctx)).toEqual(ALLOWED_MODELS)
+    const { agent: child } = await ctx.agents.create({
+      sessionId: brandString<SessionId>('historical-child'),
+      meta: { origin: 'subagent', parentSession: historical.id },
+    })
+    expect(ctx.subagents.modelSelectionPolicyOf(historical.session)).toBeUndefined()
+    expect(ctx.subagents.modelSelectionPolicyOf(child.session)).toBeUndefined()
+  })
+
+  it('keeps an enabled explicit new-root allowlist ahead of router defaults', async () => {
+    const ctx = await boot(false)
+    ctx.subagents.registerModelRouter({
+      resolve: async () => undefined,
+      newRootPolicyDefaults: () => [{ provider: 'other', model: 'other' }],
+    })
+    await selectionConfigs.get(ctx)!.update({ enabled: true, allowedModels: ALLOWED_MODELS })
+    expect(await capturePolicy(ctx)).toEqual(ALLOWED_MODELS)
+  })
+
   it('uses the composed default without a settings provider', async () => {
     const ctx = ownContext(new Context())
     await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })

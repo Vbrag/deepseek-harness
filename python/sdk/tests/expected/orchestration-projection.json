@@ -1,0 +1,97 @@
+{
+  "finalResponse": "ORCHESTRATION_MODE_OK",
+  "auditEvents": [
+    {
+      "type": "orchestration/mode",
+      "seq": 3,
+      "time": 0,
+      "data": {
+        "active": true
+      }
+    },
+    {
+      "type": "plugin:orchestration/route",
+      "seq": 4,
+      "time": 0,
+      "data": {
+        "childId": "child-routed",
+        "assessment": {
+          "requiredCapabilities": [
+            "coding"
+          ],
+          "contextTokens": 100,
+          "outputTokens": 100
+        },
+        "selected": {
+          "provider": "snapshot-workers",
+          "model": "coder"
+        },
+        "reason": "pool-order",
+        "inputTokens": 8292,
+        "outputTokens": 100
+      },
+      "ignorable": true
+    },
+    {
+      "type": "orchestration/mode",
+      "seq": 5,
+      "time": 0,
+      "data": {
+        "active": false
+      }
+    }
+  ],
+  "auditNotifications": [
+    {
+      "method": "session.event",
+      "event": {
+        "type": "orchestration/mode",
+        "seq": 3,
+        "time": 0,
+        "data": {
+          "active": true
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "plugin:orchestration/route",
+        "seq": 4,
+        "time": 0,
+        "data": {
+          "childId": "child-routed",
+          "assessment": {
+            "requiredCapabilities": [
+              "coding"
+            ],
+            "contextTokens": 100,
+            "outputTokens": 100
+          },
+          "selected": {
+            "provider": "snapshot-workers",
+            "model": "coder"
+          },
+          "reason": "pool-order",
+          "inputTokens": 8292,
+          "outputTokens": 100
+        },
+        "ignorable": true
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "orchestration/mode",
+        "seq": 5,
+        "time": 0,
+        "data": {
+          "active": false
+        }
+      }
+    }
+  ],
+  "assistantTexts": [
+    "ORCHESTRATION_MODE_OK"
+  ]
+}

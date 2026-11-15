@@ -62,6 +62,14 @@ At capacity, creation or cold resume rejects with `ACTIVATION_LIMIT_REACHED` (br
 
 `rootOf(agent)` resolves a managed local Agent through its existing Activation and checks the exact live child and root instances. Intermediate creators can leave without changing that root; same-id replacements cannot inherit membership. Ordinary live Agents resolve to themselves, while unmanaged delegated Agents are rejected. The query does not activate Sessions.
 
+### Fresh-child model routing
+
+`registerModelRouter()` installs one effect-owned policy for fresh local children whose provider does not inherit parent history. The policy receives captured options, the complete initial prompt, optional parent-assessed task requirements, and startup cancellation. It selects the effective model before descriptor persistence and adapter preflight, may initialize the unpublished child, and returns an assignment release called after startup rollback or settled activation cleanup. Fork, external, and resumed children retain their existing routing. Routing waits participate in root shutdown and consume no activation slot.
+
+`modelSelectionPolicyOf()` reads the Session's first recorded child-route authorization; absence permits only the captured parent route. Automatic selection cannot widen that policy. A routing result that omits `agentOptions` preserves normal defaults and authorized explicit choices while still initializing the child. Default parent inheritance is not an explicit model override. `newRootPolicyDefaults()` supplies selected-pool defaults to the existing settings owner for future fresh roots; enabled explicit settings take precedence, children inherit recorded authorization, and existing Sessions remain unchanged.
+
+`contextImagesOf()` reads deduplicated image references from the Session's cached current message projection. Earlier retained images remain selectable; surface replacement or image offload removes their references from this view. Delegation consumers verify selected images' stored bytes before forwarding them in the child's logged prompt. No separate image history or byte cache is retained.
+
 <a id="agent-names"></a>
 ### Agent names
 

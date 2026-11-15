@@ -1,7 +1,7 @@
 /** Recorded npm evidence stays intact while authored files and exact edits remain checked. */
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -16,25 +16,48 @@ function expectRoundTrip(file: string, text: string, scoped: string, lines: numb
   expect(rescopeText(scoped, file, true)).toEqual({ text, lines })
 }
 
-it('lists the complete eligible corpus when tracked paths exceed one MiB', () => {
+function withGitFixture(run: (root: string, env: NodeJS.ProcessEnv) => void): void {
   const root = mkdtempSync(join(tmpdir(), 'dsh-rescope-paths-'))
   // A Git hook or `git rebase -x` exports these; inherited, they would point the fixture at the caller's repository.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE'].includes(key.toUpperCase())))
   try {
     execFileSync('git', ['init', '--quiet'], { cwd: root, env })
+    run(root, env)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+it('lists the complete eligible corpus when tracked paths exceed one MiB', () => {
+  withGitFixture((root, env) => {
     const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, env, input: '', encoding: 'utf8' }).trim()
     const paths = Array.from({ length: 12_000 }, (_, i) => `packages/example/src/${String(i).padStart(5, '0')}-${'x'.repeat(80)}.ts`)
     expect(Buffer.byteLength(paths.join('\0'))).toBeGreaterThan(1024 * 1024)
-    // Index-only entries exercise Git's complete output without creating thousands of source files.
+    mkdirSync(join(root, 'packages/example/src'), { recursive: true })
+    for (const path of paths) writeFileSync(join(root, path), '')
     const entries = [...paths, 'scripts/dependency-catalog/package-lock.json']
     execFileSync('git', ['update-index', '--index-info'], {
       cwd: root, env, input: entries.map(path => `100644 ${blob}\t${path}\n`).join(''),
     })
     expect(listRescopeFiles(root, env)).toEqual(paths)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
+  })
+})
+
+it('skips deleted ordinary paths while retaining missing mandatory targets for failure checks', () => {
+  withGitFixture((root, env) => {
+    const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, env, input: '', encoding: 'utf8' }).trim()
+    const present = 'packages/example/src/present.ts'
+    const deleted = 'packages/example/src/removed.ts'
+    const required = ['vendor/README.md', 'vendor/cordis/package.json']
+    const entries = [present, deleted, ...required]
+    execFileSync('git', ['update-index', '--index-info'], {
+      cwd: root, env, input: entries.map(path => `100644 ${blob}\t${path}\n`).join(''),
+    })
+    mkdirSync(join(root, 'packages/example/src'), { recursive: true })
+    writeFileSync(join(root, present), '')
+    expect(listRescopeFiles(root, env)).toEqual([present, ...required])
+  })
 })
 
 describe('rescope file selection', () => {

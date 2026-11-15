@@ -21,7 +21,7 @@ import type { SessionObservation, SessionQueryEngine } from '@deepseek-ai/dsh-se
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import {
   appendDelegatedPolicyOverrides, applyChildComposition, captureDelegatedPolicyOverrides,
-  childSessionMeta, resolveChildAgentOptions, resolveChildDepth,
+  childSessionMeta, parentAgentOptionsForDelegation, resolveChildAgentOptions, resolveChildDepth,
 } from './child-agent.ts'
 import type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.ts'
 import {
@@ -32,6 +32,7 @@ import { foldSubagentDescriptor, snapshotSubagentDescriptor } from './descriptor
 import type { SubagentDescriptorData } from './descriptor.ts'
 import { catalogNames, establishCatalogChild, establishExternalCatalogChild } from './catalog.ts'
 import { SubagentError } from './error.ts'
+import { assertAllowedModelSelection } from './model-selection-policy.ts'
 import type { LifecycleEmitter } from './lifecycle.ts'
 import { ROOT_AGENT_NAME, SiblingNameReservations, agentAddress, joinAgentPath, parentAgentPath } from './names.ts'
 import type { SiblingNameReservation } from './names.ts'
@@ -41,6 +42,7 @@ import type {
   ContinuableCreateRequest, ContinuableCreateSpec, SubagentInterruptAuthority,
   SubagentActivationSpec, SubagentActivation, SubagentMemberNames, SubagentStartRequest, SubagentRun,
   SubagentSendMessageOptions, SubagentResult, SubagentRunInfo, ResolvedSubagentStartRequest,
+  SubagentModelRoute, SubagentModelRouting, SubagentModelRoutingContext,
 } from './types.ts'
 import { attachStructuredRuntime } from './structured.ts'
 import type { StructuredAttachment } from './structured.ts'
@@ -67,6 +69,10 @@ interface SubagentHost {
   catalogOf(session: Session): readonly SubagentCatalogEntry[]
   /** Publish lifecycle events through the owning service's scoped dispatcher. */
   readonly emitLifecycle: LifecycleEmitter
+  /** Select a fresh child's options within tracked startup. */
+  resolveModelRouting?(context: SubagentModelRoutingContext): Promise<SubagentModelRouting | undefined>
+  /** Read the parent's recorded model authorization. */
+  modelSelectionPolicyOf?(session: Session): readonly SubagentModelRoute[] | undefined
 }
 
 /** Inputs shared by fresh and resumed Activation materialization. */
@@ -103,6 +109,8 @@ type MaterializeInputs = MaterializeBase & (
       delegatedPolicies: DelegatedPolicyOverrides
       /** Child-owned composition record appended after the inherited marker. */
       descriptor: SubagentDescriptorData
+      /** Routing-owned initialization before the child is published. */
+      modelSetup?: SubagentModelRouting['setup']
     }
     agentOptions: AgentOptions
     composition: ChildComposition
@@ -303,11 +311,13 @@ export class SubagentManager {
    * and its capacity slot without returning either id.
    * @param spec - provider, delegation request, and caller cancellation.
    * @param prepare - creation contribution bound to the checked provider.
+   * @param routeModel - whether a composed policy selects this fresh child's model.
    * @returns the durable child id and accepted initial prompt message id.
    */
   async startLocal(
     spec: SubagentActivationSpec,
     prepare: (request: ContinuableCreateRequest) => Promise<ContinuableCreateSpec>,
+    routeModel = false,
   ): Promise<SubagentActivation & { messageId: MessageId }> {
     const parent = spec.parent
     this.assertAdmitting(parent)
@@ -315,7 +325,7 @@ export class SubagentManager {
     const reservation = this.reserveName(parent, spec.name)
     const path = joinAgentPath(this.pathOf(parent, ancestry.root), reservation.name)
     try {
-      return await this.startLocalNamed(spec, prepare, ancestry, reservation, path)
+      return await this.startLocalNamed(spec, prepare, ancestry, reservation, path, routeModel)
     } finally {
       reservation.release()
     }
@@ -328,6 +338,7 @@ export class SubagentManager {
     ancestry: Pick<MaterializeBase, 'root' | 'ancestors'>,
     reservation: SiblingNameReservation,
     path: string | undefined,
+    routeModel: boolean,
   ): Promise<SubagentActivation & { messageId: MessageId }> {
     const parent = spec.parent
     return this.trackStartup(ancestry.root, spec.signal, async (signal) => {
@@ -335,88 +346,117 @@ export class SubagentManager {
       const childId = spec.childId ?? brandString<SessionId>(randomUUID())
       this.assertChildIdAvailable(childId)
       const childDepth = resolveChildDepth(parent, spec.maxDepth)
-      // Snapshot before any await: invalid descriptor JSON rejects the call
-      // before a child exists, and the detached value is what reaches the log.
-      const agentOptions = resolveChildAgentOptions(parent, spec.agentOptions, childDepth)
-      const agentProvider = agentOptions.provider
-      const agentModel = agentOptions.model
-      const agentReasoningEffort = agentOptions.reasoningEffort
-      const descriptor = snapshotSubagentDescriptor({
-        mode: 'continuable',
-        provider: spec.provider,
-        label: spec.label,
-        ...agentProvider !== undefined ? { agentProvider } : {},
-        ...agentModel !== undefined ? { agentModel } : {},
-        ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
-      })
-      // Capture before the first await: a later parent switch belongs to the
-      // parent's future, not to this child.
+      // Capture caller values before routing can wait.
+      const capturedOptions = resolveChildAgentOptions(parent, spec.agentOptions, childDepth)
+      const parentOptions = parentAgentOptionsForDelegation(parent)
       const delegatedPolicies = captureDelegatedPolicyOverrides(parent)
-
-      const cwd = await this.resolveDirectory(spec, signal)
-      const prepared = await prepare({
-        sessionId: childId,
-        cwd,
-        parent,
-        signal,
-      })
-      signal.throwIfAborted()
-      this.assertAdmitting(parent)
-
-      const inheritedEventCount = SessionLogOffset(prepared.seed?.length ?? 0)
-      const seed = prepared.seed
-      let established!: Activation
-      const messageId = await this.locks.run(childId, async () => {
+      const routing = routeModel ? await this.host.resolveModelRouting?.({
+        parent, childId, prompt: spec.prompt, agentOptions: capturedOptions, signal,
+        ...spec.taskAssessment === undefined ? {} : { taskAssessment: spec.taskAssessment },
+      }) : undefined
+      try {
         signal.throwIfAborted()
         this.assertAdmitting(parent)
-        this.assertChildIdAvailable(childId)
-        if (spec.childId !== undefined) {
-          const persisted = await persistence?.stat(childId, { signal: signal })
+        if (this.ctx.agents.get(parent.id) !== parent) {
+          throw new SubagentError('subagent creation requires the exact live parent agent', 'UNAUTHORIZED')
+        }
+        const selectedOptions = routing?.agentOptions
+        const agentOptions = selectedOptions === undefined ? capturedOptions : { ...selectedOptions, subagentDepth: childDepth }
+        const explicitRoute = spec.agentOptions?.provider !== undefined || spec.agentOptions?.model !== undefined
+        if (selectedOptions !== undefined || (routeModel && explicitRoute)) {
+          const { provider, model, reasoningEffort } = agentOptions
+          if (provider === undefined || model === undefined) {
+            throw new SubagentError('model routing requires a selected child provider and model', 'LLM_PROVIDER_NOT_FOUND')
+          }
+          assertAllowedModelSelection(this.host.modelSelectionPolicyOf?.(parent.session), parentOptions, { provider, model })
+          const llm = this.ctx.get('llm')
+          if (llm === undefined) throw new SubagentError('model routing requires the LLM service', 'LLM_PROVIDER_NOT_FOUND')
+          await llm.resolveCallConfig({ provider, model, ...reasoningEffort === undefined ? {} : { reasoningEffort } }, signal)
+          signal.throwIfAborted()
+          this.assertAdmitting(parent)
+        }
+        const agentProvider = agentOptions.provider
+        const agentModel = agentOptions.model
+        const agentReasoningEffort = agentOptions.reasoningEffort
+        const descriptor = snapshotSubagentDescriptor({
+          mode: 'continuable',
+          provider: spec.provider,
+          label: spec.label,
+          ...agentProvider !== undefined ? { agentProvider } : {},
+          ...agentModel !== undefined ? { agentModel } : {},
+          ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
+        })
+        const cwd = await this.resolveDirectory(spec, signal)
+        const prepared = await prepare({
+          sessionId: childId,
+          cwd,
+          parent,
+          signal,
+        })
+        signal.throwIfAborted()
+        this.assertAdmitting(parent)
+
+        const inheritedEventCount = SessionLogOffset(prepared.seed?.length ?? 0)
+        const seed = prepared.seed
+        let established!: Activation
+        const messageId = await this.locks.run(childId, async () => {
           signal.throwIfAborted()
           this.assertAdmitting(parent)
           this.assertChildIdAvailable(childId)
-          if (persisted !== undefined) {
-            throw new SubagentError(`subagent "${childId}" already exists`, 'DUPLICATE_CHILD')
-          }
-        }
-        const activation = await this.materialize({
-          kind: 'local',
-          childId,
-          provider: spec.provider,
-          ...ancestry,
-          path,
-          create: {
-            parent,
-            cwd,
-            seed,
-            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined, spec.agentPreset),
-            inheritedEventCount,
-            delegatedPolicies,
-            descriptor,
-          },
-          agentOptions,
-          composition: { agentPreset: spec.agentPreset },
-          signal,
-          delivery: spec.delivery,
-          outputSchema: spec.outputSchema,
-        })
-        established = activation
-        const child = requireLocalActivation(activation).handle.agent
-        const childHeader = child.session.header
-        return await this.submitMaterialized(
-          activation,
-          spec.delivery !== 'caller'
-            ? withResultDeliveryGuidance(spec.prompt)
-            : spec.prompt,
-          { source: { kind: 'user' }, signal, delivery: 'queue', authorize: () => { this.assertAdmitting(parent) } },
-          ancestry.root,
-          () => {
+          if (spec.childId !== undefined) {
+            const persisted = await persistence?.stat(childId, { signal: signal })
+            signal.throwIfAborted()
             this.assertAdmitting(parent)
-            establishCatalogChild(parent.session, childHeader, descriptor, reservation.name)
-          },
-        )
-      })
-      return { ...this.receipt(established), childId, messageId }
+            this.assertChildIdAvailable(childId)
+            if (persisted !== undefined) {
+              throw new SubagentError(`subagent "${childId}" already exists`, 'DUPLICATE_CHILD')
+            }
+          }
+          const activation = await this.materialize({
+            kind: 'local',
+            childId,
+            provider: spec.provider,
+            ...ancestry,
+            path,
+            create: {
+              parent,
+              cwd,
+              seed,
+              meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined, spec.agentPreset),
+              inheritedEventCount,
+              delegatedPolicies,
+              descriptor,
+              ...routing?.setup === undefined ? {} : { modelSetup: routing.setup },
+            },
+            agentOptions,
+            composition: { agentPreset: spec.agentPreset },
+            signal,
+            delivery: spec.delivery,
+            outputSchema: spec.outputSchema,
+          })
+          established = activation
+          const child = requireLocalActivation(activation).handle.agent
+          const childHeader = child.session.header
+          return await this.submitMaterialized(
+            activation,
+            spec.delivery !== 'caller'
+              ? withResultDeliveryGuidance(spec.prompt)
+              : spec.prompt,
+            { source: { kind: 'user' }, signal, delivery: 'queue', authorize: () => { this.assertAdmitting(parent) } },
+            ancestry.root,
+            () => {
+              this.assertAdmitting(parent)
+              establishCatalogChild(parent.session, childHeader, descriptor, reservation.name)
+            },
+          )
+        })
+        const receipt = { ...this.receipt(established), childId, messageId }
+        if (routing?.release !== undefined) void receipt.result.then(routing.release, routing.release)
+        return receipt
+      } catch (error) {
+        routing?.release?.()
+        throw error
+      }
     })
   }
 
@@ -842,6 +882,7 @@ export class SubagentManager {
           await workingDirectory.set(child, create.cwd, inputs.signal)
         }
         if (inputs.composition.agentPreset === undefined) await applyChildComposition(childCtx, create?.parent, inputs.composition)
+        await create?.modelSetup?.(child)
         if (inputs.outputSchema !== undefined) {
           structured = attachStructuredRuntime(childCtx, inputs.outputSchema, () =>
             child.inbox.nextStep.length === 0

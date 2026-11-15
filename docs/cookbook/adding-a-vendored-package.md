@@ -46,7 +46,7 @@ Covered automatically by globs — no edits needed: root `package.json` workspac
 
 ## 3. Mind the manifest guard
 
-`scripts/check-vendor-manifest.sh` (a pre-commit hook) fails if anything under `vendor/*/src` is staged without `vendor/README.md` also staged. Stage the manifest update alongside the source so the commit passes.
+`node scripts/check-vendor-manifest.mjs` (a pre-commit hook) fails if anything under `vendor/*/src` or a vendored `bin.js` is staged without `vendor/README.md` also staged. Stage the manifest update alongside the source so the commit passes.
 
 ## 4. Verify
 

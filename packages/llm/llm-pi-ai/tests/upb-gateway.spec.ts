@@ -29,7 +29,7 @@ describe('UPB AI-Gateway shipped route', () => {
 
 describe('UPB AI-Gateway model catalog', () => {
   it('has unique model ids', () => {
-    const ids = UPB_GATEWAY_MODELS.map((m) => m.id)
+    const ids = UPB_GATEWAY_MODELS.map(m => m.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
 
@@ -41,7 +41,7 @@ describe('UPB AI-Gateway model catalog', () => {
 
   it('ships the DeepSeek V4 Flash headline model with its caps', () => {
     const deepseek = UPB_GATEWAY_MODELS.find(
-      (m) => m.id === 'gwdg.deepseek-v4-flash-0731',
+      m => m.id === 'gwdg.deepseek-v4-flash-0731',
     )
     expect(deepseek).toBeDefined()
     expect(deepseek?.rpm).toBe(10)
@@ -51,7 +51,7 @@ describe('UPB AI-Gateway model catalog', () => {
   })
 
   it('ships the known chat-capable gateway model set', () => {
-    const ids = UPB_GATEWAY_MODELS.map((m) => m.id)
+    const ids = UPB_GATEWAY_MODELS.map(m => m.id)
     for (const expected of [
       'gwdg.deepseek-v4-flash-0731',
       'hs-de.qwen3.8-27b',
@@ -65,6 +65,6 @@ describe('UPB AI-Gateway model catalog', () => {
     // The gateway also lists embedding / image-generation entries that the
     // chat-only transport cannot dispatch; those must not appear here.
     expect(ids).not.toContain('kiconnect.qwen3-embedding-8b')
-    expect(ids.filter((id) => id.includes('.gpt-image-')).length).toBe(0)
+    expect(ids.filter(id => id.includes('.gpt-image-')).length).toBe(0)
   })
 })

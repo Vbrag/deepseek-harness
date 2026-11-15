@@ -66,13 +66,6 @@ export const EXISTING_PLUGIN_ENTRY_EXPORTS = {
   ],
   '@deepseek-ai/dsh-experimental-forge': ['changeRequestKey'],
   '@deepseek-ai/dsh-experimental-inspector': ['resolveInspectorOptions', 'startInspector'],
-  '@deepseek-ai/dsh-orchestration': [
-    'PADERBORN_CATALOG', 'TASK_DOMAINS', 'TASK_MODALITIES', 'bestCapabilityMatch', 'capabilityOf',
-    'capabilityRoutes', 'capabilitySimilarity', 'coversModalities', 'createStepId', 'domainScore',
-    'fitsContext', 'isModality', 'isTaskDomain', 'orchestrationProjectionDefinition', 'selectFailover',
-    'selectRoute', 'underRateBudget', 'withinBudget',
-  ],
-  '@deepseek-ai/dsh-tool-orchestration': ['EMPTY_POOL_ERROR', 'MODE_INACTIVE_ERROR'],
   '@deepseek-ai/dsh-experimental-worktree': [
     'CREATED_RECORD', 'createdWorktreeSchema', 'generatedWorktreeName', 'worktreeProjection',
   ],

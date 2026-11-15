@@ -22,6 +22,10 @@
       "types": "./lib/types/client.d.ts",
       "default": "./lib/types/client.js"
     },
+    "./model-selection-policy": {
+      "types": "./lib/types/model-selection-policy.d.ts",
+      "default": "./lib/types/model-selection-policy.js"
+    },
     "./typert": {
       "types": "./lib/typert.host.d.ts",
       "default": "./lib/typert.host.js"

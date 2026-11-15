@@ -466,9 +466,6 @@ function assertPluginRecordEvent(value: unknown): asserts value is SessionEvent 
   }
 }
 
-/** Module-private access to {@link Session}'s record commit, assigned once by its static block. */
-let commitPluginRecord: (session: Session, type: PluginRecordType, data: unknown) => SessionSeq
-
 /**
  * Append one experimental plugin record: an event marked `ignorable` whose
  * type is declared in {@link PluginRecordMap}, outside {@link SessionEventMap}.
@@ -500,7 +497,7 @@ export function appendPluginRecord<K extends Extract<keyof PluginRecordMap, Plug
   type: K,
   data: NoInfer<PluginRecordMap[K]>,
 ): SessionSeq {
-  return commitPluginRecord(session, type, data)
+  return session.appendPluginRecord(type, data)
 }
 
 /**
@@ -916,12 +913,24 @@ export class Session {
     return events
   }
 
-  static {
-    commitPluginRecord = (session, type, data) => session.#appendRecord(type, data)
+  /**
+   * Append an experimental plugin record using this instance's private writer.
+   * The same experimental-caller restriction as {@link appendPluginRecord} applies.
+   * Instance dispatch accepts a Session created by another evaluated copy of this module.
+   * @param type - record name declared in PluginRecordMap.
+   * @param data - payload checked by its declaration and snapshotted as lossless JSON.
+   * @returns sequence number of the committed ignorable record.
+   * @throws when store membership, creation publication, record grammar, or JSON validation rejects the write.
+   */
+  appendPluginRecord<K extends Extract<keyof PluginRecordMap, PluginRecordType>>(
+    type: K,
+    data: NoInfer<PluginRecordMap[K]>,
+  ): SessionSeq {
+    return this.#appendRecord(type, data)
   }
 
   /**
-   * Commit one plugin record; {@link appendPluginRecord} is the only caller.
+   * Commit one plugin record through the typed instance method.
    * @param type - record type, checked against the plugin record grammar.
    * @param data - JSON payload, snapshotted before it enters the log.
    * @returns the record's sequence number.

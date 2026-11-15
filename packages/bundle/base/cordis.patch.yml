@@ -388,6 +388,9 @@
       config:
         interrupt: false
 
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'
       config:

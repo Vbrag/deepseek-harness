@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Orchestrierungswerkzeug",
-    "description": "Teilt eine Aufgabe in parallele Subagenten auf, die auf einem ausgewählten Multi-Modell-Pool laufen."
-  }
-}

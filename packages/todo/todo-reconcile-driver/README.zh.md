@@ -7,18 +7,18 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## Summary
+## 概述
 
-`dsh-todo-reconcile-driver` 在恢复的会话仍带有未完成工作时，对其持久化的待办列表进行对账。`dsh-tool-todo` 的列表跨轮次、跨重启持续存在；当 harness 重新打开一个带有非空列表和当前目标的会话时，本驱动会发出**一次**模型提示，展示持久化的列表与目标状态，并要求模型通过 `todo_write` 对状态进行对账——而不是要求人类重新推导计划。它不需要配置。将其与 `dsh-tool-todo` 和 `dsh-goal` 一起挂载，以便恢复的计划保持状态真实，且模型能够接手下一步。
+`dsh-todo-reconcile-driver` 在恢复的会话仍带有未完成工作时，对其持久化的待办列表进行对账。`dsh-tool-todo` 的列表跨轮次、跨重启持续存在；当 harness 重新打开一个带有非空列表和目标的会话时，本驱动会发出**一次**模型提示，展示持久化的列表与目标状态，并要求模型通过 `todo_write` 对状态进行对账——而不是要求人类重新推导计划。它不需要配置。将其与 `dsh-tool-todo` 和 `dsh-goal` 一起挂载，以便恢复的计划保持状态真实，且模型能够接手下一步。
 
-## Table of Contents
+## 目录
 
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+- [开发备注](#dev-note)
 
 -----
 
@@ -123,7 +123,7 @@ kind: "package-reference"
 - **No goal re-arm** —— 重启后活动目标保持解除武装，直到显式恢复；本驱动只读取它，绝不恢复继续。
 
 <a id="dev-note"></a>
-### Dev Note
+### 开发备注
 
 <details>
 <summary>Working context for maintainers — click to expand</summary>

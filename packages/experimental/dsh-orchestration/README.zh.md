@@ -1,5 +1,5 @@
 ---
-description: "在实验性 Orchestration 组合中，将单个任务拆分为并行子代理，并在所选多模型模型池上提供有界的路由故障转移。"
+description: "在实验性编排模式下，为普通子代理委派选择具备所需能力且可用的模型。"
 kind: "package-reference"
 ---
 
@@ -9,150 +9,106 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-orchestration` 提供一个 `orchestrations` 服务：将一个原始任务拆分为彼此独立的子步骤计划，然后在所选模型池中为每个步骤分配一条模型路由，作为并行生成的子代理运行。当某个工作进程以失败、错误或达到 token 上限而结束时，运行不会终止：在有限的重试预算内，该步骤会使用模型池中下一条符合条件的路由重新开始。本包为实验性质，不提供稳定性承诺。
+编排模式为每次普通的新建本地子代理委派选择模型。父代理通过普通子代理工具评估任务；本服务检查所有必需能力、预期输入模态和上下文余量，再从获准模型池中选择可用路由。执行、取消、结果交付和清理由普通子代理运行时负责。本实验性包不承诺稳定性。
 
 ## 目录
 
 - [使用本包](#use-this-package)
-- [理解实现](#understand-the-implementation)
+- [实现说明](#understand-the-implementation)
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
-- [已知限制与延期工作](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
 
 -----
 
 <a id="use-this-package"></a>
 ## 使用本包
 
-在需要跨多种模型把目标拆分为并行子任务，并在某个模型路由失败或无响应时自动替换为另一条路由的场景下使用本包。
+将本服务与 LLM、子代理、代理、Session 投影及系统提示服务一同挂载。它注册普通子代理模型路由器和模型池设置 Remote 命名空间，不增加任务规划请求或独立编排工具。
 
-### 何时选择它
+### Session 模式与授权
 
-适用于单个自包含任务具有多个可独立分解的部分，并且拥有一个模型路由池的情况。它不协调步骤之间的依赖、不跨重启持久化计划，也不恢复进行中的工作。
+在对话输入区选择编排模式，或执行 /orchestration on。执行 /orchestration off 可保留普通的父代理路由继承，以及获准的显式或已配置子代理模型选择。轮次之间的选择立即生效；轮次内的选择持久记录，并在下一个被接受、非空且未取消的步骤生效。重启及插件替换均保留待生效选择。
 
-### 配置模型池与限制
+所选模式记录在每个 Session 中。新建本地子代理继承委派获准时捕获的父代理模式，后续委派链也如此；子代理启动期间改变父代理不会改变已捕获模式。分叉和外部提供方保留原有路由行为。
 
-可在配置中设置已验证的部署限制：
+每次选择都必须满足父代理已记录的子模型授权。配置模型池为新建根 Session 提供默认值。保存另一模型池会改变默认值和路由候选项，但不会扩大现有 Session 的权限；未记录授权的历史 Session 只允许父代理路由。
 
-| 字段 | 默认值 | 含义 |
-|---|---|---|
-| `maxConcurrency` | `3` | 同时运行的子步骤工作进程上限 |
-| `maxAttemptsPerStep` | `2` | 每个步骤在所有符合条件的路由上的最大尝试次数 |
-| `workerTimeoutMs` | `120,000` | 尝试运行超过该时长即放弃，并触发故障转移 |
-| `defaultToOrchestrator` | `false` | 为没有显式 `/orchestration` 选择的会话提供默认编排模式；`run_orchestration` 工具在该模式之外拒绝委派 |
+### 任务评估
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-orchestration)是每个可用字段及其 JSDoc 的详尽来源。
+编排模式下，每次新建本地委派都必须提供 task_assessment。requiredCapabilities 列出所有必需专长：coding、reasoning、vision、allrounder 或 european。preferredCapabilities 列出可选优势。不支持的必需或偏好标签，以及 text/image 之外的模态，会在检查路由前抛出 ORCHESTRATION_INVALID_ASSESSMENT，供调用方纠正拼写错误。模型必须满足每项必需专长；推理能力不能代替编程能力。
 
-### 选择会话模式
+contextTokens 估算工作代理所需的完整输入，包括它稍后读取的文件。requiredModalities 列出整个任务需要的输入；即使初始提示只有文本，浏览器或计算机截图任务也应包含 image。outputTokens 可选地提供预期响应余量。
 
-编排是按会话的模式。默认会话运行正常的单模型循环；选择 Orchestration 后 `run_orchestration` 才可委派。可在作曲者的 Default/Orchestration 菜单中选择，或执行 `/orchestration on` 或 `/orchestration off`。该选择被记录为 `orchestration/mode` 会话事件，并由 `orchestration` 投影折叠，因此重启后依然保留。在两次轮次之间选择会立即生效；在打开的轮次内则保持待定（“从下一步开始生效”），直到下一个被接受的边界提交它。`defaultToOrchestrator` 为从未做显式选择的会话提供默认值。
+### 配置
 
-### 运行一次编排
+pool 字段列出精确的 provider/model 路由。routeCapabilities 为精确路由提供经过验证的专长，并替换精选专长列表；空列表清除这些专长。重复的精确路由声明会被拒绝。设置客户端通过 getCatalog 读取精选网关选项，不直接导入 Host 数据。
 
-调用 `ctx.orchestrations.run(parent, task, pool, signal)`。`pool` 是路由的有序数组，每项包含 `provider` 与 `model`。能力路由从经过调研的提供方目录解析而来，而不是来自每条路由上的标签。
+contextOverheadTokens 默认为 8192 个令牌，用于子代理指令、工具及请求包装。输入估算取 contextTokens 与初始提示文本及图像估算的较大值，再增加此余量。实际内联图像即使未在评估中声明，也要求图像能力。评估省略 outputTokens 时，outputReserveTokens 默认为 4096；更大的显式子代理输出上限会增加上下文余量。两项余量均是经过验证的部署设置。输入估算与输出余量之和必须适合模型的总上下文容量。路由保留子代理的实际输出上限；普通请求准备和提供方限制仍然适用。
 
-```ts
-import type { PoolRoute } from '@deepseek-ai/dsh-orchestration'
+defaultToOrchestrator 默认为 false，仅为尚未记录选择的 Session 写入初始模式。getPool、setPool 和 persistPool 提供模型池选择。persistPool 先在内存应用选择，再尝试保存至配置档；设置写入被拒绝时会产生警告，并在当前进程中保留内存选择。
 
-const pool: readonly PoolRoute[] = [
-  { provider: 'uni-paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
-  { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash' },
-]
-const result = await ctx.orchestrations.run(parent, 'review the diff and draft a fix', pool, signal)
-```
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-orchestration)记录所有可接受设置。
 
-协调器使用父代理所选的模型和推理强度规划任务；工作代理使用单独选择的模型池。每个步骤以 `parent` 下的生成子代理形式运行。返回的 `OrchestrationResult` 列出每个步骤的结果、已尝试的路由、替换尝试数和失败步骤数。
+### 选择与失败
 
-### 成功与失败的表现
+服务先取模型池与已记录授权的交集，再检查严格任务能力、预期模态和上下文容量。已知的最大输出容量还必须覆盖响应余量；未知输出容量不增加额外限制。当前传输只接受文本和图像。精确适配器元数据优先于精选网关资料：明确仅支持文本的路由不能执行图像任务。精选资料仅适用于已知网关提供方；其他提供方即使使用相同模型 id，也需要自己的经验证专长声明及容量元数据。
 
-当某个工作进程以 `completed` 结束时步骤成功，并返回其助手输出。当步骤的尝试次数用尽，或某个工作进程以 `refusal` 结束时步骤失败；`refusal` 绝不会被转移路由，因此被策略拒绝的工作会作为一个失败的步骤呈现，而不是静默重跑。空模型池或无法解析出任何可用路由的模型池会在启动任何工作进程前以 `CoordinatorError` 拒绝；不可解析或空的计划也会在启动任何工作进程前被拒绝。
+可用且胜任的路由按任务偏好优势、跨 Session 实时子代理工作量、最久未分配顺序及模型池顺序排序。实时负载读取活跃或有排队输入的子代理轮次，插件替换后也如此；空闲且可继续的子代理不增加负载。未发布分配在发布或回滚前计入负载。被限流的路由不会阻塞另一条可用且胜任的路由。所有胜任路由都忙碌时，委派准入会以可取消方式等待，最多每 availabilityPollMs 毫秒（默认 1000）重新检查共享队列，使提前返还的容量能在滚动窗口估算到期前恢复工作。缺少评估、无法获取路由元数据或不存在胜任且获准路由时，会在子代理启动前抛出结构化 OrchestrationError。单次请求估算超过每分钟令牌容量的路由会被排除。
+
+服务检查 LLM 适配器的共享队列可用性；实际发送准入及请求和令牌计量仍由适配器负责。不报告可用性的适配器返回 unknown，仅在没有胜任路由报告可用容量时才参与选择。等待已知被限流路由之前会先考虑未知容量。失败或拒绝任务的工作代理不会自动换模型重放。
 
 -----
 
 <a id="understand-the-implementation"></a>
-## 理解实现
+## 实现说明
 
-<details>
-<summary>实现细节——点击展开</summary>
+服务向 SubagentRuntime 注册选择器，返回子代理选项、记录捕获模式的设置回调和幂等分配释放回调。运行时验证最终授权，并负责启动回滚及子代理清理后的分配释放。编排服务不保留工作代理 Promise 或子代理执行循环。
 
-本小节说明服务背后的设计决策并指向实现它们的代码；可观察行为在[使用本包](#use-this-package)中完整覆盖。
-
-### 设计哲学
-
-服务组合稳定的 `ctx.llm` 与 `ctx.subagents` seam，并完全存在于 agent loop 之外。任务拆分是单次只读的模型调用，从不写入会话日志。路由选择是确定性的，并且跨尝试互不重叠，因此替换绝不会重复使用该步骤已失败的路由。
-
-### 源码映射
-
-| 文件 | 职责 |
-|---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、`orchestrations` 服务、运行与按步骤执行 |
-| [`src/plan.ts`](src/plan.ts) | 纯路由排序、资格判定与有界尝试逻辑 |
-| [`src/coordinator.ts`](src/coordinator.ts) | 通过单次 LLM 调用把任务分解为已校验计划 |
-| [`src/types.ts`](src/types.ts) | 公共的模型池、配置、计划、工作进程与结果类型 |
-
-### 路由选择与故障转移
-
-每个步骤按所需领域、模态和上下文大小匹配工作代理路由。同一步骤的尝试不会重复使用同一模型。已结束的 `error`、`aborted` 和 `max-tokens` 结果可以在 `maxAttemptsPerStep` 范围内启动替换代理；`refusal` 不会触发替换。调用方取消会阻止新尝试，但仍等待当前激活结束。工作代理启动被拒绝时，该步骤直接失败而不切换路由，因为拒绝可能代表策略限制或状态未知的部分启动。`failovers` 统计实际替换尝试，而不是失败步骤或重试意图。
-
-### 预算与取消
-
-工作进程并发由一个简单的信号量以 `maxConcurrency` 为界。每次尝试都有 `workerTimeoutMs` 上限；超过后销毁激活并计为一次失败尝试用于故障转移。运行不会等待结果在超时之后才确定的激活，因此不响应的工作进程不会阻塞步骤。调用方的 `signal` 会转发到每次激活与协调器调用。
-
-</details>
+orchestration 投影折叠已应用模式、持久待生效请求及历史命令结算。恢复语义改变时，状态版本随之改变。路由决策在信息性插件记录中保存任务评估、所选精确路由、令牌余量和选择原因。这些记录不进入模型历史。
 
 -----
 
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [实验性包参考](../AGENTS.md) — 放置、发布与依赖隔离。
-- [子代理激活](../../../docs/subsystems/subagent.zh.md) — worker 依赖的 `spawn` 提供方与 `delivery: caller` 语义。
+- [子代理运行时](../../../docs/subsystems/subagent.zh.md)负责普通委派及模型选择授权。
+- [LLM 运行时](../../../docs/subsystems/llm-streaming.zh.md)负责精确模型元数据及请求发送。
+- [实验性包](../AGENTS.md)定义隔离和转正要求。
 
 -----
 
 <a id="model-experience"></a>
 ## 模型体验
 
-### 协调器规划
+### 按任务委派
 
-#### 模型所见
+#### 模型看到什么
 
-一次只读的模型调用把原始任务拆分为由独立步骤组成的 JSON 计划。该规划调用及其纯文本任务从不写入会话；模型只会把最终计划作为结构化输出看到，而不是作为会话消息。
+启用模式会增加以下关于 `task_assessment` 的已记录运行时指导。父代理通过普通推理和普通子代理工具分解工作，不会发送额外规划请求。
 
-#### Token 影响
+##### 编排运行时指导
 
-每次运行使用父代理当前选择的路由发起一次规划请求，并保留所选推理强度。规划失败不会产生任何步骤结果，并且只消耗这一次请求。
+```markdown
+Orchestration mode is active. Delegate independent tasks through the normal subagent tools. For every fresh local child, supply task_assessment with requiredCapabilities (coding, reasoning, vision, allrounder, european), contextTokens for expected input including files the child will read, and requiredModalities for inputs needed throughout the task. Include image for screenshots the child may capture later. Use preferredCapabilities for optional strengths and outputTokens for the expected response allowance. Every required capability must be supported; reasoning alone does not establish coding ability. Model selection automatically considers the allowed pool, capabilities, live load, and request/token queue availability.
+```
 
-#### KV Cache 影响
+#### 令牌影响
 
-无。规划调用不与任何后续工作进程共享提示前缀，也不属于会话日志。
-
-### 工作进程尝试
-
-#### 模型所见
-
-每个计划步骤都作为一个全新、自包含的生成子代理运行，其提示词就是该步骤的描述；工作进程模型看不到任何父级历史。路由后的步骤以 `caller` 语义投递，因此编排器会在决定替换前等待每次尝试。
-
-#### Token 影响
-
-每次工作进程尝试都在其指定的路由上消耗模型 token。已决出的失败在故障转移时会在下一条符合条件的路由上发起新的请求，最多 `maxAttemptsPerStep`；每次尝试单独计费。
+路由只检查元数据和队列，不调用模型。每个被选中的子代理通过普通子代理执行消耗令牌。配置的上下文及输出余量预留路由空间；实际请求保留普通适配器计量。
 
 #### KV Cache 影响
 
-尝试之间没有共享前缀。每个工作进程都是独立的 spawn；故障转移会从零开始重启该步骤，不保留失败尝试的 KV 前缀。
+每个新建子代理拥有普通的独立历史。路由不改写父代理历史或重放已完成的子代理工作。运行时模式指导遵循普通的已记录上下文更新。
 
-## 已知限制与延期工作
+## 已知限制与后续工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **扁平且无依赖的拆分** — 协调器输出的步骤集彼此独立，没有排序、依赖或合并阶段；步骤之间的依赖必须合并进单个步骤的提示中。
-- **无持久化** — 计划与步骤结果不会被持久化；进程重启不会恢复一次已开始的运行。
-- **协调器调用不写入日志** — 规划模型调用与路由决策不会被作为会话事件发出，因此对模型可见的规划输入无法从会话日志重建；外层的 `run_orchestration` 工具调用并不捕获它们。在依赖该模式用于可审计性之前，必须先解决这一点。
-- **模式按会话隔离、已记录日志、可恢复且由命令驱动** — 编排模式由 `orchestration/mode` 会话事件与 `/orchestration` 命令生命周期经 `orchestration` 投影折叠得到，因此重启会恢复选择。`run_orchestration` 工具在非编排模式下拒绝委派，因此默认会话正常运行。`defaultToOrchestrator` 为没有显式选择的会话提供默认值。
-- **尝试可能重放副作用** — 故障转移会从零开始重试步骤，因此部分完成副作用动作后失败的步骤可能重复该动作；步骤必须具有幂等性。
-- **不支持同一步骤内的循环内故障转移** — 框架只路由未来的步骤；替换是在下一次决出失败时启动一个全新的生成工作进程。
-- **实验原型，无稳定性承诺** — 本包公开，但在孵化期间其契约可能自由变更。
+- 任务要求及未来上下文由父代理估算；服务无法推断父代理省略的文件或工具生成图像。
+- 可用性检查仅供参考，不预留提供方容量。发送前其他请求可能消耗容量；发送时仍以共享限流器为准。
+- 精选专长仅覆盖一个网关。其他提供方需要经过验证的路由声明；未知模态或上下文不能证明路由适合任务。
+- 模型在新建本地子代理启动前选择，不迁移活跃工作代理、不重跑失败的副作用，也不在另一模型上恢复放弃的工作。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -164,6 +120,6 @@ const result = await ctx.orchestrations.run(parent, 'review the diff and draft a
 
 #### 晋升
 
-晋升到产品角色组需要审核公共契约、限制、测试证据、发布载荷、运行时依赖方，以及命名稳定的所有者，相关规则见[实验性子树规则](../AGENTS.md)。持久化的计划/任务看板是自然的下一步。
+晋升需要根据[实验性子树规则](../AGENTS.md)审核公共行为、限制、真实组合验证证据、发布载荷、运行时使用方和稳定所有权。
 
 </details>

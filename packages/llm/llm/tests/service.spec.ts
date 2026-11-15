@@ -220,6 +220,24 @@ describe('LlmRuntime', () => {
     expect(chunks).toEqual(SCRIPT)
   })
 
+  it('delegates advisory queue queries and reports unknown for adapters without pacing', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const request = { provider: 'test-provider', model: 'test-model', inputTokens: 100 }
+    const unsupported = ctx.llm.registerAdapter(['test-provider'], new ScriptedAdapter(SCRIPT))
+    await expect(ctx.llm.queueAvailability(request)).resolves.toEqual({ kind: 'unknown' })
+    unsupported()
+    class QueuedAdapter extends ScriptedAdapter {
+      override queueAvailability(received: typeof request) {
+        expect(received).toEqual(request)
+        return Promise.resolve({ kind: 'wait' as const, waitMs: 1500 })
+      }
+    }
+    ctx.llm.registerAdapter(['test-provider'], new QueuedAdapter(SCRIPT))
+    await expect(ctx.llm.queueAvailability(request)).resolves.toEqual({ kind: 'wait', waitMs: 1500 })
+    await ctx.fiber.dispose()
+  })
+
   it('sends complete declarations without deferred loading or developer updates on an undeclared route', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -938,6 +956,36 @@ describe('LlmRuntime', () => {
         .rejects.toMatchObject({ code: 'INVALID_MODEL_MAX_TOKENS' })
     },
   )
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid adapter-owned maximum output capacity %s',
+    async (maxOutputTokens) => {
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      const adapter = new class extends ScriptedAdapter {
+        override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+          return Promise.resolve({ provider, id: model, name: model, maxOutputTokens })
+        }
+      }(SCRIPT)
+      ctx.llm.registerAdapter(['route'], adapter)
+      await expect(ctx.llm.resolveModelInfo('route', 'model'))
+        .rejects.toMatchObject({ code: 'INVALID_MODEL_MAX_TOKENS' })
+    },
+  )
+
+  it('retains maximum output capacity separately from configured output defaults', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const metadata = { provider: 'route', id: 'model', name: 'Model', maxOutputTokens: 1000, defaultMaxTokens: 100 }
+    const adapter = new class extends ScriptedAdapter {
+      override resolveModel(): Promise<LlmResolvedModelInfo> { return Promise.resolve(metadata) }
+    }(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    const resolved = await ctx.llm.resolveModelInfo('route', 'model')
+    expect(resolved).toMatchObject({ maxOutputTokens: 1000, defaultMaxTokens: 100 })
+    metadata.maxOutputTokens = 2000
+    expect(resolved.maxOutputTokens).toBe(1000)
+  })
 
   it.each([
     [{ efforts: [] }, 'empty effort list'],

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-orchestration-profile",
-  "description": "Orchestration Mode in one experimental bundle: split a task into parallel subagents over a selected multi-model pool with bounded route failover",
+  "description": "Task-aware model selection for normal subagents in Orchestration mode",
   "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
@@ -38,8 +38,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-orchestration": "workspace:*",
-    "@deepseek-ai/dsh-orchestration": "workspace:*",
-    "@deepseek-ai/dsh-tool-orchestration": "workspace:*"
+    "@deepseek-ai/dsh-orchestration": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"
@@ -56,6 +55,10 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
-    "js-yaml": "^4.3.2"
+    "js-yaml": "^4.3.2",
+    "@deepseek-ai/dsh-tool-subagent": "workspace:*"
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.3"
   }
 }

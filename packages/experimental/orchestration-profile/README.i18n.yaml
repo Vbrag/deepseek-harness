@@ -3,47 +3,44 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/orchestration-profile/README.md
 /:
-  en: 02992a8ffca2e26a
-  zh: ff85d9a6f2c6660e
+  en: feb90194699ebd19
+  zh: c6d03ae9bbaf6195
 /deepseek-ai-dsh-orchestration-profile:
   en: f9b97d3579a5c635
   zh: a3032da0f3894f38
 /deepseek-ai-dsh-orchestration-profile/summary:
-  en: 50f9de8731bbd0f7
-  zh: 7bd95ccad82c27ab
+  en: e7c89ac05204e4cd
+  zh: bcb2754cf123ea8c
 /deepseek-ai-dsh-orchestration-profile/table-of-contents:
-  en: 0e9edf8fb6254fec
-  zh: 71902ec5f3b2a814
-/deepseek-ai-dsh-orchestration-profile/use-this-profile:
-  en: 500cf9acf22ee9fe
-  zh: 818582d236029074
-/deepseek-ai-dsh-orchestration-profile/use-this-profile/enable-orchestration-mode-for-a-session:
-  en: 1b904b8ef66925cc
-  zh: e31173098f2ced4f
-/deepseek-ai-dsh-orchestration-profile/use-this-profile/what-success-and-failure-look-like:
-  en: cf5e545885cc3426
-  zh: e00282c7796a4fdf
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-orchestration-profile/use-this-package:
+  en: f0bfafb8a8d16c5b
+  zh: 50e89faa038732cd
+/deepseek-ai-dsh-orchestration-profile/understand-the-implementation:
+  en: 7db2b214b123c68a
+  zh: 78224be119c7cf69
+/deepseek-ai-dsh-orchestration-profile/further-exploration:
+  en: 1094f45d3a25fd5d
+  zh: c9864e1b3a110759
 /deepseek-ai-dsh-orchestration-profile/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
-/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration:
-  en: 3ef15c5ff717e43f
-  zh: 16c391cd01aded27
-/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration/what-the-model-sees:
-  en: 84ec7451b83714e4
-  zh: e750c4e295e8647b
-/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration/token-effect:
-  en: 7af4b1076507a8a5
-  zh: c29d3bb49661f2df
-/deepseek-ai-dsh-orchestration-profile/model-experience/delegated-run-orchestration/kv-cache-effect:
-  en: a476c74e13f04fdc
-  zh: 83a910f3198e6058
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegation-routing:
+  en: d226c4809ae9147d
+  zh: 4d63055ad06208fd
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegation-routing/what-the-model-sees:
+  en: 7adff311a880b19a
+  zh: db806249dd7c5ddc
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegation-routing/token-effect:
+  en: a9f133d8dea43c65
+  zh: 1c0ca71fd489a3b9
+/deepseek-ai-dsh-orchestration-profile/model-experience/delegation-routing/kv-cache-effect:
+  en: 1b22191e156ea1e4
+  zh: 271ba4484d2cd566
 /deepseek-ai-dsh-orchestration-profile/known-limitations-and-deferred-work:
-  en: 47b71f7e1a866368
-  zh: 5823870f0d77bc7d
+  en: fe5d6ebdfbe80a06
+  zh: 748f64dd359862c2
 /deepseek-ai-dsh-orchestration-profile/known-limitations-and-deferred-work/dev-note:
-  en: 498e4cf9fe5741a7
-  zh: 4d131e4db9e217b2
-/deepseek-ai-dsh-orchestration-profile/known-limitations-and-deferred-work/dev-note/promotion:
-  en: 53c938052aac1a24
-  zh: 6b8eaab051d2b0c2
+  en: e67f633dc6fe7773
+  zh: 9c6918ce849f6c93
