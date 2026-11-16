@@ -1,257 +1,401 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+/** Real-loop todo continuation, persistent progress accounting, and asynchronous stop fences. */
+
+import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Group from '@deepseek-ai/cordis-plugin-group'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import GoalService, { GoalId } from '@deepseek-ai/dsh-goal'
-import type { GoalView } from '@deepseek-ai/dsh-goal'
-import { createUserMessage, LlmAdapter, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
+import GoalService from '@deepseek-ai/dsh-goal'
+import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
+import { createUserMessage, LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
-import * as reconcileSession from '../src/index.ts'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
+import * as driver from '../src/index.ts'
 
-type ScriptEntry = StreamChunk[] | Error | (() => StreamChunk[])
-
-/** Small request-recording adapter with controllable failure. */
 class ScriptedAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
-
-  constructor(private readonly script: ScriptEntry[]) {
-    super()
-  }
-
+  constructor(private readonly script: StreamChunk[][]) { super() }
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
-    const entry = this.script.shift()
-    if (entry === undefined) throw new Error('ScriptedAdapter: script exhausted')
-    if (entry instanceof Error) throw entry
-    const chunks = typeof entry === 'function' ? entry() : entry
+    const chunks = this.script.shift()
+    if (chunks === undefined) throw new Error('ScriptedAdapter: script exhausted')
     for (const chunk of chunks) yield chunk
   }
 }
 
-/** One successful text response. */
-function textResponse(text: string): StreamChunk[] {
+function text(text: string, kind: 'stop' | 'max-tokens' = 'stop'): StreamChunk[] {
   return [
     { type: 'block-start', index: 0, blockType: 'text' },
     { type: 'block-end', index: 0, block: { type: 'text', text } },
-    { type: 'finish', reason: { kind: 'stop' } },
+    { type: 'finish', reason: { kind } },
   ]
 }
 
-/** One todo_write tool-call response from the model. */
-function todoWriteCall(todos: TodoItem[]): StreamChunk[] {
-  const id = ToolCallId('reconcile-1')
-  const args = JSON.stringify({ todos })
+let callCounter = 0
+function call(name: string, args: object): StreamChunk[] {
+  const id = ToolCallId(`todo-call-${++callCounter}`)
   return [
     { type: 'block-start', index: 0, blockType: 'tool-call' },
-    { type: 'tool-call-delta', index: 0, id, name: 'todo_write', argumentsDelta: args.slice(0, 5) },
-    { type: 'tool-call-delta', index: 0, id, argumentsDelta: args.slice(5) },
-    { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: 'todo_write', arguments: args } },
+    { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } },
     { type: 'finish', reason: { kind: 'tool-calls' } },
   ]
 }
 
-interface Harness {
-  readonly ctx: Context
-  readonly adapter: ScriptedAdapter
-  readonly agent: Agent
+function write(todos: TodoItem[], options: {
+  purpose?: 'current-task' | 'proposal'
+  disposition?: 'active' | 'paused' | 'waiting'
+  reason?: string
+} = {}): StreamChunk[] {
+  return call('todo_write', { todos, ...options })
 }
 
-const harnesses: { ctx: Context }[] = []
-
+interface Capture { readonly reason: string; readonly todos?: TodoItem[]; readonly signal?: AbortSignal }
+const contexts: Context[] = []
 afterEach(async () => {
-  await Promise.allSettled(harnesses.splice(0).map(h => h.ctx.fiber.dispose()))
+  vi.restoreAllMocks()
+  await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
 })
 
-/** Mount a real loop with a real session-projection + tool registry, scripting only the model. */
-async function harness(script: ScriptEntry[]): Promise<Harness> {
+async function harness(script: StreamChunk[][], options: { isolated?: boolean; planActive?: boolean } = {}) {
   const ctx = new Context()
-  harnesses.push({ ctx })
+  contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
+  vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
   await ctx.plugin(GoalService)
-  await ctx.plugin(ToolTodo, { allowParallelInProgress: true })
-  await ctx.plugin(reconcileSession)
+  if (options.isolated) {
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.group = Group
+    const unsupported = (): never => { throw new Error('This preset fixture does not use HMR operations') }
+    ctx.loader.internal = {
+      version: 'v2', loadCache: new Map(), register: unsupported, getOrCreateModuleJob: unsupported,
+      resolveSync: unsupported, load: unsupported,
+      async import(specifier: string) {
+        if (specifier === 'fixture:todo') return ToolTodo
+        if (specifier === 'fixture:plan') return { apply(inner: Context) {
+          inner.provide('planMode', { get: () => ({ active: options.planActive === true }) })
+        } }
+        throw new Error(`Unexpected preset import: ${specifier}`)
+      },
+    }
+    await ctx.plugin(AgentPresets, { default: 'task' })
+    await ctx.agentPresets.register({ id: 'task', plugins: [{ name: 'cordis:group', group: true,
+      isolate: { todoPolicy: true, planMode: true }, config: [
+        { name: 'fixture:todo', config: { allowParallelInProgress: true } }, { name: 'fixture:plan' },
+      ] }] })
+  } else {
+    await ctx.plugin(ToolTodo, { allowParallelInProgress: true })
+  }
+  const captures: Capture[] = []
+  const recoverTodos = vi.fn(async (_agent: Agent, _signal?: AbortSignal) => false)
+  ctx.provide('workHandoffs', {
+    capture: (_agent: Agent, request: Capture) => { captures.push(request); return Promise.resolve() },
+    viewOf: () => null,
+    recoverTodos,
+  })
+  const fiber = await ctx.plugin(driver, { maxNoProgressRepairs: 3 })
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new ScriptedAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
-  const agent = await ctx.agentLoop.create(SessionId(`reconcile-session-${Math.random()}`), {
-    provider: 'mock',
-    model: 'mock',
-  })
-  return { ctx, adapter, agent }
-}
-
-/** Seed a persisted non-empty todo list plus a current goal onto the live session. */
-function seedPersistedPlan(ctx: Context, agent: Agent, todos: TodoItem[], objective: string): void {
-  agent.session.append('todo/write', { todos })
-  ctx.goals.create(agent, { objective })
-}
-
-/** The reconcile user messages admitted after a resume. */
-function reconcileMessages(agent: Agent): UserMessage[] {
-  return agent.session.snapshotEvents()
-    .filter(event => event.type === 'user/message' && event.data.source.kind === 'todo-reconcile')
-    .map(event => event.data as UserMessage)
-}
-
-describe('todo-reconcile prompt rendering', () => {
-  const goal: GoalView = {
-    id: GoalId('reconcile-goal'),
-    revision: 3,
-    objective: 'Ship the verified feature',
-    phase: 'active',
-    maxGoalRounds: 5,
-    roundsStarted: 2,
-    createdAt: 1,
-    updatedAt: 2,
-    activation: 'armed',
+  const agent = options.isolated ? (await ctx.agents.create({
+    sessionId: SessionId('todo-continuation'), meta: { agentPreset: 'task' },
+    agentOptions: { provider: 'mock', model: 'mock' },
+    setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, 'task') },
+  })).agent : await ctx.agentLoop.create(SessionId('todo-continuation'), { provider: 'mock', model: 'mock' })
+  function run() {
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'execute the authorized task' }],
+      source: { kind: 'user' } }))
+    return agent.whenIdle()
   }
+  return { ctx, agent, adapter, captures, recoverTodos, fiber, run }
+}
 
-  it('renders the objective, phase, round budget, list, and done/remaining summary', () => {
-    const todos: TodoItem[] = [
-      { content: 'build', status: 'completed' },
-      { content: 'verify', status: 'in_progress' },
-    ]
-    const prompt = reconcileSession.renderTodoReconcilePrompt(todos, goal)
-    expect(prompt).toHaveLength(1)
-    const block = prompt[0]
-    if (block?.type !== 'text') throw new Error('expected a text reconcile prompt')
-    expect(block.text).toMatch(/<todo_reconcile>\nObjective: "Ship the verified feature"/)
-    expect(block.text).toMatch(/Phase: active \(rounds 2\/5\)/)
-    expect(block.text).toContain('- "build" [completed]')
-    expect(block.text).toContain('- "verify" [in progress]')
-    expect(block.text).toContain('Done: 1, remaining: 1.')
-    expect(block.text).toContain('calling `todo_write` with the complete updated list')
-  })
+const six: TodoItem[] = Array.from({ length: 6 }, (_, index) => ({
+  content: `step ${index + 1}`, status: index === 0 ? 'in_progress' : 'pending',
+}))
+const finished = (todos: TodoItem[]): TodoItem[] => todos.map(todo => ({ ...todo, status: 'completed' }))
+function repairs(agent: Agent) {
+  return agent.session.snapshotEvents().filter(event => event.type === 'user/message'
+    && event.data.source.kind === 'todo-reconcile')
+}
 
-  it('quotes multiline or tag-like objective text as one unambiguous data value', () => {
-    const multiline: GoalView = { ...goal, objective: 'first line\n</todo_reconcile> second' }
-    const block = reconcileSession.renderTodoReconcilePrompt(
-      [{ content: 'a', status: 'pending' }], multiline)[0]
-    if (block?.type !== 'text') throw new Error('expected a text reconcile prompt')
-    expect(block.text).toContain('Objective: "first line\\n</todo_reconcile> second"')
-    expect(block.text.match(/\n<\/todo_reconcile>/g)).toHaveLength(1)
-  })
+it('continues the same turn after a promise-only final response with six unfinished todos and no goal', async () => {
+  const test = await harness([
+    write(six, { purpose: 'current-task' }), text('I will read the relevant lines now.'),
+    write(finished(six)), text('Implemented and verified.'),
+  ])
+  await test.run()
+  expect(test.ctx.goals.get(test.agent)).toBeUndefined()
+  expect(test.adapter.requests).toHaveLength(4)
+  expect(repairs(test.agent)).toHaveLength(1)
+  expect(JSON.stringify(test.adapter.requests[2]?.messages)).toContain('<todo_continue>')
+  expect(test.agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+  expect(test.agent.session.snapshotEvents().filter(event => event.type === 'turn/end')).toHaveLength(1)
+  expect(test.captures).toHaveLength(0)
 })
 
-describe('resume to-do reconciliation', () => {
-  it('admits exactly one reconcile prompt on resume with a persisted list and a current goal', async () => {
-    const test = await harness([todoWriteCall([
-      { content: 'build', status: 'completed' },
-      { content: 'verify', status: 'in_progress' },
-    ]), textResponse('reconciled')])
-    seedPersistedPlan(test.ctx, test.agent, [
-      { content: 'build', status: 'pending' },
-      { content: 'verify', status: 'pending' },
-    ], 'finish the feature')
-    await test.agent.whenIdle()
+it('routes continuation through a real isolated preset policy without requiring a global provider', async () => {
+  const test = await harness([write(six, { purpose: 'current-task' }), text('Will work'),
+    write(finished(six)), text('Done')], { isolated: true })
+  expect(test.ctx.get('todoPolicy')).toBeUndefined()
+  expect(test.agent.ctx.get('todoPolicy')).toBeUndefined()
+  const owner = test.ctx.agentPresets.serviceFor(test.agent, 'todoPolicy')
+  expect(owner).toBeDefined()
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(4)
+  expect(repairs(test.agent)).toHaveLength(1)
+  expect(owner?.listOf(test.agent.session).every(todo => todo.status === 'completed')).toBe(true)
+})
 
-    await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
+it('respects plan mode supplied inside the same real isolated preset', async () => {
+  const test = await harness([write(six, { purpose: 'current-task' }), text('Plan awaiting approval')],
+    { isolated: true, planActive: true })
+  expect(test.ctx.get('planMode')).toBeUndefined()
+  expect(test.agent.ctx.get('planMode')).toBeUndefined()
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(2)
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.ctx.agentPresets.serviceFor(test.agent, 'todoPolicy')?.viewOf(test.agent.session)?.disposition).toBe('paused')
+  expect(test.captures[0]?.reason).toBe('paused')
+})
 
-    await vi.waitFor(() => { expect(test.adapter.requests.length).toBeGreaterThan(0) })
-    expect(reconcileMessages(test.agent)).toHaveLength(1)
-    const admitted = reconcileMessages(test.agent)[0]!
-    const admittedText = admitted.content[0]
-    if (admittedText?.type !== 'text') throw new Error('expected a text reconcile prompt')
-    expect(admittedText.text).toContain('<todo_reconcile>')
-    expect(admittedText.text).toContain('Objective: "finish the feature"')
-  })
+it('continues beyond three promise-only responses and strengthens the logged recovery guidance without stopping', async () => {
+  const test = await harness([write(six, { purpose: 'current-task' }),
+    text('Will work'), text('Will work again'), text('Still planning'), text('Next I will implement'),
+    text('I will inspect the failure now'), write(finished(six)), text('Implemented and verified')])
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(8)
+  expect(repairs(test.agent)).toHaveLength(5)
+  expect(JSON.stringify(test.adapter.requests[2]?.messages)).not.toContain('Repeated responses have not increased verified completion')
+  expect(JSON.stringify(test.adapter.requests[4]?.messages)).toContain('Repeated responses have not increased verified completion')
+  expect(test.ctx.todoPolicy.viewOf(test.agent.session)).toMatchObject({ disposition: 'active', repairAttempts: 0,
+    completedHighWater: 6 })
+  expect(test.agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+  expect(test.agent.session.snapshotEvents().filter(event => event.type === 'todo/policy')
+    .some(event => event.data.disposition === 'limit')).toBe(false)
+  expect(test.agent.session.snapshotEvents().filter(event => event.type === 'todo/policy')
+    .map(event => event.data.repairAttempts)).toEqual([0, 1, 2, 3, 4, 5])
+  expect(test.captures).toHaveLength(0)
+  const end = test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
+  expect(end?.data.reason.kind).toBe('completed')
+})
 
-  it('does not prompt when the persisted list is empty', async () => {
+it('resets the repair counter only after net completed work increases', async () => {
+  const first = six.map((todo, index) => index === 0 ? { ...todo, status: 'completed' as const } : todo)
+  const test = await harness([write(six, { purpose: 'current-task' }), text('Will start'),
+    write(first), text('Next step'), write(finished(six)), text('Done')])
+  await test.run()
+  expect(repairs(test.agent)).toHaveLength(2)
+  expect(test.ctx.todoPolicy.viewOf(test.agent.session)).toMatchObject({ completedHighWater: 6, repairAttempts: 0 })
+  expect(test.captures).toHaveLength(0)
+})
+
+it('continues an old limited task during a normal turn without granting a fresh repair count', async () => {
+  const test = await harness([text('I will implement the next item'), write(finished(six)), text('Done')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  for (let attempt = 0; attempt < 3; attempt++) test.ctx.todoPolicy.recordRepair(test.agent)
+  test.ctx.todoPolicy.markLimit(test.agent)
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(3)
+  expect(repairs(test.agent)).toHaveLength(1)
+  expect(test.agent.session.snapshotEvents().filter(event => event.type === 'todo/policy')
+    .map(event => [event.data.disposition, event.data.repairAttempts])).toEqual([
+    ['active', 0], ['active', 1], ['active', 2], ['active', 3], ['limit', 3], ['active', 3], ['active', 4],
+  ])
+  expect(test.captures).toHaveLength(0)
+})
+
+it('leaves a proposal unfinished without driving execution', async () => {
+  const test = await harness([write(six, { purpose: 'proposal' }), text('Here is the proposed plan.')])
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(2)
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.captures).toHaveLength(0)
+})
+
+it('offers one confirmation for a legacy list and authorizes it only through human Continue', async () => {
+  const test = await harness([write(finished(six)), text('Done')])
+  test.agent.session.append('todo/write', { todos: six })
+  await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
+  await vi.waitFor(() => { expect(test.captures).toHaveLength(1) })
+  expect(test.adapter.requests).toHaveLength(0)
+  expect(test.captures).toHaveLength(1)
+  expect(test.captures[0]?.reason).toBe('legacy-confirmation')
+  await test.ctx.todoPolicy.continueTask(test.agent)
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(2)
+  expect(test.ctx.todoPolicy.viewOf(test.agent.session)?.purpose).toBe('current-task')
+})
+
+it.each(['paused', 'waiting'] as const)('retains explicit %s instead of restarting work', async (disposition) => {
+  const test = await harness([write(six, { purpose: 'current-task', disposition, reason: 'User requested this stop' }),
+    text('Waiting as requested.')])
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(2)
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.captures[0]?.reason).toBe(disposition)
+})
+
+it.each(['active', 'paused', 'blocked'] as const)('defers to an existing %s goal', async (phase) => {
+  const test = await harness([text('Goal state owns continuation')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  const goal = test.ctx.goals.create(test.agent, { objective: 'existing objective' })
+  if (phase === 'paused') test.ctx.goals.pause(test.agent, goal)
+  if (phase === 'blocked') test.ctx.goals.block(test.agent, goal, { code: 'needs-input', message: 'Input required' })
+  await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
+  expect(test.recoverTodos).not.toHaveBeenCalled()
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(1)
+  expect(repairs(test.agent)).toHaveLength(0)
+})
+
+it('leaves output-limit handoffs to the terminal execution owner without repair', async () => {
+  const test = await harness([text('truncated', 'max-tokens')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(1)
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.captures).toHaveLength(0)
+})
+
+it('saves a paused handoff when a real tool concludes an unfinished task without continuing', async () => {
+  const test = await harness([call('wait_for_user', {})])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  test.ctx.tools.register(defineContentToolFixture({
+    name: 'wait_for_user', description: 'Wait for explicit user action', parameters: {},
+    execute: (_args, exec) => { exec.concludeTurn(); return Promise.resolve([]) },
+  }))
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(1)
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.ctx.todoPolicy.viewOf(test.agent.session)?.disposition).toBe('paused')
+  expect(test.captures).toHaveLength(1)
+  expect(test.captures[0]?.reason).toBe('paused')
+})
+
+it.each(['paused', 'waiting'] as const)('repairs a missing handoff for recovered %s work without a model call',
+  async (disposition) => {
     const test = await harness([])
-    seedPersistedPlan(test.ctx, test.agent, [], 'finish the feature')
-    await test.agent.whenIdle()
-
+    test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+    await test.ctx.todoPolicy.suspend(test.agent, disposition, 'Saved stop')
     await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
-    await test.agent.whenIdle()
-
+    await vi.waitFor(() => { expect(test.captures).toHaveLength(1) })
     expect(test.adapter.requests).toHaveLength(0)
-    expect(reconcileMessages(test.agent)).toHaveLength(0)
+    expect(test.captures).toHaveLength(1)
+    expect(test.captures[0]?.reason).toBe(disposition)
+    expect(test.recoverTodos).not.toHaveBeenCalled()
   })
 
-  it('does not prompt when there is no current goal', async () => {
-    const test = await harness([])
-    test.agent.session.append('todo/write', { todos: [{ content: 'a', status: 'pending' }] })
-    await test.agent.whenIdle()
+it.each(['active', 'limit'] as const)('delegates recovered %s work once without resetting repair progress', async (disposition) => {
+  const test = await harness([])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  for (let attempt = 0; attempt < 4; attempt++) test.ctx.todoPolicy.recordRepair(test.agent)
+  if (disposition === 'limit') test.ctx.todoPolicy.markLimit(test.agent)
+  await Promise.all([
+    agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' }),
+    agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'startup' }),
+  ])
+  await vi.waitFor(() => { expect(test.recoverTodos).toHaveBeenCalledTimes(1) })
+  expect(test.recoverTodos).toHaveBeenCalledWith(test.agent, expect.any(AbortSignal))
+  expect(test.ctx.todoPolicy.viewOf(test.agent.session)).toMatchObject({ disposition, repairAttempts: 4,
+    completedHighWater: 0 })
+  expect(test.captures).toHaveLength(0)
+})
 
-    await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
-    await test.agent.whenIdle()
+it('recovers authorized work already registered when the driver is activated', async () => {
+  const test = await harness([])
+  await test.fiber.dispose()
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  await test.ctx.plugin(driver, { maxNoProgressRepairs: 3 })
+  await vi.waitFor(() => { expect(test.recoverTodos).toHaveBeenCalledTimes(1) })
+  expect(test.captures).toHaveLength(0)
+})
 
-    expect(test.adapter.requests).toHaveLength(0)
-    expect(reconcileMessages(test.agent)).toHaveLength(0)
-  })
+it('does not recover startup work after its creation is cancelled while waiting for admission', async () => {
+  const test = await harness([])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  const release = Promise.withResolvers<undefined>()
+  vi.spyOn(test.agent, 'whenIdle').mockReturnValueOnce(release.promise)
+  const abort = new AbortController()
+  await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume', signal: abort.signal })
+  abort.abort()
+  await test.fiber.dispose()
+  release.resolve(undefined)
+  expect(test.recoverTodos).not.toHaveBeenCalled()
+  expect(test.captures).toHaveLength(0)
+})
 
-  it('does not prompt on a clear or compact source', async () => {
-    const test = await harness([])
-    seedPersistedPlan(test.ctx, test.agent, [{ content: 'a', status: 'pending' }], 'finish')
-    await test.agent.whenIdle()
+it('waits for plan approval instead of repairing an execution list while plan mode is active', async () => {
+  const test = await harness([text('Plan awaiting approval')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  test.ctx.provide('planMode', { get: () => ({ active: true }) })
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(1)
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.captures[0]?.reason).toBe('paused')
+})
 
-    for (const source of ['clear', 'compact'] as const) {
-      await agentEvents(test.ctx, test.agent).serial('agent/created', { source })
-    }
-    await test.agent.whenIdle()
+it('honors user cancellation while the durability checkpoint is pending', async () => {
+  const test = await harness([text('Will start')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<boolean>()
+  vi.spyOn(test.ctx.sessions, 'flush').mockImplementationOnce(() => { entered.resolve(undefined); return release.promise })
+  const idle = test.run()
+  await entered.promise
+  test.agent.cancel({ kind: 'user' })
+  await idle
+  release.resolve(false)
+  expect(test.adapter.requests).toHaveLength(1)
+  expect(repairs(test.agent)).toHaveLength(0)
+})
 
-    expect(test.adapter.requests).toHaveLength(0)
-    expect(reconcileMessages(test.agent)).toHaveLength(0)
-  })
+it('refuses to repair when no durable checkpoint provider acknowledges the Session', async () => {
+  const test = await harness([text('Will start')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  const errors: unknown[] = []
+  test.ctx.on('agent/error', ({ error }) => { errors.push(error) })
+  vi.spyOn(test.ctx.sessions, 'flush').mockResolvedValueOnce(false)
+  await test.run()
+  expect(test.adapter.requests).toHaveLength(1)
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.ctx.todoPolicy.viewOf(test.agent.session)).toMatchObject({ disposition: 'paused', repairAttempts: 0 })
+  const end = test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')
+  expect(end?.data.reason.kind).toBe('error')
+  expect(errors[0]).toMatchObject({ code: 'TODO_DURABILITY_REQUIRED' })
+})
 
-  it('withdraws the reconcile when a competing human prompt is already queued at idle', async () => {
-    const test = await harness([])
-    seedPersistedPlan(test.ctx, test.agent, [{ content: 'a', status: 'pending' }], 'finish')
-    await test.agent.whenIdle()
+it('refreshes the list after waiting for descendants and does not steer completed work', async () => {
+  const test = await harness([text('Will start')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<boolean>()
+  test.ctx.provide('subagents', { waitForTreeWork: () => { entered.resolve(undefined); return release.promise } })
+  const idle = test.run()
+  await entered.promise
+  test.ctx.todoPolicy.writeList(test.agent, finished(six))
+  release.resolve(false)
+  await idle
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.captures).toHaveLength(0)
+})
 
-    // Queue a human message before the resume reconcile reaches idle admission.
-    test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'never mind' }], source: { kind: 'user' } }))
-    await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
-    await test.agent.whenIdle()
-
-    // The human prompt wins; no reconcile prompt may be admitted.
-    expect(reconcileMessages(test.agent)).toHaveLength(0)
-  })
-
-  it('does not reconcile again on a later turn in the same lifecycle', async () => {
-    const test = await harness([])
-    seedPersistedPlan(test.ctx, test.agent, [{ content: 'a', status: 'pending' }], 'finish')
-    await test.agent.whenIdle()
-    await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
-    // Admit a normal human turn; the driver must not re-prompt.
-    test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'ping' }], source: { kind: 'user' } }))
-    await test.agent.whenIdle()
-    expect(reconcileMessages(test.agent)).toHaveLength(1)
-    expect(test.adapter.requests).toHaveLength(1)
-  })
-
-  it('disarms after a reconciliation model call fails (no retry loop)', async () => {
-    const test = await harness([new LlmError('provider down', 'RATE_LIMIT')])
-    seedPersistedPlan(test.ctx, test.agent, [{ content: 'a', status: 'pending' }], 'finish')
-    await test.agent.whenIdle()
-    await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
-    await test.agent.whenIdle()
-    // One admitted attempt fails; the driver logs and does not re-queue.
-    expect(test.adapter.requests).toHaveLength(1)
-    expect(reconcileMessages(test.agent)).toHaveLength(1)
-  })
-
-  it('removes the driver fiber and leaves no orphan schedule on dispose', async () => {
-    const ctx = new Context()
-    harnesses.push({ ctx })
-    await mountAgentLoopTestDependencies(ctx)
-    await ctx.plugin(GoalService)
-    await ctx.plugin(ToolTodo, { allowParallelInProgress: true })
-    const driver = await ctx.plugin(reconcileSession)
-    await ctx.plugin(AgentLoop, { agents: [] })
-    const agent = await ctx.agentLoop.create(SessionId('reconcile-dispose'), { provider: 'mock', model: 'mock' })
-    await driver.dispose()
-    // After disposal, a resume with a persisted plan must stay silent.
-    seedPersistedPlan(ctx, agent, [{ content: 'a', status: 'pending' }], 'finish')
-    await agent.whenIdle()
-    await agentEvents(ctx, agent).serial('agent/created', { source: 'resume' })
-    await agent.whenIdle()
-    expect(reconcileMessages(agent)).toHaveLength(0)
-  })
+it('unloads while descendants are running without leaving automatic work behind', async () => {
+  const test = await harness([text('Will start')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<boolean>()
+  test.ctx.provide('subagents', { waitForTreeWork: () => { entered.resolve(undefined); return release.promise } })
+  const idle = test.run()
+  await entered.promise
+  await test.fiber.dispose()
+  release.resolve(false)
+  await idle
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.captures).toHaveLength(0)
 })

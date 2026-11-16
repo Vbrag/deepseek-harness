@@ -1,7 +1,8 @@
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { HarnessError } from '@deepseek-ai/dsh-error'
 import LlmRuntime, { type RequestMessage, createUserMessage, type ToolCallId, LlmError, MessageSource, type ProviderRequestId, StreamChunk  } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionEvent, type SessionId, TurnEndReason, type UserMessage } from '@deepseek-ai/dsh-session'
@@ -347,6 +348,35 @@ describe('steering from late extension points is never stranded', () => {
 })
 
 describe('plugin exceptions are contained', () => {
+  it('retains a stopping policy HarnessError code in durable and live failures', async () => {
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two')])
+    const ctx = await harness(adapter)
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    const agent = await ctx.agentLoop.create(brandString<SessionId>('coded-policy-error'), { provider: 'mock', model: 'mock' })
+    const failure = new HarnessError('Handoff storage is unavailable.', 'WORK_HANDOFF_PERSISTENCE_FAILED')
+    const errors: unknown[] = []
+    let fail = true
+    ctx.on('agent/turn-stopping', () => {
+      if (fail) {
+        fail = false
+        throw failure
+      }
+    })
+    ctx.on('agent/error', ({ error }) => { errors.push(error) })
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+      data: { reason: { kind: 'error', error: { code: failure.code, message: failure.message } } },
+    })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toBe(failure)
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+    expect(adapter.requests).toHaveLength(2)
+    expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end'))
+      .toMatchObject({ data: { reason: { kind: 'completed' } } })
+  })
+
   it('a throwing agent/turn-stopping listener ends the turn with an error, loop survives', async () => {
     const adapter = new MockAdapter([textResponse('one'), textResponse('two')])
     const ctx = await harness(adapter)

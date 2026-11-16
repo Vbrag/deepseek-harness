@@ -14,6 +14,7 @@ import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
+import type { WorkHandoffId, WorkHandoffView } from '@deepseek-ai/dsh-work-handoff/types'
 import * as goalSession from '../src/index.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -86,6 +87,27 @@ interface Harness {
   readonly adapter: ScriptedAdapter
   readonly agent: Agent
   readonly driver: Awaited<ReturnType<Context['plugin']>>
+  readonly handoffs: ReturnType<typeof mountHandoffs>
+  readonly removeDurability: () => void
+}
+
+/** Capture seam with controllable persistence, without a second model request. */
+function mountHandoffs(ctx: Context) {
+  let latest: WorkHandoffView | null = null
+  const capture = vi.fn<Context['workHandoffs']['capture']>(async (agent, request) => {
+    latest = {
+      id: brandString<WorkHandoffId>('goal-budget-checkpoint'), sourceSessionId: agent.id,
+      turn: ctx.agents.turnBoundaryOf(agent.session).lastTurn, reason: request.reason,
+      status: request.reason === 'goal-budget' ? 'budget-exhausted' : request.reason === 'waiting' ? 'waiting' : 'paused',
+      objective: request.goal?.objective ?? '',
+      markdown: '# Work remains', saved: true, todos: [],
+      ...request.goal === undefined ? {} : { goal: request.goal },
+    }
+    return latest
+  })
+  const service = { capture, viewOf: () => latest } satisfies Pick<Context['workHandoffs'], 'capture' | 'viewOf'>
+  ctx.provide('workHandoffs', service)
+  return { capture, clear: () => { latest = null } }
 }
 
 const contexts: Context[] = []
@@ -99,7 +121,9 @@ async function harness(script: ScriptEntry[]): Promise<Harness> {
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
+  const removeDurability = ctx.on('session/flush', () => {})
   await ctx.plugin(GoalService)
+  const handoffs = mountHandoffs(ctx)
   const driver = await ctx.plugin(goalSession)
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new ScriptedAdapter(script)
@@ -108,7 +132,7 @@ async function harness(script: ScriptEntry[]): Promise<Harness> {
     provider: 'mock',
     model: 'mock',
   })
-  return { ctx, adapter, agent, driver }
+  return { ctx, adapter, agent, driver, handoffs, removeDurability }
 }
 
 /** Observe inserted inbox messages after the live projection accepts them. */
@@ -177,6 +201,12 @@ describe('goal-round outcome policy', () => {
     expect(block.text).toMatch(
       /<goal_round>\nObjective: "Ship verified support"\nRound: 3\/9[\s\S]*current workspace[\s\S]*verify[\s\S]*mark it complete/,
     )
+    expect(block.text).not.toContain('work_checkpoint')
+    const last = goalSession.renderGoalRoundPrompt(goal, 9)[0]
+    if (last?.type !== 'text') throw new Error('expected a text goal-round prompt')
+    expect(last.text).toContain('last permitted automatic round')
+    expect(last.text).toContain('call work_checkpoint')
+    expect(last.text).toContain('Do not report complete or blocked merely because this budget is exhausted')
   })
 
   it('quotes multiline or tag-like objective text as one unambiguous data value', () => {
@@ -223,13 +253,114 @@ describe('same-session goal driving', () => {
     expect(requestText(test.adapter.requests[1]!)).toContain('Round: 2/2')
     expect(test.agent.session.snapshotEvents().flatMap(event =>
       event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'series'])
+    expect(test.handoffs.capture).toHaveBeenCalledWith(test.agent, expect.objectContaining({ reason: 'goal-budget' }))
+  })
+
+  it('waits for the durable budget handoff before pausing without an extra model request', async () => {
+    const test = await harness([textResponse('partial verified work')])
+    const captured = test.handoffs.capture.getMockImplementation()
+    if (captured === undefined) throw new Error('expected capture implementation')
+    const release = Promise.withResolvers<undefined>()
+    test.handoffs.capture.mockImplementation(async (agent, request) => {
+      await release.promise
+      return captured(agent, request)
+    })
+    test.ctx.goals.create(test.agent, { objective: 'preserve unfinished work', maxGoalRounds: 1 })
+    try {
+      await vi.waitFor(() => { expect(test.handoffs.capture).toHaveBeenCalledOnce() })
+      expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'active', activation: 'armed', roundsStarted: 1 })
+      expect(test.adapter.requests).toHaveLength(1)
+    } finally {
+      release.resolve(undefined)
+    }
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('disarms an exhausted goal when its handoff cannot be persisted', async () => {
+    const test = await harness([textResponse('partial work')])
+    test.handoffs.capture.mockRejectedValue(new Error('checkpoint unavailable'))
+    test.ctx.goals.create(test.agent, { objective: 'retain truthful state', maxGoalRounds: 1 })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.activation === 'disarmed')
+    expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'active', roundsStarted: 1 })
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('repairs a missing handoff for an already-paused exhausted goal without rearming it', async () => {
+    const test = await harness([textResponse('unfinished work')])
+    test.ctx.goals.create(test.agent, { objective: 'recover the checkpoint', maxGoalRounds: 1 })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
+    test.handoffs.clear()
+    agentEvents(test.ctx, test.agent).emit('agent/status', { status: 'idle' })
+    await vi.waitFor(() => { expect(test.handoffs.capture).toHaveBeenCalledTimes(2) })
+    expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'paused', activation: 'disarmed', roundsStarted: 1 })
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it.each([false, true])('recovers an active exhausted disarmed goal (missing handoff: %s) without a third request', async (missing) => {
+    const test = await harness([textResponse('first round'), textResponse('last round')])
+    const captured = test.handoffs.capture.getMockImplementation()
+    if (captured === undefined) throw new Error('expected capture implementation')
+    test.handoffs.capture.mockImplementation(async (agent, request) => {
+      const saved = await captured(agent, request)
+      test.ctx.goals.disarm(agent)
+      return saved
+    })
+    test.ctx.goals.create(test.agent, { objective: 'recover a stopped allowance', maxGoalRounds: 2 })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.roundsStarted === 2 && goal.activation === 'disarmed')
+    await test.agent.whenIdle()
+    if (missing) test.handoffs.clear()
+    await agentEvents(test.ctx, test.agent).serial('agent/created', { source: 'resume' })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
+    expect(test.adapter.requests).toHaveLength(2)
+    expect(test.ctx.workHandoffs.viewOf(test.agent.session)).toMatchObject({ reason: 'goal-budget', saved: true })
+  })
+
+  it.each(['paused', 'blocked'] as const)('captures an unfinished %s goal at idle without a model request', async (phase) => {
+    const test = await harness([])
+    const created = test.ctx.goals.create(test.agent, { objective: 'wait without losing work', maxGoalRounds: 5 })
+    if (phase === 'paused') test.ctx.goals.pause(test.agent, created)
+    else test.ctx.goals.block(test.agent, created, { code: 'needs-input', message: 'A required choice is missing.' })
+    await vi.waitFor(() => { expect(test.handoffs.capture).toHaveBeenCalledOnce() })
+    expect(test.ctx.workHandoffs.viewOf(test.agent.session)?.reason).toBe(phase === 'paused' ? 'paused' : 'waiting')
+    agentEvents(test.ctx, test.agent).emit('agent/status', { status: 'idle' })
+    await Promise.resolve()
+    expect(test.handoffs.capture).toHaveBeenCalledOnce()
+    expect(test.adapter.requests).toHaveLength(0)
+  })
+
+  it('preserves the execution-error handoff when the same stopped goal is paused', async () => {
+    const test = await harness([new Error('provider unavailable')])
+    test.ctx.goals.create(test.agent, { objective: 'preserve the real stop reason', maxGoalRounds: 2 })
+    const current = await waitForGoal(test.ctx, test.agent, goal => goal?.activation === 'disarmed')
+    if (current === undefined) throw new Error('expected current goal')
+    await test.ctx.workHandoffs.capture(test.agent, { reason: 'error', goal: current })
+    test.ctx.goals.pause(test.agent, current)
+    await Promise.resolve()
+    expect(test.ctx.workHandoffs.viewOf(test.agent.session)?.reason).toBe('error')
+    expect(test.handoffs.capture).toHaveBeenCalledOnce()
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('dispatches no automatic round when no durability checkpoint provider participates', async () => {
+    const test = await harness([])
+    const failures: unknown[] = []
+    test.ctx.on('agent/error', ({ error }) => { failures.push(error) })
+    test.removeDurability()
+    test.ctx.goals.create(test.agent, { objective: 'require durable storage' })
+    await waitForGoal(test.ctx, test.agent, goal => goal?.activation === 'disarmed')
+    expect(test.adapter.requests).toHaveLength(0)
+    expect(test.handoffs.capture).not.toHaveBeenCalled()
+    expect(failures).toEqual([expect.objectContaining({ code: 'GOAL_DURABILITY_UNAVAILABLE' })])
   })
 
   it('never adopts activation from an already-live driver and waits for explicit resume', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     await mountAgentLoopTestDependencies(ctx)
+    ctx.on('session/flush', () => {})
     await ctx.plugin(GoalService)
+    mountHandoffs(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
     const adapter = new ScriptedAdapter([textResponse('after resume')])
     ctx.llm.registerAdapter(['mock'], adapter)
@@ -1182,7 +1313,7 @@ describe('same-session goal driving', () => {
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('goal-round-driver'))
   })
 
-  it('keeps terminal agent failure disarmed and defers queued human work until another wakeup', async () => {
+  it('pauses the exhausted allowance after a terminal failure and defers human work until another wakeup', async () => {
     const test = await harness([new Error('round one broke'), textResponse('human answer')])
     let queued = false
     test.ctx.on('session/event', (session, event) => {
@@ -1197,7 +1328,7 @@ describe('same-session goal driving', () => {
     test.ctx.goals.create(test.agent, { objective: 'survive a stale failure', maxGoalRounds: 1 })
 
     await waitForGoal(test.ctx, test.agent, current =>
-      current?.phase === 'active' && current.activation === 'disarmed')
+      current?.phase === 'paused' && current.activation === 'disarmed')
 
     expect(test.adapter.requests).toHaveLength(1)
     expect(test.agent.inbox.nextTurn).toHaveLength(1)

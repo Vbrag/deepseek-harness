@@ -43,6 +43,7 @@
     {
       "path": "../../goal/goal"
     },
+    { "path": "../../goal/work-handoff" },
     {
       "path": "../../schedule/schedule"
     },

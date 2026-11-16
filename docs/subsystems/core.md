@@ -403,7 +403,7 @@ type PreStepDecision =
 type RequestErrorAction = { kind: 'retry' } | undefined
 ```
 
-`agent/pre-step` is the only waterfall listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
+`agent/pre-step` is the only waterfall listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain. Its `cause: TurnStoppingCause` distinguishes `model-finished`, `tool-concluded`, and `output-limit`. The output limit stays set through later completed steps in that turn; cancellation can still replace the final outcome.
 
 `agent/created` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
 
@@ -497,6 +497,18 @@ interface TurnBoundaryProjection {
   /** Turn number of the latest `turn/start`; 0 before the first turn. */
   readonly lastTurn: number
 }
+```
+
+## Proposed turn stops
+
+The awaited `agent/turn-stopping` event names why the current step proposes ending its turn. Continuation policy can distinguish an ordinary model finish from an explicit concluding tool or an output limit; the existing loop retains final steering and cancellation checks.
+
+```ts type-equiv
+/**
+ * Cause of a proposed turn stop, before final steering and cancellation checks.
+ * An output limit stays in effect through later completed steps in that turn.
+ */
+type TurnStoppingCause = 'model-finished' | 'tool-concluded' | 'output-limit'
 ```
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -1107,11 +1119,12 @@ The turn is about to close: the model owes no response (no live tool calls, no f
  * closes only when that inbox drains.
  * @param payload.agent - the agent whose turn is at its stop boundary.
  * @param payload.turn - the turn about to close.
+ * @param payload.cause - model completion, explicit tool conclusion, or the turn's sticky output limit.
  * @param payload.signal - the current turn's explicit abort signal.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode serial
  */
-'agent/turn-stopping'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; signal: AbortSignal }): Promise<void> | void
+'agent/turn-stopping'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; cause: TurnStoppingCause; signal: AbortSignal }): Promise<void> | void
 ```
 
 Types: [Scoped](scope.md)

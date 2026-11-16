@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/goal/work-handoff/README.md
+/:
+  en: 7b4ab069cde6a952
+  zh: 6af1c5e456f85aa6
+/deepseek-ai-dsh-work-handoff:
+  en: 0e847c51a49cad03
+  zh: 901dbf5164b24f26
+/deepseek-ai-dsh-work-handoff/summary:
+  en: 84fe4fa263e80e23
+  zh: c8f877084a57520e
+/deepseek-ai-dsh-work-handoff/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-work-handoff/use-this-package:
+  en: d50259d3d4233222
+  zh: 814b7ad370dc4d47
+/deepseek-ai-dsh-work-handoff/use-this-package/save-and-recover-work:
+  en: f545cf696bcd85d8
+  zh: 7c5698d9d8b4e979
+/deepseek-ai-dsh-work-handoff/use-this-package/automatic-and-explicit-continuation:
+  en: 3bb58c77823101c3
+  zh: 6bd909e66d0e9b72
+/deepseek-ai-dsh-work-handoff/use-this-package/capture-bounds:
+  en: 803157926005481f
+  zh: 1a222183959544f2
+/deepseek-ai-dsh-work-handoff/understand-the-implementation:
+  en: cc4b4f21be6a70c8
+  zh: 6f86ca8e60cddec1
+/deepseek-ai-dsh-work-handoff/further-exploration:
+  en: f20b508bd4e8b94a
+  zh: 46d029071d1f0c9b
+/deepseek-ai-dsh-work-handoff/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-work-handoff/model-experience/progress-checkpoint-and-continuation:
+  en: 72e7e02fc7194142
+  zh: bdb34e8d0762b322
+/deepseek-ai-dsh-work-handoff/model-experience/progress-checkpoint-and-continuation/what-the-model-sees:
+  en: eb5d40760dd74bb5
+  zh: 76461e087b9d696b
+/deepseek-ai-dsh-work-handoff/model-experience/progress-checkpoint-and-continuation/token-effect:
+  en: 4a1fd890659a0e6e
+  zh: cd9e5ada2a5b699a
+/deepseek-ai-dsh-work-handoff/model-experience/progress-checkpoint-and-continuation/kv-cache-effect:
+  en: 955337915a51a063
+  zh: 89bc83b33c6d1ed0
+/deepseek-ai-dsh-work-handoff/known-limitations-and-deferred-work:
+  en: aee4af291d679f3a
+  zh: eb2247a165488019
+/deepseek-ai-dsh-work-handoff/known-limitations-and-deferred-work/dev-note:
+  en: e67a8fb42aceefa8
+  zh: b76917ac8bf46941

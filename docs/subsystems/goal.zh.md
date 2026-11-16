@@ -1,8 +1,8 @@
-# 同会话目标
+# 同会话目标与工作交接
 
 [English](goal.md) | 中文
 
-事件溯源目标服务及其策略消费方共享的类型。[目标领域 参考](../../packages/goal/goal/README.zh.md) 负责记录持久化与激活决策；本页记录 [`packages/goal/goal/src/types.ts`](../../packages/goal/goal/src/types.ts) 中的确切字段和变体。
+事件溯源目标服务、未完成工作交接及其策略消费方共享的类型。[目标领域参考](../../packages/goal/goal/README.zh.md)负责目标持久化与激活；[工作交接参考](../../packages/goal/work-handoff/README.zh.md)负责恢复报告与明确续行。本页记录它们的公开字段和变体。
 
 ## 标识与生命周期
 
@@ -163,6 +163,78 @@ interface GoalChanged {
 
 [`GoalService`](../../packages/goal/goal/src/index.ts) 解析创建默认值、从可选注册的 `goal` 投影读取严格回放结果、校验传入的 agent（智能体）是注册表中的确切活跃实例、以比较并设置方式执行变更，并发出 `goal/changed` 通知；监听器故障会被隔离。注册表或 key 缺失时，第一次依赖它们的访问会失败。包 [README](../../packages/goal/goal/README.zh.md) 定义可调用 API 和面向模型的约定。
 
+## 工作检查点与交接
+
+工作交接独立于 goal 完成状态，保留未完成执行。[工作交接服务](../../packages/goal/work-handoff/README.zh.md)负责保存、持久化确认与明确续行；其 `workHandoff` 投影提供最新 `WorkHandoffView` 或 null。检查点报告区分模型撰写的声明与有界的已记录证据。
+
+```ts type-equiv
+/** Identity of one immutable unfinished-work capture. */
+type WorkHandoffId = Branded<'WorkHandoffId'>
+```
+
+```ts type-equiv
+/** Why unfinished work needs an explicit continuation decision. */
+type WorkStopReason =
+  | 'todo-limit' | 'goal-budget' | 'output-limit' | 'error' | 'cancelled'
+  | 'paused' | 'waiting' | 'legacy-confirmation'
+```
+
+```ts type-equiv
+/** Model-authored progress facts; validation evidence remains separate from completion claims. */
+interface WorkCheckpoint {
+  readonly summary: string
+  readonly completed: string[]
+  readonly remaining: { task: string; nextActions: string[]; references: string[] }[]
+  readonly validation: { command: string; result: 'passed' | 'failed' | 'unknown'; evidence: string[] }[]
+  readonly blockers: string[]
+}
+```
+
+```ts type-equiv
+/** Exact goal revision and allowance captured with a handoff. */
+interface WorkHandoffGoal {
+  readonly id: GoalId
+  readonly revision: number
+  readonly objective: string
+  readonly roundsStarted: number
+  readonly maxGoalRounds: number
+}
+```
+
+```ts type-equiv
+/** Latest captured handoff served directly to clients; saving acknowledges this exact id. */
+interface WorkHandoffView {
+  readonly id: WorkHandoffId
+  readonly sourceSessionId: SessionId
+  readonly turn: number
+  readonly reason: WorkStopReason
+  readonly status: 'work-remains' | 'waiting' | 'paused' | 'budget-exhausted'
+  readonly objective: string
+  /** Source event containing the full human objective when its host preview is bounded. */
+  readonly objectiveSeq?: SessionSeq | undefined
+  readonly markdown: string
+  readonly saved: boolean
+  readonly goal?: WorkHandoffGoal | undefined
+  readonly todos: TodoItem[]
+  readonly attachment?: FileAttachmentRef | undefined
+  readonly exportError?: string | undefined
+}
+```
+
+```ts type-equiv
+/** Capture inputs resolved by the owning service; omitted snapshots use its current domain readers. */
+interface WorkCaptureRequest {
+  readonly reason: WorkStopReason
+  readonly goal?: WorkHandoffGoal
+  readonly todos?: TodoItem[]
+  readonly signal?: AbortSignal
+  /** Consecutive repairs and stronger-guidance threshold; `limit` does not cap task continuation. */
+  readonly todoRepairs?: { readonly attempts: number; readonly limit: number }
+  /** Recorded host policy explanation for stopping, separate from model-authored blockers. */
+  readonly stopDetail?: string
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -267,6 +339,63 @@ block(agent: Agent, ref: GoalRef, reason: GoalBlockReason): GoalView
 Types: [Agent](core.zh.md)
 
 Source: [`packages/goal/goal/src/index.ts`](../../packages/goal/goal/src/index.ts)
+
+<a id="ctxworkhandoffs--workhandoffservice"></a>
+
+### `ctx.workHandoffs` — `WorkHandoffService`
+
+Owns handoff persistence; model requests remain with the ordinary Agent runtime.
+
+```ts cordis-catalog
+/** Read the latest detached handoff without storage I/O.
+ * @param session - Prepared source Session.
+ * @returns Latest handoff or null after explicit continuation.
+ */
+viewOf(session: Session): WorkHandoffView | null
+
+/** Read a prepared Agent's latest handoff.
+ * @param agent - Source Agent resolved from its Session identity.
+ * @returns Latest projected handoff.
+ */
+@Remote('get') get(agent: Agent): WorkHandoffView | null
+
+/** Save a model-authored checkpoint with explicit unverified claims and evidence.
+ * @param agent - Calling live Agent.
+ * @param checkpoint - Complete structured progress report.
+ */
+checkpoint(agent: Agent, checkpoint: WorkCheckpoint): void
+
+/** Capture unfinished work exactly once for the same stopped turn and allowance.
+ * @param agent - Source Agent whose current work is captured.
+ * @param request - Stop cause and optional authoritative domain snapshots.
+ * @returns Saved handoff; storage failures reject without a saved acknowledgement.
+ */
+capture(agent: Agent, request: WorkCaptureRequest): Promise<WorkHandoffView>
+
+/** Recover already authorized unfinished work through one shared idle maintenance operation.
+ * @param agent - Live owner whose idle inbox may receive automatic recovery input.
+ * @param signal - Caller lifetime; unloading leaves existing authorization unchanged.
+ * @returns Whether one durable-checkpointed recovery input was queued.
+ */
+recoverTodos(agent: Agent, signal?: AbortSignal): Promise<boolean>
+
+/** Explicitly authorize this Session's current task list and queue one continuation.
+ * @param agent - Agent selected by the user action.
+ * @returns Completion after authorization and durable input admission.
+ */
+@Remote('resumeTodos') async resumeTodos(agent: Agent): Promise<void>
+
+/** Start one fresh Session from an explicitly selected saved handoff.
+ * @param agent - Source Agent whose restrictions and composition are retained.
+ * @param id - Exact saved handoff selected by the user.
+ * @returns The new Session identity; duplicate clicks share one creation.
+ */
+@Remote('continueInNewSession') continueInNewSession(agent: Agent, id: WorkHandoffId): Promise<{ sessionId: SessionId }>
+```
+
+Types: [Agent](core.zh.md) · [Session](session.zh.md) · [SessionId](core.zh.md)
+
+Source: [`packages/goal/work-handoff/src/index.ts`](../../packages/goal/work-handoff/src/index.ts)
 
 <a id="goal-events"></a>
 

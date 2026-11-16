@@ -51,6 +51,7 @@ describe('todo_write tool through the agent loop', () => {
   it('model calls todo_write: a tool/call, a non-error tool/result, and a todo/write snapshot land', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('call-1', 'todo_write', {
+        purpose: 'proposal',
         todos: [
           { content: 'read the code', status: 'in_progress' },
           { content: 'write the fix', status: 'pending' },
@@ -77,7 +78,7 @@ describe('todo_write tool through the agent loop', () => {
 
   it('a second todo_write replaces the list (last-write-wins on the log)', async () => {
     const adapter = new MockAdapter([
-      toolCallResponse('call-1', 'todo_write', { todos: [{ content: 'step one', status: 'in_progress' }] }),
+      toolCallResponse('call-1', 'todo_write', { purpose: 'proposal', todos: [{ content: 'step one', status: 'in_progress' }] }),
       toolCallResponse('call-2', 'todo_write', {
         todos: [
           { content: 'step one', status: 'completed' },

@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-work-handoff` | `work_checkpoint` | `ctx.tools`, `ctx.agents`, `ctx.sessions`, `ctx.sessionProjections`, `a calling Agent` | `tool/call`, `work-handoff/checkpoint`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
@@ -56,6 +57,107 @@
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+
+
+<a id="deepseek-aidsh-work-handoff"></a>
+
+## `@deepseek-ai/dsh-work-handoff`
+
+### `work_checkpoint`
+
+在停止限制到达前保存简洁的结构化工作交接。区分已验证的证据与未验证的声明；完整检查点不得超过 16384 个字符。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "completed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "remaining": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "task",
+          "nextActions",
+          "references"
+        ]
+      }
+    },
+    "validation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unknown"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "command",
+          "result",
+          "evidence"
+        ]
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "completed",
+    "remaining",
+    "validation",
+    "blockers"
+  ]
+}
+```
+
+来源： [`packages/goal/work-handoff/src/index.ts`](../packages/goal/work-handoff/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 
@@ -2653,12 +2755,33 @@ subagent_oar 工具在为外部提供方配置的别名之间选择。本目录�
 
 ### `todo_write`
 
-记录并更新任务列表，用于规划多步骤工作并展示进度；简单的单步骤任务无需使用。开始前为每个具体步骤添加一项 todo。只要工作尚未完成，就将正在处理的 todo 标记为 `in_progress`，仅在工作并行运行时同时标记多项。某项 todo 完成后立即标记为 `completed`。
+创建或替换当前任务的完整待办列表。新列表必须注明用于已授权的当前任务（current-task）还是待审批的未来计划（proposal）。跟踪已开始、待处理和已完成的工作；暂停或等待必要输入时记录具体原因。
 
 ```json
 {
   "type": "object",
   "properties": {
+    "purpose": {
+      "type": "string",
+      "description": "Required for a new nonempty list: current-task executes authorized work; proposal only records a plan.",
+      "enum": [
+        "current-task",
+        "proposal"
+      ]
+    },
+    "disposition": {
+      "type": "string",
+      "description": "Pause or wait when instructed by the user or awaiting required input.",
+      "enum": [
+        "active",
+        "paused",
+        "waiting"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Required explanation when disposition is paused or waiting."
+    },
     "todos": {
       "type": "array",
       "description": "The COMPLETE task list, replacing any previous list.",

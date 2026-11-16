@@ -1,0 +1,90 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../util/error"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../goal"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../fs/fs"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../subagent/subagent"
+    },
+    {
+      "path": "../../jobs/jobs"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../interaction/permission-presets"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../../plan/plan-mode"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../workspace/workspace"
+    }
+  ]
+}

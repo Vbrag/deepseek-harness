@@ -17,6 +17,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { GoalActivation, GoalId, GoalProjection, GoalView } from '@deepseek-ai/dsh-goal/client'
+import type { PlanProjection } from '@deepseek-ai/dsh-plan-mode/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { makeTranslate, RemoteError, TestSessions } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionFixture } from '@deepseek-ai/dsh-client-test-runtime'
@@ -133,6 +134,12 @@ async function bench(options: {
     get resume() { return activeGoals?.resume },
     get clear() { return activeGoals?.clear },
   })
+  ctx.provide('remote.workHandoffs', {
+    resumeTodos: answer('workHandoffs/resumeTodos', undefined),
+    continueInNewSession: answer('workHandoffs/continueInNewSession', { sessionId: sid('next') }),
+  })
+  ctx.provide('fileActions', { save: vi.fn(() => Promise.resolve({ status: 'requested' })) })
+  ctx.provide('uiWorkspace', { openSession: vi.fn() })
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
     name: 'root', children: {
@@ -337,9 +344,9 @@ describe('ui-goal browser plugin', () => {
 })
 
 describe('GoalDock adapter', () => {
-  it('renders the projected goal snapshot and nothing for absent/null', () => {
+  it('renders goals and keeps active or pending planning work suspended', () => {
     const projection = makeProjection()
-    const useProjection = vi.fn(() => projection)
+    const useProjection = vi.fn((key: string) => key === 'goal' ? projection : null)
     const useGoalActivation = (
       selector: (snapshot: GoalActivationSnapshot) => unknown,
     ) => selector({ id: GOAL_ID, revision: 3, activation: 'armed' })
@@ -350,9 +357,14 @@ describe('GoalDock adapter', () => {
       onClear: () => Promise.resolve({ ok: true, value: undefined }),
     }
     const t = makeTranslate(zh, commonZh)
-    const dockProps = (up: () => GoalProjection | null | undefined) =>
-      ({ useProjection: up, useGoalActivation, ...actions, t }) as unknown as Parameters<typeof GoalDock>[0]
-    const shown = render(<GoalDock {...dockProps(useProjection)} />)
+    const dockProps = (up: () => GoalProjection | null | undefined, planning?: PlanProjection) =>
+      ({ useProjection: (key: string) => key === 'goal' ? up()
+        : key === 'plan' ? planning
+          : key === 'todos' && planning !== undefined ? [{ content: 'Authorized work', status: 'pending' }]
+            : key === 'todoPolicy' ? { purpose: 'current-task', disposition: 'active', completedHighWater: 0, repairAttempts: 0 }
+              : null, useSession: () => false,
+      useGoalActivation, ...actions, t }) as unknown as Parameters<typeof GoalDock>[0]
+    const shown = render(<GoalDock {...dockProps(() => useProjection('goal'))} />)
     expect(shown.getByText('Ship it')).toBeTruthy()
     cleanup()
 
@@ -362,11 +374,18 @@ describe('GoalDock adapter', () => {
 
     const absent = render(<GoalDock {...dockProps(() => undefined)} />)
     expect(absent.container.firstChild).toBeNull()
+    for (const planning of [{ active: true, pending: false }, { active: false, pending: true }]) {
+      cleanup()
+      render(<GoalDock {...dockProps(() => null, planning)} />)
+      expect(screen.getByText('已暂停')).toBeTruthy()
+      expect(screen.queryByText('正在自动继续')).toBeNull()
+      expect(screen.queryByRole('button', { name: '继续工作' })).toBeNull()
+    }
   })
 
   it('matches activation by goal id and revision from the injected hook', () => {
     const projection = makeProjection()
-    const useProjection = vi.fn(() => projection)
+    const useProjection = vi.fn((key: string) => key === 'goal' ? projection : null)
     const useGoalActivation = (
       selector: (snapshot: GoalActivationSnapshot) => unknown,
     ) => selector({ id: GOAL_ID, revision: 3, activation: 'disarmed' })
@@ -377,7 +396,7 @@ describe('GoalDock adapter', () => {
       onClear: () => Promise.resolve({ ok: true, value: undefined }),
     }
     const t = makeTranslate(zh, commonZh)
-    const props = { useProjection, useGoalActivation, ...actions, t } as unknown as Parameters<typeof GoalDock>[0]
+    const props = { useProjection, useSession: () => false, useGoalActivation, ...actions, t } as unknown as Parameters<typeof GoalDock>[0]
     const rendered = render(<GoalDock {...props} />)
     expect(rendered.getByText('待继续的目标')).toBeTruthy()
     expect(screen.getByRole('button', { name: '恢复目标' })).toBeTruthy()

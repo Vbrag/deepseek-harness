@@ -46,6 +46,21 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../goal/work-handoff"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../ui-file-actions"
+    },
+    {
+      "path": "../ui-workspace"
+    },
+    {
+      "path": "../../plan/plan-mode"
     }
   ]
 }

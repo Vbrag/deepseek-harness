@@ -130,3 +130,49 @@
   opacity: 0.4;
   cursor: default;
 }
+
+.workDock {
+  margin-top: 8px;
+}
+
+.workBar {
+  height: auto;
+  min-height: 36px;
+  flex-wrap: wrap;
+}
+
+.workBar .objective {
+  min-width: 80px;
+}
+
+.workBar .label {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.workBar .actions {
+  flex-shrink: 1;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.consentBtn {
+  height: auto;
+  min-height: 28px;
+  max-width: 100%;
+}
+
+.workError {
+  flex-basis: 100%;
+}
+
+@media (max-width: 480px) {
+  .workBar {
+    gap: 4px 8px;
+  }
+
+  .workBar .actions {
+    gap: 2px;
+    margin-left: auto;
+  }
+}

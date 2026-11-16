@@ -108,6 +108,22 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'todoPolicy',
+    pkg: 'tool-todo',
+    title: 'Todo authorization and repair accounting',
+    mode: 'service',
+    consumers: ['todo-reconcile-driver', 'work-handoff'],
+    note: 'Owns list purpose, suspension, completion high-water marks and repair accounting.',
+  },
+  {
+    key: 'workHandoffs',
+    pkg: 'work-handoff',
+    title: 'Unfinished-work handoffs',
+    mode: 'service',
+    consumers: ['goal-round-driver', 'todo-reconcile-driver', 'client-ui-goal'],
+    note: 'Saves checkpoints and host observations; explicit continuation retains source restrictions.',
+  },
+  {
     key: 'actionCards',
     pkg: 'action-cards',
     title: 'Optional action cards',

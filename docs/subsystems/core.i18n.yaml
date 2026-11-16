@@ -18,8 +18,8 @@
   en: 6c8c47ac78de2dde
   zh: c9d527a25a85d1d9
 /core/interception-decisions:
-  en: 6fccceb0a5f1cad9
-  zh: f43c30c2386d8cc8
+  en: 53c8427b240f593b
+  zh: 4e6f4ef072dd8a36
 /core/sessions:
   en: 9a38f693a00fa80d
   zh: d0f66664ac85ae64
@@ -38,3 +38,6 @@
 /core/turnboundaryprojection:
   en: 3892ad06e90b25c1
   zh: ee6f592230ad89df
+/core/proposed-turn-stops:
+  en: d5604fb0a38293b0
+  zh: a0b8bea9d46fd0b6

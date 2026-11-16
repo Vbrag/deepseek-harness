@@ -411,7 +411,7 @@ type PreStepDecision =
 type RequestErrorAction = { kind: 'retry' } | undefined
 ```
 
-`agent/pre-step` 是请求推导前唯一的 waterfall（瀑布式）监听器链。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。
+`agent/pre-step` 是请求推导前唯一的 waterfall（瀑布式）监听器链。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。其 `cause: TurnStoppingCause` 区分 `model-finished`、`tool-concluded` 与 `output-limit`。输出限制在该轮次后续完成的步骤中仍持续生效；取消仍可改变最终结果。
 
 `agent/created` 携带 `SessionStartSource`（会话生命周期为何开始；桥接层据此匹配其 SessionStart）：
 
@@ -509,6 +509,18 @@ interface TurnBoundaryProjection {
   /** Turn number of the latest `turn/start`; 0 before the first turn. */
   readonly lastTurn: number
 }
+```
+
+## 提议的轮次停止
+
+可等待的 `agent/turn-stopping` 事件说明当前步骤为何提议结束轮次。续行策略可区分普通模型完成、明确结束执行的工具与输出上限；现有循环继续负责最终引导与取消检查。
+
+```ts type-equiv
+/**
+ * Cause of a proposed turn stop, before final steering and cancellation checks.
+ * An output limit stays in effect through later completed steps in that turn.
+ */
+type TurnStoppingCause = 'model-finished' | 'tool-concluded' | 'output-limit'
 ```
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -1119,11 +1131,12 @@ The turn is about to close: the model owes no response (no live tool calls, no f
  * closes only when that inbox drains.
  * @param payload.agent - the agent whose turn is at its stop boundary.
  * @param payload.turn - the turn about to close.
+ * @param payload.cause - model completion, explicit tool conclusion, or the turn's sticky output limit.
  * @param payload.signal - the current turn's explicit abort signal.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode serial
  */
-'agent/turn-stopping'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; signal: AbortSignal }): Promise<void> | void
+'agent/turn-stopping'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; cause: TurnStoppingCause; signal: AbortSignal }): Promise<void> | void
 ```
 
 Types: [Scoped](scope.zh.md)

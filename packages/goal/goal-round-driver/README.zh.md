@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 组合方式
 
-把驱动器挂载在 goal 服务与 goal 工具旁边；驱动器本身不需要任何配置。
+把驱动器挂载在 goal 服务、goal 工具与工作交接服务旁边；驱动器本身不需要任何配置。
 
 ```yaml
 - id: goal
@@ -40,6 +40,9 @@ kind: "package-reference"
 
 - id: goal-round-driver
   name: '@deepseek-ai/dsh-goal-round-driver'
+
+- id: work-handoff
+  name: '@deepseek-ai/dsh-work-handoff'
 ```
 
 `maxGoalRounds` 属于 goal 定义，面向模型的阻塞阈值属于 `dsh-tool-goal`；在驱动器中重复任一数值都可能产生分歧策略。
@@ -51,6 +54,8 @@ kind: "package-reference"
 ### 何时停止续行
 
 Round 只在整个 agent 进入 idle 时启动；加载了子 agent 服务时，还要等该 agent 仍在推进的后代全部结束后才启动；完成、暂停和阻塞会阻止续行；宿主发起的暂停还会中止正在运行的轮次，而模型在自己轮次内发起的暂停会正常结束。编辑只会通过修订栅栏使进行中的 Round 失效，驱动器会继续新修订。驱动器也会在以下情况自行停止：轮次因 max tokens 结束、持久性写入失败、agent 被取消、插件卸载，或 Round 上限耗尽——上限耗尽时它会暂停 goal，因为预算耗尽并非 blocker：goal 只是等待人类提高 `maxGoalRounds` 后恢复。取消绝不会自动重启 Round：Round 已在进行的 goal 会在下一次 idle 时被暂停；与 goal 尝试无关的取消只会停用续行。Agent 被处置（例如进程正常关停，或重载拥有该 Agent 的插件）时，Round 以 `disposed` 原因中止，此时只停用续行，goal 保持 active，与插件卸载时一致；用户、父 Agent 与 hook 发起的取消仍会暂停它。agent 进入 idle 时仍在排队的 Round 提示会从收件箱移除，后续人类输入不会排在它后面等待；被取消的轮次属于其他工作时，续行会被停用而不是暂停。
+
+在轮次上限处暂停前，驱动器会等待包含精确目标与轮次数的持久工作交接记录。若保存失败，续行会停用，目标保持 active，不会声称检查点已成功保存。已耗尽额度且 active-disarmed 的目标会在 idle 时恢复交接记录并持久暂停；已暂停且耗尽预算的目标若缺少交接记录，会在不重新激活或发送模型请求的情况下补全。其他暂停或受阻的未完成目标保留暂停或等待交接记录；执行失败保留原始停止原因。若没有持久化检查点提供方参与，不会启动自动 Round。默认轮次额度仍为 256；一个 Round 可包含多个模型步骤，用户轮次不消耗此额度。
 
 ### resume、fork 或卸载之后
 
@@ -105,7 +110,7 @@ Round 只在整个 agent 进入 idle 时启动；加载了子 agent 服务时，
 
 #### 模型看到的内容
 
-每个已准入 Round 都是一段保留的用户角色 `<goal_round>` 块，其中点明完整目标与正数 Round 编号。更早的用户消息、goal 状态快照、assistant 输出与工具记录仍保留在同一会话历史中。
+每个已准入 Round 都是一段保留的用户角色 `<goal_round>` 块，其中点明完整目标与正数 Round 编号。更早的用户消息、goal 状态快照、assistant 输出与工具记录仍保留在同一会话历史中。最后一个获准 Round 还要求模型为未完成工作调用 `work_checkpoint`，并如实报告预算耗尽。在该 Round 后保存宿主后备记录不会增加模型请求。
 
 #### Token 影响
 

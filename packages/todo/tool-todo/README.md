@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Use this package when you want the agent to maintain a visible task list while it works: plan multi-step work, show what is active, and record completion. Mounting it with the parallelism flag is the only setup; the agent then updates the list through its own planning tool whenever the plan changes.
+Use this package when you want the agent to maintain a visible task list while it works: plan multi-step work, show what is active, and record completion. Configure the parallelism flag and mount the tool in its owning profile or Agent preset; the agent updates the complete list whenever the plan changes.
 
 ### When to choose it
 
@@ -41,6 +41,8 @@ Choose it when one agent session should own the task list and whole-list updates
     allowParallelInProgress: true
 ```
 
+An isolated Agent preset adds `isolate: { todoPolicy: true }` to this row. The policy service belongs to that retained preset revision; host consumers resolve it through `agentPresets.serviceFor(agent, 'todoPolicy')`. A global profile row does not need isolation.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `allowParallelInProgress` | required | Whether several todos may be `in_progress` at once; also selects the active-status clause of the model description |
@@ -50,6 +52,12 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 ### What each call does
 
 The agent sends the ENTIRE list on every update; the new list replaces the previous one, so there are no partial updates or per-item edits. Each item is a short task description plus a status of `pending`, `in_progress`, or `completed`. A successful update returns the new counts — `Updated todo list: <pending> pending, <inProgress> in progress, <completed> completed.` — and the UI shows the new plan. Updates fail visibly when a task description is empty or duplicated, when an item carries fields beyond the description and status, or — when parallel work is disabled — when more than one task is marked in progress.
+
+### Execution and proposals
+
+A new nonempty list must declare `purpose: current-task` for authorized execution or `purpose: proposal` for planning only. Updates preserve that purpose. Older persisted lists remain unclassified until a human chooses Continue; a model cannot activate them by assigning a purpose. `disposition: paused` or `waiting` requires a concrete `reason` and retains unfinished items. The [continuation driver](../todo-reconcile-driver/README.md) uses this policy to repair premature model stops; recording a proposal does not authorize execution.
+
+A fork keeps the portable parent list in its history, while execution authority and repair accounting start with the child's first own purpose-bearing list. The exact inherited event count determines that separation and remains effective after resume.
 
 ### Single owner
 
@@ -80,8 +88,9 @@ The [todo_write tool Agent Note](../../../.agents/notes/archived/feature/2026-06
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, tool registration, `todos` projection unit |
+| [`src/index.ts`](src/index.ts) | Plugin entry: configuration and tool registration |
 | [`src/types.ts`](src/types.ts) | The one home of the `todos` projection-key declaration and its payload types |
+| [`src/policy.ts`](src/policy.ts) | Durable purpose, suspension, and no-progress allowance; explicit human Continue API |
 | [`src/client.ts`](src/client.ts) | Client-namespace re-export of the types outlet |
 
 ### Export shape
@@ -90,11 +99,13 @@ The plugin is a function/namespace plugin: it exports `name` / `inject` / `apply
 
 ### Session projection
 
-When the composition mounts `ctx.sessionProjections` ([`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)), this package registers the `todos` unit on an injected child: the projection is the standing plan — the latest whole `todo/write` list, `null` before the first write, persisting across turns and resumed sessions until an explicit empty write (`todo_write(todos: [])`) or a human `/todo clear` clears it. The key merges into `SessionProjectionMap` here; carriers serve the value on the history tail page and the `session/projection` push frame. Compositions without the registry are unaffected; see [src/index.ts](src/index.ts) for the unit registration.
+The package requires [`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md). Its policy service owns the `todos` and `todoPolicy` projections. The list is the latest whole `todo/write`, `null` before its first write, and persists until an explicit empty write or `/todo clear`. Carriers serve the values on the history tail and projection updates; host consumers read through `ctx.todoPolicy`.
 
 ### Call mechanics
 
 Each call validates the submitted list against the schema, rejects incoherent input, and on success appends the full snapshot as a `todo/write` session event and returns the new counts; the current list is always the most recent `todo/write` in the log (last-write-wins on replay). See [src/index.ts](src/index.ts) for the exact validation and append steps.
+
+Purpose and accounting use a separate `todo/policy` event and projection. `ctx.todoPolicy.continueTask(agent)` records human authorization and resets the repair counter; its caller queues continuation. The completed-item high-water mark only advances when the completed count strictly increases, so toggling statuses or adding unfinished items cannot reset the repair counter. Cancellation, errors, and output limits durably pause an active execution list through its terminal turn event. The host service is available from the `./policy` leaf; browser consumers use types from `./client`.
 
 </details>
 
@@ -121,7 +132,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-The model sees the generated [`todo_write` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-todo): an object with one required `todos` array of `{ content, status }` items, where `status` is `pending`, `in_progress`, or `completed`. The `todos` description states that each call replaces the whole list; the tool description's active-status clause follows `allowParallelInProgress`.
+The model sees the generated [`todo_write` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-todo), including the complete `todos` list and the purpose and suspension fields. The description distinguishes authorized execution from proposed plans and instructs the model to record a concrete reason for a pause or wait. The active-status clause follows `allowParallelInProgress`.
 
 #### Token effect
 

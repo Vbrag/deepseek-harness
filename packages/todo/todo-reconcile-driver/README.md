@@ -1,5 +1,5 @@
 ---
-description: "The one-shot resume todo reconciliation for users and maintainers choosing, composing, or debugging automated reconcile on a persisted task list."
+description: "Continue authorized unfinished todo work in the same turn and retain an explicit handoff when execution must stop."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-todo-reconcile-driver` reconciles a persisted to-do list when a session is resumed or restarted with work still outstanding. The `dsh-tool-todo` list survives across turns and restarts; when the harness re-opens a session that carries a non-empty list and a goal, this driver issues **one** model prompt presenting the persisted list plus the goal state and asks the model to reconcile the statuses via `todo_write` — instead of asking the human to re-derive the plan. It takes no configuration. Mount it beside `dsh-tool-todo` and `dsh-goal` so a recovered plan keeps its statuses honest and the model can pick up the next step.
+`dsh-todo-reconcile-driver` helps an agent finish an authorized task when its final response only promises further work. If a current-task list still has unfinished items, the driver asks the model to continue within the same turn. Proposals remain plans. Explicit pauses, waits, cancellation, output limits, and existing goal control are respected. Repeated stops without net completion receive stronger recovery guidance while authorized work continues.
 
 ## Table of Contents
 
@@ -25,31 +25,23 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount `dsh-todo-reconcile-driver` when a resumed session should reconcile its persisted plan against completed work without a human prompt. It composes with the todo tool and the goal service: `dsh-tool-todo` owns the list, `dsh-goal` owns the durable goal, and this package reads both to schedule one reconcile.
+Mount the driver with the todo tool, goal service, and work-handoff service. A current goal is optional; its service is required so the driver can defer to goal continuation and suspension.
 
-### Compose it
-
-Mount the driver beside the todo tool and the goal service; the driver itself takes no configuration.
+Todo and plan-mode services may belong to the Agent's isolated preset. The driver reads the exact retained preset owner; it does not require those services in the host's global context.
 
 ```yaml
-- id: tool-todo
-  name: '@deepseek-ai/dsh-tool-todo'
+- name: '@deepseek-ai/dsh-todo-reconcile-driver'
   config:
-    allowParallelInProgress: true
-
-- id: todo-reconcile-driver
-  name: '@deepseek-ai/dsh-todo-reconcile-driver'
+    maxNoProgressRepairs: 3
 ```
 
-The goal service is required so the driver can read the current goal; a composition with the driver but no goal simply never reconciles (there is nothing to anchor the plan to).
+`maxNoProgressRepairs` is a positive integer, defaulting to three. It selects when stronger logged recovery guidance begins. Every premature ordinary stop continues authorized unfinished work; reaching this threshold requires no human Continue action. A strictly greater completed-item count resets the repair counter. Goal rounds, output limits, explicit suspension, and failures retain their own stopping rules.
 
-### When a reconcile occurs
+New execution lists declare `purpose: current-task`; proposed plans declare `purpose: proposal`. Older unclassified lists require the human Continue action. A model cannot activate a proposal, legacy list, or suspended list by silently changing its purpose or disposition. Opening proposals, legacy lists, and explicitly suspended work does not authorize execution.
 
-On `agent/created` with source `resume` (a persisted reload) or `startup` (a fresh session), when both conditions hold — the persisted `todos` projection is a non-empty list, and a current goal exists — the driver queues exactly one `<todo_reconcile>` prompt. It names the JSON-quoted objective, goal phase, and round budget, lists each persisted item with its status, summarizes done vs remaining, and instructs the model to inspect the workspace and durable session state, then call `todo_write` once with the reconciled whole list. A subsequent `todo_write` from the model lands in the `todos` projection as the new durable plan.
+Opening an authorized current-task list with active or historical limit disposition resumes it automatically after the work-handoff owner checks durable state and competing work. Existing repair counters are retained. Paused, waiting, proposal, legacy, goal-controlled, plan-controlled, and failed work retain their applicable restrictions. A missing or failed persistence provider stops continuation visibly before another request.
 
-### When reconcile does not happen
-
-The driver stays silent when the list is empty, when there is no current goal, when the source is `clear` or `compact`, and on any later turn in the same lifecycle — it never re-arms after the single admission. A human message already queued when the driver reaches idle withdraws the reconcile reservation so the human's input runs first; a reconcile prompt still queued at idle is removed from the inbox. The driver is best-effort one-shot: if the model call or the write fails, it logs and disarms rather than retrying in a loop.
+An active goal owns its continuation. Paused or blocked goals remain suspended. A model response ended by an output limit or a tool that concludes the turn receives no todo repair. The work-handoff service owns recovery reports for those execution outcomes.
 
 -----
 
@@ -59,26 +51,11 @@ The driver stays silent when the list is empty, when there is no current goal, w
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-This section explains how the driver schedules reconcile without races; the observable behavior is covered in [Use this package](#use-this-package).
+The driver reads the todo tool's projections and current goal. At the awaited `agent/turn-stopping` extension point, only a normal model finish may trigger repair. The driver flushes durable state, joins active descendants, flushes again, and rechecks the current list, goal, disposition, and cancellation before incrementing the persisted repair count and steering. Repair messages enter the existing model-visible session history.
 
-### Design
+The todo policy owner retains purpose, suspension, completed-item high-water mark, and repair count. Terminal cancellation, error, or output-limit events pause active execution lists during projection replay. Human Continue resets the policy; its host caller queues the next turn. Driver teardown stops its waits and joins its callbacks before releasing listeners.
 
-- **Reading, not re-owning.** The driver does not register its own `todos` projection unit — `dsh-tool-todo` already owns that key, and a second registration would be refused. Instead it reads the projected value with `ctx.sessionProjections.snapshot(session).values['todos']` and the current goal with `ctx.goals.get(agent)`.
-- **One-shot admission.** The `agent/created` listener marks a session reconcile-pending; the serialized driver loop admits at most one reservation per session lifecycle and never re-arms on later turns.
-- **Race fences.** The `agent/pre-step` listener verifies the complete claimed record is still the driver's own before and after downstream listeners, so a stale, cancelled, or competing prompt is rejected before its step enters. Human work arriving first makes the driver yield.
-- **Durability checkpoint.** Before queuing, the driver awaits `ctx.sessions.flush()` and rechecks the goal and competing input after the await, so the reconcile runs against a stable log.
-- **Fail-closed teardown.** Teardown closes admission, cancels active work with the `parent` cause, and awaits the driver plus agent quiescence while its event fence remains installed.
-
-### Source map
-
-| File | Role |
-|---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: driver state machine, race fences, teardown |
-| [`src/prompt.ts`](src/prompt.ts) | The retained `<todo_reconcile>` prompt |
-
-### The reconcile prompt
-
-The retained prompt is one text block: the JSON-quoted objective, phase, and `roundsStarted/maxGoalRounds` lines, then the persisted task list with statuses, a done-vs-remaining summary, and the explicit reconcile instruction.
+See [`src/index.ts`](src/index.ts) for the stopping listener and [`../tool-todo/src/policy.ts`](../tool-todo/src/policy.ts) for durable policy ownership.
 
 </details>
 
@@ -87,47 +64,36 @@ The retained prompt is one text block: the JSON-quoted objective, phase, and `ro
 <a id="further-exploration"></a>
 ## Further Exploration
 
-The driver reads two projected domains and defers list policy to `dsh-tool-todo`; read these pages for the surrounding contract.
-
-- [Todo tool](../tool-todo/README.md) — the persisted list this driver reconciles.
-- [Goal service](../../goal/goal/README.md) — the durable goal state this driver anchors the plan to.
+- [Todo tool](../tool-todo/README.md) — list purpose and explicit human continuation.
+- [Goal service](../../goal/goal/README.md) — goal continuation and suspension.
+- [Work handoff](../../goal/work-handoff/README.md) — unfinished-work reports and user continuation choices.
 
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-### Reconcile prompt
+### Same-turn repair
 
 #### What the model sees
 
-Each admitted reconcile is one retained user-role `<todo_reconcile>` block naming the full objective, goal phase, round budget, the persisted list with statuses, and the done-vs-remaining summary, ending with the instruction to call `todo_write` once with the reconciled whole list. Earlier human messages, goal-state snapshots, assistant output, and tool records remain in the same session history.
+A retained user-role `<todo_continue>` message lists unfinished items and asks the model to execute the next item, verify completed work, and update the whole list. It also tells the model to record a concrete pause or wait reason when execution is suspended. A statement of intent does not count as completion.
 
 #### Token effect
 
-One fixed instruction block plus the objective and the persisted list is added per admitted reconcile. Later requests resend the retained prompt until compaction shadows it; no fresh agent or copied conversation prefix is created.
+Each admitted repair adds one instruction block plus the unfinished list. After the configured no-progress threshold, stronger recovery instructions are included; authorized work continues until completion or an actual stop condition.
 
 #### KV Cache effect
 
-Append-only within an epoch: an admitted reconcile extends the existing conversation after its reusable prefix. Compaction may replace the derived-history suffix and move the reusable boundary.
+Repairs append to the current conversation after its reusable prefix. No new agent or copied conversation is created.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
-
-These limits define when the driver is a poor fit. They are current package constraints, not a task backlog.
-
-- **Requires a goal** — reconciliation is anchored to a current goal; a persisted list without a goal never triggers a prompt. The goal itself is not created or resumed by this package.
-- **Best-effort one-shot** — a failed reconcile is logged and disarmed, not retried; a transient model or persistence failure needs a later human-authorized resume.
-- **No goal re-arm** — after restart an active goal stays disarmed until explicit resume; this driver only reads it, it never revives continuation.
+- Task completion relies on the model's recorded statuses; the driver does not independently verify workspace results. A proposal authorizes no execution. Legacy or suspended work needs explicit human continuation. The repair counter selects guidance strength; existing goal and execution limits retain their own ownership.
 
 <a id="dev-note"></a>
 ### Dev Note
 
-<details>
-<summary>Working context for maintainers — click to expand</summary>
-
-This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open, undecided directions: an abnormal-failure retry policy for the single reconcile and a cross-goal reconcile that does not require a current goal; both stay outside this package by design.
-
-</details>
+The todo policy owns list classification and the repair counter; this driver only requests continuation through the normal stopping extension point.

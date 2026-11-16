@@ -4427,6 +4427,59 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'todoPolicy',
+    summary: 'Owns durable list classification, human continuation, and no-progress accounting.',
+    description: 'Owns durable list classification, human continuation, and no-progress accounting.',
+    methods: [
+      {
+        signature: 'listOf(session: Session): TodoItem[]',
+        description: 'Read the current complete list without exposing projection-owned values.',
+        parameters: [{ name: 'session', description: 'Session owning the list.' }],
+        returns: 'detached items, or an empty list before creation and after clearing.',
+      },
+      {
+        signature: 'viewOf(session: Session): TodoPolicyView | undefined',
+        description: 'Read a detached current list policy.',
+        parameters: [{ name: 'session', description: 'Session owning the list.' }],
+        returns: 'its policy, or undefined for an absent or empty list.',
+      },
+      {
+        signature: 'writeList(agent: Agent, todos: TodoItem[], purpose?: TodoListPurpose, disposition?: Exclude<TodoDisposition, \'limit\'>, reason?: string): void',
+        description: 'Write a validated whole list and its model-supplied classification.',
+        parameters: [{ name: 'agent', description: 'owner of the list.' }, { name: 'todos', description: 'canonical complete replacement list.' }, { name: 'purpose', description: 'classification for a new list; updates retain the recorded purpose.' }, { name: 'disposition', description: 'explicit active, paused, or waiting choice.' }, { name: 'reason', description: 'explanation required by the tool for a suspended list.' }],
+      },
+      {
+        signature: 'continueTask(agent: Agent): Promise<TodoPolicyView>',
+        description: 'Authorize a list after an explicit human Continue action; this does not queue work.',
+        parameters: [{ name: 'agent', description: 'exact live owner selected by the human.' }],
+        returns: 'the reset execution policy.',
+      },
+      {
+        signature: 'recoverAuthorizedTask(agent: Agent): boolean',
+        description: 'Recover existing execution authority without granting approval or resetting repair accounting.',
+        parameters: [{ name: 'agent', description: 'live owner of the authorized unfinished list.' }],
+        returns: 'whether current-task execution is active after recovery.',
+      },
+      {
+        signature: 'suspend(agent: Agent, disposition: \'paused\' | \'waiting\', reason: string): Promise<TodoPolicyView | undefined>',
+        description: 'Suspend a list without removing its unfinished items.',
+        parameters: [{ name: 'agent', description: 'owner selected by the caller.' }, { name: 'disposition', description: 'explicit pause or wait choice.' }, { name: 'reason', description: 'explanation retained with that choice.' }],
+        returns: 'the updated policy, or undefined when no list exists.',
+      },
+      {
+        signature: 'recordRepair(agent: Agent): TodoPolicyView | undefined',
+        description: 'Record one persisted repair attempt immediately before steering.',
+        parameters: [{ name: 'agent', description: 'current execution owner.' }],
+        returns: 'the updated policy, or undefined when the list has disappeared.',
+      },
+      {
+        signature: 'markLimit(agent: Agent): void',
+        description: 'Record the historical automatic-stop marker without discarding repair accounting.',
+        parameters: [{ name: 'agent', description: 'current execution owner.' }],
+      },
+    ],
+  },
+  {
     key: 'tokenMeter',
     summary: 'Replay owner for one service-wide estimator and isolated per-session folds.',
     description: 'Replay owner for one service-wide estimator and isolated per-session folds.',
@@ -4864,6 +4917,54 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'workHandoffs',
+    summary: 'Owns handoff persistence; model requests remain with the ordinary Agent runtime.',
+    description: 'Owns handoff persistence; model requests remain with the ordinary Agent runtime.',
+    methods: [
+      {
+        signature: 'viewOf(session: Session): WorkHandoffView | null',
+        description: 'Read the latest detached handoff without storage I/O.',
+        parameters: [{ name: 'session', description: 'Prepared source Session.' }],
+        returns: 'Latest handoff or null after explicit continuation.',
+      },
+      {
+        signature: '@Remote(\'get\') get(agent: Agent): WorkHandoffView | null',
+        description: 'Read a prepared Agent\'s latest handoff.',
+        parameters: [{ name: 'agent', description: 'Source Agent resolved from its Session identity.' }],
+        returns: 'Latest projected handoff.',
+      },
+      {
+        signature: 'checkpoint(agent: Agent, checkpoint: WorkCheckpoint): void',
+        description: 'Save a model-authored checkpoint with explicit unverified claims and evidence.',
+        parameters: [{ name: 'agent', description: 'Calling live Agent.' }, { name: 'checkpoint', description: 'Complete structured progress report.' }],
+      },
+      {
+        signature: 'capture(agent: Agent, request: WorkCaptureRequest): Promise<WorkHandoffView>',
+        description: 'Capture unfinished work exactly once for the same stopped turn and allowance.',
+        parameters: [{ name: 'agent', description: 'Source Agent whose current work is captured.' }, { name: 'request', description: 'Stop cause and optional authoritative domain snapshots.' }],
+        returns: 'Saved handoff; storage failures reject without a saved acknowledgement.',
+      },
+      {
+        signature: 'recoverTodos(agent: Agent, signal?: AbortSignal): Promise<boolean>',
+        description: 'Recover already authorized unfinished work through one shared idle maintenance operation.',
+        parameters: [{ name: 'agent', description: 'Live owner whose idle inbox may receive automatic recovery input.' }, { name: 'signal', description: 'Caller lifetime; unloading leaves existing authorization unchanged.' }],
+        returns: 'Whether one durable-checkpointed recovery input was queued.',
+      },
+      {
+        signature: '@Remote(\'resumeTodos\') async resumeTodos(agent: Agent): Promise<void>',
+        description: 'Explicitly authorize this Session\'s current task list and queue one continuation.',
+        parameters: [{ name: 'agent', description: 'Agent selected by the user action.' }],
+        returns: 'Completion after authorization and durable input admission.',
+      },
+      {
+        signature: '@Remote(\'continueInNewSession\') continueInNewSession(agent: Agent, id: WorkHandoffId): Promise<{ sessionId: SessionId }>',
+        description: 'Start one fresh Session from an explicitly selected saved handoff.',
+        parameters: [{ name: 'agent', description: 'Source Agent whose restrictions and composition are retained.' }, { name: 'id', description: 'Exact saved handoff selected by the user.' }],
+        returns: 'The new Session identity; duplicate clicks share one creation.',
+      },
+    ],
+  },
+  {
     key: 'workingDirectory',
     summary: 'One owner for each Session\'s effective directory and its model-visible changes.',
     description: 'One owner for each Session\'s effective directory and its model-visible changes.',
@@ -5236,7 +5337,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'agent/turn-stopping',
     mode: 'serial',
-    signature: '\'agent/turn-stopping\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; signal: AbortSignal }): Promise<void> | void',
+    signature: '\'agent/turn-stopping\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; cause: TurnStoppingCause; signal: AbortSignal }): Promise<void> | void',
     summary: 'The turn is about to close: the model owes no response (no live tool calls, no fresh steering).',
     description: 'The turn is about to close: the model owes no response (no live tool calls, no fresh steering). Awaited before the boundary commits — a listener that objects steers (`agent.steer(...)`) and the machine re-reads its inbox: fresh steering runs another step, none closes the turn. Data decides, so listener order cannot change the outcome. The inverse control (stop a tool loop early) is data too: a tool result carrying `concludesTurn` ends the turn at its step. The conclusion never short-circuits already-submitted next-step work: same-step `additionalContexts` or racing steering still runs, and the turn closes only when that inbox drains.',
     parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
@@ -10418,6 +10519,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToastOptions {\n    timeoutMs?: number;\n}',
   },
   {
+    name: 'TodoDisposition',
+    declaration: 'export type TodoDisposition = \'active\' | \'paused\' | \'waiting\' | \'limit\';',
+  },
+  {
+    name: 'TodoItem',
+    declaration: 'export interface TodoItem {\n    content: string;\n    status: \'pending\' | \'in_progress\' | \'completed\';\n}',
+  },
+  {
+    name: 'TodoListPurpose',
+    declaration: 'export type TodoListPurpose = \'current-task\' | \'proposal\';',
+  },
+  {
+    name: 'TodoPolicyView',
+    declaration: 'export interface TodoPolicyView {\n    readonly purpose: TodoListPurpose | \'legacy\';\n    readonly disposition: TodoDisposition;\n    readonly completedHighWater: number;\n    readonly repairAttempts: number;\n    readonly reason?: string;\n}',
+  },
+  {
     name: 'TokenMeasurement',
     declaration: 'export interface TokenMeasurement {\n    readonly logRevision: SessionLogOffset;\n    readonly baseline: TokenMeasurementBaseline;\n    readonly surfaceDeltaTokens: number;\n    readonly totalTokens: number;\n    readonly surfaceTokens: number;\n    readonly nodes: readonly TokenSurfaceNode[];\n}',
   },
@@ -10648,6 +10765,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TurnStartResult',
     declaration: 'export interface TurnStartResult {\n    turnId: string;\n}',
+  },
+  {
+    name: 'TurnStoppingCause',
+    declaration: 'export type TurnStoppingCause = \'model-finished\' | \'tool-concluded\' | \'output-limit\';',
   },
   {
     name: 'TurnUsage',
@@ -11002,6 +11123,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WeeklyScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'weekly\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly time: string;\n    readonly timeZone: string;\n    readonly weekdays: number[];\n    readonly scheduledAt: string;\n}',
   },
   {
+    name: 'WorkCaptureRequest',
+    declaration: 'export interface WorkCaptureRequest {\n    readonly reason: WorkStopReason;\n    readonly goal?: WorkHandoffGoal;\n    readonly todos?: TodoItem[];\n    readonly signal?: AbortSignal;\n    readonly todoRepairs?: {\n        readonly attempts: number;\n        readonly limit: number;\n    };\n    readonly stopDetail?: string;\n}',
+  },
+  {
+    name: 'WorkCheckpoint',
+    declaration: 'export interface WorkCheckpoint {\n    readonly summary: string;\n    readonly completed: string[];\n    readonly remaining: {\n        task: string;\n        nextActions: string[];\n        references: string[];\n    }[];\n    readonly validation: {\n        command: string;\n        result: \'passed\' | \'failed\' | \'unknown\';\n        evidence: string[];\n    }[];\n    readonly blockers: string[];\n}',
+  },
+  {
     name: 'WorkflowAgentEndInfo',
     declaration: 'export interface WorkflowAgentEndInfo extends WorkflowAgentInfo {\n    outcome: WorkflowAgentOutcome;\n}',
   },
@@ -11052,6 +11181,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkflowStopReason',
     declaration: 'export type WorkflowStopReason = \'completed\' | \'cancelled\' | \'error\';',
+  },
+  {
+    name: 'WorkHandoffGoal',
+    declaration: 'export interface WorkHandoffGoal {\n    readonly id: GoalId;\n    readonly revision: number;\n    readonly objective: string;\n    readonly roundsStarted: number;\n    readonly maxGoalRounds: number;\n}',
+  },
+  {
+    name: 'WorkHandoffId',
+    declaration: 'export type WorkHandoffId = Branded<\'WorkHandoffId\'>;',
+  },
+  {
+    name: 'WorkHandoffView',
+    declaration: 'export interface WorkHandoffView {\n    readonly id: WorkHandoffId;\n    readonly sourceSessionId: SessionId;\n    readonly turn: number;\n    readonly reason: WorkStopReason;\n    readonly status: \'work-remains\' | \'waiting\' | \'paused\' | \'budget-exhausted\';\n    readonly objective: string;\n    readonly objectiveSeq?: SessionSeq | undefined;\n    readonly markdown: string;\n    readonly saved: boolean;\n    readonly goal?: WorkHandoffGoal | undefined;\n    readonly todos: TodoItem[];\n    readonly attachment?: FileAttachmentRef | undefined;\n    readonly exportError?: string | undefined;\n}',
   },
   {
     name: 'Workspace',
@@ -11204,6 +11345,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WorkStopReason',
+    declaration: 'export type WorkStopReason = \'todo-limit\' | \'goal-budget\' | \'output-limit\' | \'error\' | \'cancelled\' | \'paused\' | \'waiting\' | \'legacy-confirmation\';',
   },
   {
     name: 'WorktreeCleanup',

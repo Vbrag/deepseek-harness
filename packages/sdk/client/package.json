@@ -39,6 +39,8 @@
     "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-tool-todo": "workspace:*",
+    "@deepseek-ai/dsh-work-handoff": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-sdk-protocol": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",

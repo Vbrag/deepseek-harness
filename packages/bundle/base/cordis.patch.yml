@@ -327,8 +327,13 @@
     - id: goal
       name: '@deepseek-ai/dsh-goal'
 
+    - id: work-handoff
+      name: '@deepseek-ai/dsh-work-handoff'
+      required: true
+
     - id: goal-round-driver
       name: '@deepseek-ai/dsh-goal-round-driver'
+      required: true
 
     - id: command-goal
       name: '@deepseek-ai/dsh-command-goal'
@@ -454,6 +459,7 @@
 
     - id: todo-reconcile-driver
       name: '@deepseek-ai/dsh-todo-reconcile-driver'
+      required: true
 
     # Persisted same-session goals reach the model and the slash menu here; the
     # domain, driver, and `/goal` command are above.

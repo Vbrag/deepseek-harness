@@ -17,6 +17,7 @@ EXPECTED_ROOT = Path(__file__).parent / "expected"
     ("cot-translation-projection.json", ("plugin:translator/request", "plugin:translator/result")),
     ("team-mode-projection.json", ("team/mode",)),
     ("orchestration-projection.json", ("orchestration/mode", "plugin:orchestration/route")),
+    ("todo-handoff-projection.json", ("todo/policy", "work-handoff/checkpoint", "work-handoff/captured", "work-handoff/saved")),
 ])
 def test_session_records_retain_raw_events_and_original_main_response(
     tmp_path: Path, fixture: str, event_types: tuple[str, ...],

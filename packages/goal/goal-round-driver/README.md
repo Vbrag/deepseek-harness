@@ -29,7 +29,7 @@ Mount `dsh-goal-round-driver` when an active goal should keep making progress wi
 
 ### Compose it
 
-Mount the driver beside the goal service and the goal tools; the driver itself takes no configuration.
+Mount the driver beside the goal service, goal tools, and work-handoff service; the driver itself takes no configuration.
 
 ```yaml
 - id: goal
@@ -40,6 +40,9 @@ Mount the driver beside the goal service and the goal tools; the driver itself t
 
 - id: goal-round-driver
   name: '@deepseek-ai/dsh-goal-round-driver'
+
+- id: work-handoff
+  name: '@deepseek-ai/dsh-work-handoff'
 ```
 
 `maxGoalRounds` belongs to the goal definition, while the model-facing blocked threshold belongs to `dsh-tool-goal`; duplicating either value in the driver could produce divergent policy.
@@ -51,6 +54,8 @@ With an exact live agent idle, an active armed goal, and remaining capacity, the
 ### When continuation stops
 
 A round starts only at whole-agent idle and, when the subagent service is loaded, only after the agent's progressing descendants settle; completion, pause, and blocking suppress continuation; a host-initiated pause also aborts the turn already running, while a model-initiated pause inside its own turn finishes normally. An edit only invalidates an in-flight round through the revision fence, and the driver continues the new revision. The driver also stops on its own when a turn ends on max tokens, a durability write fails, the agent is cancelled, the plugin unloads, or the round cap is exhausted — at the cap it pauses the goal, because exhausting the budget is not a blocker: the goal simply awaits a human raising `maxGoalRounds` and resuming. Cancellation never auto-restarts a round: a goal whose round was under way is paused at the next idle point, and a cancellation unrelated to a goal attempt only disarms continuation. Agent disposal, such as a graceful process shutdown or a reload of the plugin that owns the Agent, aborts the round with the `disposed` cause and only disarms continuation, so the goal stays active, as on plugin unload; user, parent, and hook cancellations still pause it. A round prompt still queued when the agent reaches idle is removed from the inbox, so later human input does not wait behind it; when the cancelled turn belonged to other work, continuation is disarmed rather than paused.
+
+Before pausing at the round cap, the driver awaits a durable work handoff with the exact goal and round counts. If capture fails, continuation is disarmed and the goal remains active rather than reporting a successful checkpoint. An exhausted active-disarmed goal recovers its handoff and durable pause at idle; an already-paused exhausted goal missing its handoff is repaired without rearming or making a model request. Other paused or blocked unfinished goals retain a paused or waiting handoff, while execution failures keep their original stop reason. No automatic round starts when no durability checkpoint provider participates. The default round allowance remains 256; a round may contain many model steps, and human turns do not consume this allowance.
 
 ### After resume, fork, or unload
 
@@ -105,7 +110,7 @@ The driver consumes the goal state and defers policy to the goal tools; read the
 
 #### What the model sees
 
-Each admitted round is one retained user-role `<goal_round>` block naming the full objective and positive round number. Earlier human messages, goal-state snapshots, assistant output, and tool records remain in the same session history.
+Each admitted round is one retained user-role `<goal_round>` block naming the full objective and positive round number. Earlier human messages, goal-state snapshots, assistant output, and tool records remain in the same session history. The last permitted round additionally asks the model to call `work_checkpoint` for unfinished work and report the exhausted budget truthfully. Capturing the host fallback after that round adds no model request.
 
 #### Token effect
 

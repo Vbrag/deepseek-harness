@@ -23,6 +23,14 @@
       "default": "./lib/types/client.js"
     },
     "./src/*": "./src/*",
+    "./policy": {
+      "types": "./lib/types/policy.d.ts",
+      "default": "./lib/types/policy.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
@@ -42,6 +50,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",

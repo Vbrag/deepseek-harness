@@ -7,17 +7,20 @@ import { isDeepStrictEqual } from 'node:util'
 import { FiberState } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import { emitAgentEvent } from '@deepseek-ai/dsh-agent'
 import type { GoalMessageSource, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subagent'
+import type {} from '@deepseek-ai/dsh-work-handoff'
+import type { WorkStopReason } from '@deepseek-ai/dsh-work-handoff/types'
 import { renderGoalRoundPrompt } from './prompt.ts'
 
 export { renderGoalRoundPrompt } from './prompt.ts'
 
 export const name = 'goal-round-driver'
-export const inject = ['agents', 'goals', 'sessions']
+export const inject = ['agents', 'goals', 'sessions', 'workHandoffs']
 
 /** Identity reserved before a goal continuation enters the agent inbox. */
 interface RoundIdentity {
@@ -44,6 +47,7 @@ interface DriverState {
   requested: boolean
   run: Promise<void> | undefined
   stopping: boolean
+  abnormalTurn: number | undefined
 }
 
 /** Whether a source identifies an automatic, positive-numbered goal round. */
@@ -76,6 +80,7 @@ function renderThrown(value: unknown): string {
 /** Install automatic same-session continuation and its race fences. */
 export function apply(ctx: Context): void {
   const states = new Map<Agent, DriverState>()
+  const captures = new AbortController()
   // Releases drivers still joining subagents when the plugin unloads.
   const unloading = Promise.withResolvers<void>()
 
@@ -91,6 +96,7 @@ export function apply(ctx: Context): void {
       requested: false,
       run: undefined,
       stopping: false,
+      abnormalTurn: undefined,
     }
     states.set(agent, state)
     return state
@@ -105,6 +111,18 @@ export function apply(ctx: Context): void {
   /** Whether a goal may receive automatic rounds. */
   function drivable(goal: GoalView | undefined): goal is GoalView {
     return goal !== undefined && goal.phase === 'active' && goal.activation === 'armed'
+  }
+
+  /** Preserve the exact stopped goal and allowance without a model request. */
+  async function captureGoal(agent: Agent, goal: GoalView, reason: WorkStopReason): Promise<void> {
+    await ctx.workHandoffs.capture(agent, {
+      reason,
+      signal: captures.signal,
+      goal: {
+        id: goal.id, revision: goal.revision, objective: goal.objective,
+        roundsStarted: goal.roundsStarted, maxGoalRounds: goal.maxGoalRounds,
+      },
+    })
   }
 
   /** Whether this exact lifecycle is quiescent with no competing prompt. */
@@ -131,6 +149,18 @@ export function apply(ctx: Context): void {
     }
   }
 
+  /** Stop autonomous work and expose the failure through the existing Agent surface. */
+  function reportFailure(state: DriverState, error: unknown): void {
+    disarm(state)
+    if (state.stopping || ctx.agents.get(state.agent.id) !== state.agent) return
+    const failure = error instanceof HarnessError ? error : new HarnessError(
+      'Goal continuation could not save or prepare its next round.', 'GOAL_CONTINUATION_FAILED', { cause: error },
+    )
+    emitAgentEvent(ctx, state.agent, 'agent/error', {
+      turn: ctx.agents.turnBoundaryOf(state.agent.session).lastTurn, step: 0, error: failure,
+    })
+  }
+
   /** Preserve claimed step context when this driver drops only its own round. */
   function restoreOtherClaimed(agent: Agent, messages: UserMessage[], messageId: MessageId): void {
     const retained = messages.filter(message => message.id !== messageId
@@ -150,10 +180,12 @@ export function apply(ctx: Context): void {
     if (state.needsCheckpoint) {
       state.needsCheckpoint = false
       try {
-        await ctx.sessions.flush(agent.session)
+        if (!await ctx.sessions.flush(agent.session)) {
+          throw new HarnessError('Goal continuation requires durable Session storage.', 'GOAL_DURABILITY_UNAVAILABLE')
+        }
       } catch (error: unknown) {
         ctx.logger.warn(`goal-round-driver: durability checkpoint failed for agent "${agent.id}": ${renderThrown(error)}`)
-        disarm(state)
+        reportFailure(state, error)
         return
       }
       // A mutation or ordinary prompt may have arrived while the checkpoint
@@ -170,6 +202,26 @@ export function apply(ctx: Context): void {
     }
 
     const goal = currentGoal(state)
+    if (goal?.phase === 'paused' || goal?.phase === 'blocked'
+      || (goal?.phase === 'active' && goal.activation === 'disarmed' && goal.roundsStarted >= goal.maxGoalRounds)) {
+      const saved = ctx.workHandoffs.viewOf(agent.session)
+      const turn = ctx.agents.turnBoundaryOf(agent.session).lastTurn
+      const abnormal = state.abnormalTurn === turn || (saved?.turn === turn
+        && ['error', 'cancelled', 'output-limit'].includes(saved.reason))
+      const reason = goal.phase === 'blocked' ? 'waiting'
+        : goal.roundsStarted >= goal.maxGoalRounds ? 'goal-budget' : 'paused'
+      if (!abnormal && (!saved?.saved || saved.reason !== reason || saved.goal?.id !== goal.id
+        || saved.goal.roundsStarted !== goal.roundsStarted || saved.goal.maxGoalRounds !== goal.maxGoalRounds
+        || (reason !== 'goal-budget' && saved.goal.revision !== goal.revision))) {
+        await captureGoal(agent, goal, reason)
+      }
+      const latest = currentGoal(state)
+      if (goal.phase === 'active' && readyAfterCheckpoint(state) && latest?.phase === 'active'
+        && latest.id === goal.id && latest.revision === goal.revision) {
+        ctx.goals.pause(agent, goalRef(latest))
+      }
+      return
+    }
     if (!drivable(goal)) return
     // A round started while descendants progress would only wait for them.
     // Every goal mutation requests a checkpoint, so passing the recheck
@@ -180,11 +232,10 @@ export function apply(ctx: Context): void {
       if (!readyAfterCheckpoint(state)) return
     }
     if (goal.roundsStarted >= goal.maxGoalRounds) {
-      // Exhausting the round budget is not a blocker: the goal simply ran out
-      // of automatic continuation rounds and awaits a human decision to raise
-      // the cap and resume. Pause (disarmed) instead of block so the durable
-      // phase stays truthful — the model-visible reason is conveyed by the
-      // round-projection's budget relationship, not a fabricated blocker.
+      await captureGoal(agent, goal, 'goal-budget')
+      const latest = currentGoal(state)
+      if (!readyAfterCheckpoint(state) || !drivable(latest)
+        || latest.id !== goal.id || latest.revision !== goal.revision) return
       ctx.goals.pause(agent, goalRef(goal))
       return
     }
@@ -237,13 +288,13 @@ export function apply(ctx: Context): void {
             await drive(state)
           } catch (error: unknown) {
             ctx.logger.warn(`goal-round-driver: driver failed for agent "${state.agent.id}": ${renderThrown(error)}`)
-            disarm(state)
+            reportFailure(state, error)
           }
         }
       })
     } catch (error: unknown) {
       ctx.logger.warn(`goal-round-driver: could not start driver for agent "${state.agent.id}": ${renderThrown(error)}`)
-      disarm(state)
+      reportFailure(state, error)
       return
     }
     state.run = run
@@ -253,7 +304,7 @@ export function apply(ctx: Context): void {
     }
     void run.then(retire, (error: unknown) => {
       ctx.logger.warn(`goal-round-driver: driver task rejected for agent "${state.agent.id}": ${renderThrown(error)}`)
-      disarm(state)
+      reportFailure(state, error)
       retire()
     })
   }
@@ -272,6 +323,8 @@ export function apply(ctx: Context): void {
       state.attempt = undefined
       state.competingQueued = false
       state.needsCheckpoint = false
+      state.abnormalTurn = undefined
+      requestDrive(state)
     })
     ctx.on('agent/status', ({ agent, status }) => {
       const state = stateFor(agent)
@@ -348,6 +401,8 @@ export function apply(ctx: Context): void {
           }
           return
         case 'turn/end':
+          if (event.data.reason.kind === 'error' || event.data.reason.kind === 'max-tokens'
+            || event.data.reason.kind === 'aborted') state.abnormalTurn = event.data.turn
           if (event.data.reason.kind === 'max-tokens') {
             disarm(state)
             return
@@ -463,6 +518,7 @@ export function apply(ctx: Context): void {
     // Yielded after listener registration, so this close runs first and the
     // composite effect removes listeners only after its promise settles.
     yield async () => {
+      captures.abort()
       unloading.resolve()
       const waits: Promise<void>[] = []
       for (const state of states.values()) {

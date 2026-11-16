@@ -1,0 +1,10 @@
+version: 1
+scenario: todo-continuation
+profile: sdk
+composition: sdk-todo-continuation
+recording: authored
+header:
+  class: sdk-todo-continuation
+  pin: true
+workspace:
+  final: true

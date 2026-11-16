@@ -248,6 +248,14 @@ async function primaryFixtureFile(dir: string): Promise<string> {
   return primary
 }
 
+/** Tokenize captured Windows JSON quoting even after refresh has already tokenized the header. */
+function tokenizeGeneratedCwd(content: string, cwd: string): string {
+  const newline = content.indexOf('\n')
+  const header = JSON.parse(content.slice(0, newline)) as { cwd: string }
+  const escaped = JSON.stringify(cwd).slice(1, -1)
+  return tokenizeSessionFixtureCwd(JSON.stringify({ ...header, cwd: escaped }) + content.slice(newline))
+}
+
 async function writeSessionFixtures(
   scenario: HeadlessScenario,
   actualLogs: readonly SessionLog[],
@@ -265,9 +273,9 @@ async function writeSessionFixtures(
     if (replacement.from === ctx.cwd) replacements.push({ from: ctx.cwd.split(sep).join('/'), to: replacement.to })
   }
   const fresh = actualLogs.map((log, index) => {
-    const stable = tokenizeSessionFixtureCwd(mode === 'refresh'
+    const stable = tokenizeGeneratedCwd(mode === 'refresh'
       ? stabilizeRefreshLog(log.content, prior[index] as string, replacements, ctx)
-      : log.content)
+      : log.content, ctx.cwd)
     return scrubSessionSnapshot(prepareSessionSnapshotFixtureForComparison(stable))
   })
   const output = redactSessionSnapshotIds(stabilizeFixtureMessageIds(fresh, prior))
@@ -1008,6 +1016,12 @@ async function verifyProviderCwdResume(
   }
 }
 
+function assertSystemPrompts(prompts: readonly string[], expectedCount: number, retained: boolean,
+  expected: string, label: string): void {
+  if (!retained) expect(prompts.length, `${label}: system/message count`).toBe(expectedCount)
+  expect(formatSystemPromptSnapshot(prompts[0] as string, prompts.slice(1)), `${label}: system prompts`).toBe(expected)
+}
+
 async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly SessionLog[], ctx: NormalizeContext): Promise<void> {
   const pin = pinOf(scenario)
   const fixture = await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8')
@@ -1044,8 +1058,6 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
     const prompts = normalizedSystemPrompts(log.content, ctx)
     if (headers.length > 0) {
       expect(systemPromptPrecedesRequests(log.content), `${scenario.name}: a system/message precedes the first request/header`).toBe(true)
-      expect(prompts.length, `${scenario.name}: system/message count`)
-        .toBe(1 + (logIndex === 0 ? pin.manifest.header.promptChanges ?? 0 : 0))
     }
     for (const [index, header] of headers.entries()) {
       const selectedSchemas = childSchemas.get(logIndex)?.[index]
@@ -1054,15 +1066,27 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
       expect(header, `${scenario.name}: request header ${index + 1}`).toEqual(expected)
     }
     if (prompts.length > 0) {
-      expect(
-        formatSystemPromptSnapshot(prompts[0] as string, prompts.slice(1)),
-        `${scenario.name}: system prompts`,
-      ).toBe(childPrompts.get(logIndex) ?? prompt)
+      assertSystemPrompts(prompts, 1 + (logIndex === 0 ? pin.manifest.header.promptChanges ?? 0 : 0),
+        scenario.manifest.sessionFormat !== undefined, childPrompts.get(logIndex) ?? prompt, scenario.name)
     }
   }
 }
 
 describe('headless recorded-session snapshots', () => {
+  it('keeps unretained prompt topology strict while retained current-writer text remains pinned', () => {
+    const sidecar = formatSystemPromptSnapshot('Current writer prompt', [])
+    expect(() => assertSystemPrompts(['Current writer prompt'], 2, false, sidecar, 'unretained')).toThrow()
+    expect(() => assertSystemPrompts(['Current writer prompt'], 2, true, sidecar, 'retained')).not.toThrow()
+    expect(() => assertSystemPrompts(['Unexpected prompt'], 2, true, sidecar, 'retained')).toThrow()
+  })
+  it('tokenizes captured Windows context after refresh has already tokenized the header', () => {
+    const cwd = String.raw`C:\work\generated-root`
+    const log = JSON.stringify({ type: 'session', cwd: '{{cwd}}' }) + '\n'
+      + JSON.stringify({ text: 'Working directory: ' + JSON.stringify(cwd) + '; unrelated C:\\other\\file' }) + '\n'
+    const rows = records(tokenizeGeneratedCwd(log, cwd))
+    expect(rows[0]?.cwd).toBe('{{cwd}}')
+    expect(rows[1]?.text).toBe('Working directory: "{{cwd}}"; unrelated C:\\other\\file')
+  })
   it('normalizes only captured workspace spellings inside JSON-quoted Windows context', () => {
     const cwd = 'C:\\work\\generated-root'
     const content = JSON.stringify({ type: 'session', cwd }) + '\n'

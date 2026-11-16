@@ -117,6 +117,8 @@
             name: '@deepseek-ai/dsh-tool-ask-user'
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'
+            isolate:
+              todoPolicy: true
             config:
               allowParallelInProgress: true
           - id: tool-web

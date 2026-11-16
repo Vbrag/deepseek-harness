@@ -63,6 +63,7 @@ flowchart TD
     pkg_goal["goal"]
     pkg_goal_round_driver["goal-round-driver"]
     pkg_tool_goal["tool-goal"]
+    pkg_work_handoff["work-handoff"]
   end
   subgraph group_fs["packages/fs"]
     pkg_fs["fs"]
@@ -921,6 +922,7 @@ flowchart TD
   pkg_web_deepseek_api --> pkg_session
   pkg_web_deepseek_api --> pkg_web
   pkg_tool_todo --> pkg_agent
+  pkg_tool_todo --> pkg_llm
   pkg_tool_todo --> pkg_session
   pkg_tool_todo --> pkg_session_projection
   pkg_tool_todo --> pkg_tools
@@ -1352,11 +1354,28 @@ flowchart TD
   pkg_mcp_manager --> pkg_tools
   pkg_mcp_manager --> pkg_typert_protocol
   pkg_mcp_manager --> pkg_util_values
-  pkg_goal_round_driver --> pkg_agent
-  pkg_goal_round_driver --> pkg_goal
-  pkg_goal_round_driver --> pkg_llm
-  pkg_goal_round_driver --> pkg_session
-  pkg_goal_round_driver --> pkg_subagent
+  pkg_work_handoff --> pkg_agent
+  pkg_work_handoff --> pkg_agent_preset_registry
+  pkg_work_handoff --> pkg_attachment
+  pkg_work_handoff --> pkg_fs
+  pkg_work_handoff --> pkg_goal
+  pkg_work_handoff --> pkg_jobs
+  pkg_work_handoff --> pkg_llm
+  pkg_work_handoff --> pkg_permission_presets
+  pkg_work_handoff --> pkg_plan_mode
+  pkg_work_handoff --> pkg_sandbox_policy
+  pkg_work_handoff --> pkg_scope
+  pkg_work_handoff --> pkg_session
+  pkg_work_handoff --> pkg_session_projection
+  pkg_work_handoff --> pkg_subagent
+  pkg_work_handoff --> pkg_subprocess
+  pkg_work_handoff --> pkg_tool_todo
+  pkg_work_handoff --> pkg_tools
+  pkg_work_handoff --> pkg_typert_protocol
+  pkg_work_handoff --> pkg_user_approval
+  pkg_work_handoff --> pkg_util_values
+  pkg_work_handoff --> pkg_working_directory
+  pkg_work_handoff --> pkg_workspace
   pkg_subagent_acp --> pkg_agent
   pkg_subagent_acp --> pkg_llm
   pkg_subagent_acp --> pkg_session
@@ -1392,13 +1411,6 @@ flowchart TD
   pkg_tool_subagent_control --> pkg_subagent
   pkg_tool_subagent_control --> pkg_system_prompt
   pkg_tool_subagent_control --> pkg_tools
-  pkg_todo_reconcile_driver --> pkg_agent
-  pkg_todo_reconcile_driver --> pkg_goal
-  pkg_todo_reconcile_driver --> pkg_llm
-  pkg_todo_reconcile_driver --> pkg_session
-  pkg_todo_reconcile_driver --> pkg_session_projection
-  pkg_todo_reconcile_driver --> pkg_subagent
-  pkg_todo_reconcile_driver --> pkg_tool_todo
   pkg_api_session_controller --> pkg_agent
   pkg_api_session_controller --> pkg_agent_default_model
   pkg_api_session_controller --> pkg_agent_preset_registry
@@ -1535,6 +1547,21 @@ flowchart TD
   pkg_workflow_ptc --> pkg_tools
   pkg_workflow_ptc --> pkg_workflow
   pkg_workflow_ptc --> pkg_working_directory
+  pkg_goal_round_driver --> pkg_agent
+  pkg_goal_round_driver --> pkg_goal
+  pkg_goal_round_driver --> pkg_llm
+  pkg_goal_round_driver --> pkg_session
+  pkg_goal_round_driver --> pkg_subagent
+  pkg_goal_round_driver --> pkg_work_handoff
+  pkg_todo_reconcile_driver --> pkg_agent
+  pkg_todo_reconcile_driver --> pkg_agent_preset_registry
+  pkg_todo_reconcile_driver --> pkg_goal
+  pkg_todo_reconcile_driver --> pkg_llm
+  pkg_todo_reconcile_driver --> pkg_plan_mode
+  pkg_todo_reconcile_driver --> pkg_session
+  pkg_todo_reconcile_driver --> pkg_subagent
+  pkg_todo_reconcile_driver --> pkg_tool_todo
+  pkg_todo_reconcile_driver --> pkg_work_handoff
   pkg_schedule --> pkg_agent
   pkg_schedule --> pkg_api_session_controller
   pkg_schedule --> pkg_llm
@@ -1891,7 +1918,7 @@ flowchart TD
 | [`tool-workspace-dependencies`](../packages/skill/tool-workspace-dependencies) | `skill` | [`error`](../packages/util/error), [`tools`](../packages/core/tools) |
 | [`tool-web`](../packages/web/tool-web) | `web` | [`llm`](../packages/llm/llm), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`web`](../packages/web/web) |
 | [`web-deepseek-api`](../packages/web/web-deepseek-api) | `web` | [`agent`](../packages/core/agent), [`credentials`](../packages/credentials/credentials), [`deepseek-account`](../packages/credentials/deepseek-account), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-deepseek-account`](../packages/llm/llm-deepseek-account), [`llm-deepseek-api-key`](../packages/llm/llm-deepseek-api-key), [`session`](../packages/core/session), [`web`](../packages/web/web) |
-| [`tool-todo`](../packages/todo/tool-todo) | `todo` | [`agent`](../packages/core/agent), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools) |
+| [`tool-todo`](../packages/todo/tool-todo) | `todo` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools) |
 | [`plan-mode`](../packages/plan/plan-mode) | `plan` | [`agent`](../packages/core/agent), [`commands`](../packages/interaction/commands), [`error`](../packages/util/error), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`user-questions`](../packages/interaction/user-questions) |
 | [`command-compact`](../packages/compaction/command-compact) | `compaction` | [`commands`](../packages/interaction/commands), [`compaction`](../packages/compaction/compaction) |
 | [`compaction-image-offload`](../packages/compaction/compaction-image-offload) | `compaction` | [`agent`](../packages/core/agent), [`compaction`](../packages/compaction/compaction), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
@@ -1965,7 +1992,7 @@ flowchart TD
 | [`tool-session-query`](../packages/experimental/tool-session-query) | `experimental` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`system-prompt`](../packages/core/system-prompt), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
 | [`webhook-github`](../packages/experimental/webhook-github) | `experimental` | [`credentials`](../packages/credentials/credentials), [`host-webserver`](../packages/host/webserver), [`session`](../packages/core/session), [`webhook`](../packages/experimental/webhook) |
 | [`mcp-manager`](../packages/mcp/mcp-manager) | `mcp` | [`mcp-client`](../packages/mcp/mcp-client), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`util-values`](../packages/util/values) |
-| [`goal-round-driver`](../packages/goal/goal-round-driver) | `goal` | [`agent`](../packages/core/agent), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent) |
+| [`work-handoff`](../packages/goal/work-handoff) | `goal` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`attachment`](../packages/attachment/attachment), [`fs`](../packages/fs/fs), [`goal`](../packages/goal/goal), [`jobs`](../packages/jobs/jobs), [`llm`](../packages/llm/llm), [`permission-presets`](../packages/interaction/permission-presets), [`plan-mode`](../packages/plan/plan-mode), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`tool-todo`](../packages/todo/tool-todo), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`user-approval`](../packages/interaction/user-approval), [`util-values`](../packages/util/values), [`working-directory`](../packages/session/working-directory), [`workspace`](../packages/workspace/workspace) |
 | [`subagent-acp`](../packages/subagent/subagent-acp) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`subagent-claude-code`](../packages/subagent/subagent-claude-code) | `subagent` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`subagent-codex`](../packages/subagent/subagent-codex) | `subagent` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
@@ -1973,7 +2000,6 @@ flowchart TD
 | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process) | `subagent` | [`subagent`](../packages/subagent/subagent) |
 | [`tool-subagent`](../packages/subagent/tool-subagent) | `subagent` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`attachment`](../packages/attachment/attachment), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`tool-subagent-control`](../packages/subagent/tool-subagent-control) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
-| [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver) | `todo` | [`agent`](../packages/core/agent), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`tool-todo`](../packages/todo/tool-todo) |
 | [`api-session-controller`](../packages/api/session-controller) | `api` | [`agent`](../packages/core/agent), [`agent-default-model`](../packages/core/agent-default-model), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`api-gateway`](../packages/api/gateway), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-file-upload`](../packages/client/file-upload), [`commands`](../packages/interaction/commands), [`credentials`](../packages/credentials/credentials), [`file-reference`](../packages/context/file-reference), [`fs`](../packages/fs/fs), [`llm`](../packages/llm/llm), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-query`](../packages/session-query/session-query), [`session-title`](../packages/session/session-title), [`settings`](../packages/settings/settings), [`skill`](../packages/skill/skill), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol), [`typert-registry`](../packages/typert/registry), [`util-time`](../packages/util/time), [`util-values`](../packages/util/values), [`util-workspace-path`](../packages/util/workspace-path), [`working-directory`](../packages/session/working-directory), [`workspace`](../packages/workspace/workspace) |
 | [`plugin-market`](../packages/boot/plugin-market) | `boot` | [`error`](../packages/util/error), [`plugin-manager`](../packages/boot/plugin-manager), [`settings`](../packages/settings/settings), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`headless`](../packages/bundle/headless) | `bundle` | [`agent`](../packages/core/agent), [`agent-default-model`](../packages/core/agent-default-model), [`fs`](../packages/fs/fs), [`llm`](../packages/llm/llm), [`permission-presets`](../packages/interaction/permission-presets), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`subagent`](../packages/subagent/subagent), [`user-approval`](../packages/interaction/user-approval) |
@@ -1990,6 +2016,8 @@ flowchart TD
 | [`sdk-protocol`](../packages/sdk/protocol) | `sdk` | [`commands`](../packages/interaction/commands), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`user-questions`](../packages/interaction/user-questions) |
 | [`agent-team`](../packages/team/agent-team) | `team` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`workflow-ptc`](../packages/workflow/workflow-ptc) | `workflow` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow), [`working-directory`](../packages/session/working-directory) |
+| [`goal-round-driver`](../packages/goal/goal-round-driver) | `goal` | [`agent`](../packages/core/agent), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`work-handoff`](../packages/goal/work-handoff) |
+| [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver) | `todo` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`plan-mode`](../packages/plan/plan-mode), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tool-todo`](../packages/todo/tool-todo), [`work-handoff`](../packages/goal/work-handoff) |
 | [`schedule`](../packages/schedule/schedule) | `schedule` | [`agent`](../packages/core/agent), [`api-session-controller`](../packages/api/session-controller), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`storage-domain`](../packages/storage/storage-domain), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`util-time`](../packages/util/time), [`workspace`](../packages/workspace/workspace) |
 | [`sdk-client`](../packages/sdk/client) | `sdk` | [`llm`](../packages/llm/llm), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session) |
 | [`tool-agent-team`](../packages/team/tool-agent-team) | `team` | [`agent`](../packages/core/agent), [`agent-team`](../packages/team/agent-team), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |

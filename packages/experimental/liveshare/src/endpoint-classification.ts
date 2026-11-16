@@ -49,6 +49,9 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'session/control': 'reader-session-read', // the page follows a visible Session control stream (also granted globally)
   'session/list': 'reader-session-read', // the page lists Sessions (also granted globally)
   'goals/get': 'reader-session-read', // the page reads the goal of a visible Session
+  'workHandoffs/get': 'reader-session-read', // the page reads recovery details of a visible Session
+  'workHandoffs/resumeTodos': 'owner-only', // owner authorizes execution of unfinished work
+  'workHandoffs/continueInNewSession': 'owner-only', // owner creates a continuation with inherited restrictions
   'session/attachment': 'reader-session-read', // the page reads an attachment of a visible Session
   'session/follow': 'reader-session-read', // the page follows a visible Session
   'session/page': 'reader-session-read', // the page reads a visible Session page

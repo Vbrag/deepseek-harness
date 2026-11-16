@@ -13,6 +13,7 @@ import type {
   AgentStatus,
   CreateAgentOptions,
   ResumeAgentOptions,
+  TurnStoppingCause,
 } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
 
@@ -268,15 +269,15 @@ describe('agentEvents()', () => {
     const ctx = new Context()
     const agent = stubAgent('serial-event')
     const signal = new AbortController().signal
-    const heard: Array<{ agent: Agent; turn: number; signal: AbortSignal }> = []
-    ctx.on('agent/turn-stopping', async ({ agent: subject, turn, signal: receivedSignal }) => {
+    const heard: Array<{ agent: Agent; turn: number; cause: TurnStoppingCause; signal: AbortSignal }> = []
+    ctx.on('agent/turn-stopping', async ({ agent: subject, turn, cause, signal: receivedSignal }) => {
       await Promise.resolve()
-      heard.push({ agent: subject, turn, signal: receivedSignal })
+      heard.push({ agent: subject, turn, cause, signal: receivedSignal })
     })
 
-    await agentEvents(ctx, agent).serial('agent/turn-stopping', { turn: 3, signal })
+    await agentEvents(ctx, agent).serial('agent/turn-stopping', { turn: 3, cause: 'model-finished', signal })
 
-    expect(heard).toEqual([{ agent, turn: 3, signal }])
+    expect(heard).toEqual([{ agent, turn: 3, cause: 'model-finished', signal }])
   })
 
   it('injects the fused subject even when the payload carries a conflicting agent field', async () => {

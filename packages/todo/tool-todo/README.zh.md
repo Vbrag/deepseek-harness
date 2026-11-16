@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-当你希望 agent 在工作时维护一份可见的任务列表时使用本包：规划多步工作、展示当前进行中的任务、记录完成情况。挂载它并设置并行开关是唯一的配置步骤；此后每次计划变化，agent 都会通过它自己的规划工具更新列表。
+当你希望 agent 在工作时维护一份可见的任务列表时使用本包：规划多步工作、展示当前进行中的任务、记录完成情况。设置并行开关，并将工具挂载到所属 profile 或 Agent 预设；计划变化时，agent 更新完整列表。
 
 ### 何时选择
 
@@ -41,6 +41,8 @@ kind: "package-reference"
     allowParallelInProgress: true
 ```
 
+隔离 Agent 预设须为该行添加 `isolate: { todoPolicy: true }`。策略服务属于该预设保留的版本；宿主消费方通过 `agentPresets.serviceFor(agent, 'todoPolicy')` 解析它。全局 profile 行不需要隔离。
+
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `allowParallelInProgress` | 必填 | 是否允许多个 todo 同时处于 `in_progress`；同时选择模型描述中的活跃状态条款 |
@@ -50,6 +52,12 @@ kind: "package-reference"
 ### 每次调用做什么
 
 agent 每次更新都发送完整列表；新列表替换旧列表，因此没有部分更新或逐项编辑。每个条目是一句简短的任务描述，外加 `pending`、`in_progress` 或 `completed` 状态。成功的更新会返回新的计数——`Updated todo list: <pending> pending, <inProgress> in progress, <completed> completed.`——UI 随即展示新计划。任务描述为空或重复、条目带有描述与状态之外的字段、或（禁用并行时）多个任务被标记为进行中，这些情况下更新都会明确失败。
+
+### 执行与提案
+
+新的非空列表必须声明 `purpose: current-task`，用于已授权的执行工作，或声明 `purpose: proposal`，仅用于规划。后续更新保留该用途。旧有持久化列表在用户选择继续之前保持未分类；模型不能通过指定用途来激活它们。`disposition: paused` 或 `waiting` 必须附带具体的 `reason`，并保留未完成条目。[继续执行驱动](../todo-reconcile-driver/README.zh.md) 使用此策略修复模型过早停止；记录提案不会授权执行。
+
+分叉会在历史中保留父会话的可移植列表，但执行授权和修复计数从子会话首次自行写入带用途的列表开始。确切的继承事件数量决定这一划分，并在恢复后继续生效。
 
 ### 单一所有者
 
@@ -80,8 +88,9 @@ agent 每次更新都发送完整列表；新列表替换旧列表，因此没�
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、工具注册、`todos` 投影单元 |
+| [`src/index.ts`](src/index.ts) | 插件入口：配置与工具注册 |
 | [`src/types.ts`](src/types.ts) | `todos` 投影键声明及其载荷类型的唯一归属地 |
+| [`src/policy.ts`](src/policy.ts) | 持久化用途、暂停状态、无进展计数，以及用户显式继续的 API |
 | [`src/client.ts`](src/client.ts) | 客户端命名空间对类型出口的再导出 |
 
 ### 导出形状
@@ -90,11 +99,13 @@ agent 每次更新都发送完整列表；新列表替换旧列表，因此没�
 
 ### 会话投影
 
-当组合挂载 `ctx.sessionProjections`（[`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.zh.md)）时，本包在注入的子插件中注册 `todos` 单元：投影即有效计划——最新的整份 `todo/write` 列表，首次写入前为 `null`，跨轮次、跨恢复的会话持续存在，直到被显式空写入（`todo_write(todos: [])`）或人工 `/todo clear` 清空。该键在此处合并进 `SessionProjectionMap`；载体通过历史尾页与 `session/projection` 推送帧提供该值。未挂载注册表的组合不受影响；单元注册见 [src/index.ts](src/index.ts)。
+本包依赖 [`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.zh.md)。策略服务拥有 `todos` 和 `todoPolicy` 投影。列表取最新的整份 `todo/write`，首次写入前为 `null`，持续保留到显式空写入或 `/todo clear`。载体通过历史尾页和投影更新提供这些值；Host 消费者通过 `ctx.todoPolicy` 读取。
 
 ### 调用机制
 
 每次调用都会先校验提交的列表是否符合 schema，拒绝不一致的输入，成功后把完整快照作为 `todo/write` 会话事件追加并返回新的计数；当前列表始终是日志中最近一次 `todo/write`（回放时后写覆盖先写）。确切的校验与追加步骤见 [src/index.ts](src/index.ts)。
+
+用途与计数通过独立的 `todo/policy` 事件和投影保存。`ctx.todoPolicy.continueTask(agent)` 记录用户授权并重置修复计数，由调用方安排继续执行。仅当已完成条目的数量严格增加时，完成数量的历史最高值才会上升，因此切换状态或添加未完成条目不能重置修复计数。取消、错误和输出上限会通过轮次结束事件持久化暂停活动执行列表。Host 服务由 `./policy` 叶入口提供，浏览器使用 `./client` 的类型。
 
 </details>
 
@@ -121,7 +132,7 @@ agent 每次更新都发送完整列表；新列表替换旧列表，因此没�
 
 #### 模型看到什么
 
-模型会看到生成的 [`todo_write` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-todo)：一个对象，含一个必填的 `todos` 数组，元素为 `{ content, status }`，其中 `status` 为 `pending`、`in_progress` 或 `completed`。`todos` 描述说明每次调用都会替换整个列表；工具描述中的活跃状态条款跟随 `allowParallelInProgress`。
+模型会看到生成的 [`todo_write` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-todo)，包括完整 `todos` 列表、用途与暂停字段。描述区分已授权的执行与计划提案，并要求模型为暂停或等待记录具体原因。活跃状态条款跟随 `allowParallelInProgress`。
 
 #### Token 影响
 

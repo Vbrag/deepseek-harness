@@ -21,6 +21,12 @@ export function renderGoalRoundPrompt(goal: GoalView, round: number): ContentBlo
       + 'claiming completion, gather evidence that the whole objective is achieved, read the current '
       + 'goal, and mark it complete. If work remains, leave the goal active for the next round. Follow '
       + 'the configured goal-tool policy before reporting a blocker.\n'
+      + (round === goal.maxGoalRounds
+        ? 'This is the last permitted automatic round. If work remains, call work_checkpoint before '
+          + 'ending this round to preserve verified results, unfinished work, evidence, and concrete '
+          + 'next actions. Tell the user that automatic rounds are exhausted and how to continue. '
+          + 'Do not report complete or blocked merely because this budget is exhausted.\n'
+        : '')
       + '</goal_round>',
   }]
 }

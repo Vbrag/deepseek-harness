@@ -126,6 +126,8 @@ flowchart LR
   cfg --> plugin_dsh_base_command_feedback
   plugin_dsh_base_goal["goal<br/>@deepseek-ai/dsh-goal"]
   cfg --> plugin_dsh_base_goal
+  plugin_dsh_base_work_handoff["work-handoff<br/>@deepseek-ai/dsh-work-handoff"]
+  cfg --> plugin_dsh_base_work_handoff
   plugin_dsh_base_goal_round_driver["goal-round-driver<br/>@deepseek-ai/dsh-goal-round-driver"]
   cfg --> plugin_dsh_base_goal_round_driver
   plugin_dsh_base_command_goal["command-goal<br/>@deepseek-ai/dsh-command-goal"]
@@ -273,6 +275,7 @@ flowchart LR
 | `commands` | `@deepseek-ai/dsh-commands` |
 | `command-feedback` | `@deepseek-ai/dsh-command-feedback` |
 | `goal` | `@deepseek-ai/dsh-goal` |
+| `work-handoff` | `@deepseek-ai/dsh-work-handoff` |
 | `goal-round-driver` | `@deepseek-ai/dsh-goal-round-driver` |
 | `command-goal` | `@deepseek-ai/dsh-command-goal` |
 | `plan-mode` | `@deepseek-ai/dsh-plan-mode` |

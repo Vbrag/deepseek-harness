@@ -7,10 +7,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { z as zod } from 'zod'
-import type { ZodType } from 'zod'
 import { defineTool, ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 import type { TodoItem } from './types.ts'
+import { TodoPolicyService } from './policy.ts'
 // Type-only: resolves the required ctx.sessionProjections service declaration.
 import type {} from '@deepseek-ai/dsh-session-projection'
 // The `todos` projection-key declaration lives in src/types.ts (its one home);
@@ -18,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 // module edge in the emitted index.d.ts, so aggregate programs consuming the
 // declarations still receive the SessionProjectionMap merge.
 export type * from './types.ts'
+export type { TodoPolicyService } from './policy.ts'
 
 export const name = 'tool-todo'
 export const inject = ['tools', 'sessionProjections']
@@ -45,6 +45,7 @@ export const Config: z<Config> = z.object({
 const DESCRIPTION_HEAD =
   'Record and update a task list to plan multi-step work and show progress; skip it for trivial '
   + 'single-step tasks. Add one todo per concrete step before you start. '
+  + 'Classify a new list as current-task for authorized execution or proposal for planning only. '
 
 const DESCRIPTION_PARALLEL =
   'While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. '
@@ -52,7 +53,8 @@ const DESCRIPTION_PARALLEL =
 const DESCRIPTION_SINGLE =
   'While work remains, keep exactly one todo `in_progress`. '
 
-const DESCRIPTION_TAIL = 'Mark each todo `completed` as soon as it is done.'
+const DESCRIPTION_TAIL = 'Mark each todo `completed` as soon as it is done. '
+  + 'Set disposition paused or waiting with a reason when the user requests a pause or further input is required.'
 
 /**
  * The model-facing description for one activation. The active-status clause is the only part that
@@ -99,15 +101,6 @@ function toTodoList(raw: { content: string; status: string }[], allowParallel: b
   return todos
 }
 
-/** Wire payload schema of the `todos` projection (whole list or pre-first-write null). */
-const todosProjectionSchema: ZodType<TodoItem[] | null> = zod.union([
-  zod.array(zod.object({
-    content: zod.string(),
-    status: zod.union([zod.literal('pending'), zod.literal('in_progress'), zod.literal('completed')]),
-  })),
-  zod.null(),
-])
-
 /**
  * Register the `todo_write` tool on `ctx.tools` and the `todos` unit on
  * `ctx.sessionProjections`.
@@ -117,24 +110,22 @@ const todosProjectionSchema: ZodType<TodoItem[] | null> = zod.union([
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const allowParallel = config.allowParallelInProgress
-  // Standing-plan fold: the latest whole todo/write list persists across turns
-  // and resumed sessions until an explicit empty write clears it; null before
-  // the first write; every other event returns the same state reference.
-  await ctx.sessionProjections.register<'todos', TodoItem[] | null>({
-    key: 'todos',
-    stateSchema: todosProjectionSchema,
-    init: () => null,
-    apply: (state, event) => {
-      if (event.type === 'todo/write') return event.data.todos
-      return state
-    },
-    wire: { viewSchema: todosProjectionSchema, view: state => state, summary: false },
-    stateVersion: 3,
-  })
+  await ctx.plugin(TodoPolicyService)
+  const todoPolicy = ctx.get('todoPolicy')
+  if (todoPolicy === undefined) throw new Error('todo policy service did not activate')
   ctx.tools.register(defineTool({
     name: 'todo_write',
     description: describe(allowParallel),
     parameters: {
+      purpose: {
+        type: 'string', enum: ['current-task', 'proposal'],
+        description: 'Required for a new nonempty list: current-task executes authorized work; proposal only records a plan.',
+      },
+      disposition: {
+        type: 'string', enum: ['active', 'paused', 'waiting'],
+        description: 'Pause or wait when instructed by the user or awaiting required input.',
+      },
+      reason: { type: 'string', description: 'Required explanation when disposition is paused or waiting.' },
       todos: {
         type: 'array',
         required: true,
@@ -195,7 +186,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         // session) has nowhere to write it. Reject rather than silently no-op.
         throw new ToolContextUnavailableError('todo_write requires an owning agent session')
       }
-      exec.agent.session.append('todo/write', { todos })
+      const current = todoPolicy.viewOf(exec.agent.session)
+      if (todos.length > 0 && current === undefined && args.purpose === undefined) {
+        throw new ToolArgsError(['purpose is required for a new nonempty todo list'])
+      }
+      if (current !== undefined && args.purpose !== undefined && args.purpose !== current.purpose) {
+        throw new ToolArgsError([current.purpose === 'legacy'
+          ? 'an unclassified persisted list requires the human Continue action before becoming a current task'
+          : 'purpose cannot change while an existing list is nonempty'])
+      }
+      if ((args.disposition === 'paused' || args.disposition === 'waiting') && !args.reason?.trim()) {
+        throw new ToolArgsError(['reason is required when disposition is paused or waiting'])
+      }
+      todoPolicy.writeList(exec.agent, todos, args.purpose, args.disposition, args.reason?.trim())
       const count = (status: TodoItem['status']): number => todos.filter(t => t.status === status).length
       return Promise.resolve({
         todos: todos.map(todo => ({ content: todo.content, status: todo.status })),

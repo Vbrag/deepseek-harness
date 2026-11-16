@@ -27,6 +27,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: the `goal` SessionProjectionMap key merge (single source, the domain's pure outlet).
 import type { GoalProjection, GoalRef } from '@deepseek-ai/dsh-goal/client'
+import type {} from '@deepseek-ai/dsh-work-handoff/client'
+import type {} from '@deepseek-ai/dsh-tool-todo/client'
+import type {} from '@deepseek-ai/dsh-client-ui-file-actions/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { GoalActionResult, GoalBarInjected } from './slots.ts'
 import { createGoalActivationSource } from './activation-source.ts'
 import { GoalDock } from './GoalBar.tsx'
@@ -61,7 +65,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'goal'
 
 /** Required services for the Goal dock, command-input projection, Remote mutations, and copy. */
-export const inject = ['slots', 'sessions', 'remote', 'remote.goals', 'locale', 'uiConversation']
+export const inject = [
+  'slots', 'sessions', 'remote', 'remote.goals', 'remote.workHandoffs', 'locale', 'uiConversation', 'fileActions', 'uiWorkspace',
+]
 
 /**
  * Client plugin body: the GoalBar dock entry with its mutation verbs.
@@ -148,6 +154,18 @@ export function apply(ctx: ClientContext): void {
           const ref = refOf(sessionId)
           if (ref === undefined) return noCurrentGoal
           return await ctx.remote.goals.clear(sessionId, ref)
+        },
+        onContinueWork: () => ctx.remote.workHandoffs.resumeTodos(sessionId),
+        onContinueNewSession: async (id) => {
+          const result = await ctx.remote.workHandoffs.continueInNewSession(sessionId, id)
+          if (result.ok) ctx.uiWorkspace.openSession(result.value.sessionId)
+          return result
+        },
+        onDownloadHandoff: async (handoff) => {
+          await ctx.fileActions.save({
+            url: '', name: `work-handoff-${handoff.turn}.md`, mediaType: 'text/markdown',
+            read: () => Promise.resolve(new Blob([handoff.markdown], { type: 'text/markdown' })),
+          }, 'download')
         },
       }
     },

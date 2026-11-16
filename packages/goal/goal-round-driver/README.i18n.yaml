@@ -18,14 +18,14 @@
   en: 9fdb8ee19fed7701
   zh: bf7f72538c7bbd18
 /deepseek-ai-dsh-goal-round-driver/use-this-package/compose-it:
-  en: dbf043249119778f
-  zh: 75a61167426d0d85
+  en: 30d5bb9167dff18a
+  zh: f63eb18c6dcbafff
 /deepseek-ai-dsh-goal-round-driver/use-this-package/what-each-round-does:
   en: a1312339977f1127
   zh: 57450327ff7e7d83
 /deepseek-ai-dsh-goal-round-driver/use-this-package/when-continuation-stops:
-  en: 89127ce979256157
-  zh: 45a06aab045b097b
+  en: 43175fcff0b586c2
+  zh: bb6c84cadb8a81f9
 /deepseek-ai-dsh-goal-round-driver/use-this-package/after-resume-fork-or-unload:
   en: 85d5470b1b330330
   zh: e761f9046ba7af8a
@@ -51,8 +51,8 @@
   en: 4d07e0f4df39dd39
   zh: b4b4b1a1ac49133d
 /deepseek-ai-dsh-goal-round-driver/model-experience/goal-round-prompt/what-the-model-sees:
-  en: 627dbb55e83ea545
-  zh: f7961cb0d8cee632
+  en: 3f913ce79a0e04c6
+  zh: 4dd75cd479d7a4fb
 /deepseek-ai-dsh-goal-round-driver/model-experience/goal-round-prompt/token-effect:
   en: d754ed8cc26fc2a5
   zh: 75aad6a5759b1fec

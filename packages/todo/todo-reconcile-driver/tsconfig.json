@@ -9,6 +9,15 @@
   ],
   "references": [
     {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../plan/plan-mode"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
       "path": "../../../vendor/cosmokit"
     },
     {
@@ -27,13 +36,13 @@
       "path": "../../core/session"
     },
     {
-      "path": "../../session/session-projection"
-    },
-    {
       "path": "../../subagent/subagent"
     },
     {
       "path": "../tool-todo"
+    },
+    {
+      "path": "../../goal/work-handoff"
     }
   ]
 }

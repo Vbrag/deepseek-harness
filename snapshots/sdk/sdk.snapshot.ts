@@ -143,6 +143,10 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'todo-continuation': {
+    modelRequestsFile: 'todo-requests.jsonl',
+    environment: { DEEPSEEK_BASE_URL: 'http://127.0.0.1:9' },
+  },
   'orchestration-mode': {
     expectedFinalResponse: 'ORCHESTRATION_OFF_OK',
     expectedChildConfigs: { 1: { provider: 'snapshot-workers', model: 'coder' } },
@@ -1279,6 +1283,35 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       )
       reconcileCatalogCreationTimes(ordered.map(log => log.content), 'validate')
       const actualContext = contextOf(ordered, cwd)
+      if (scenario.name === 'todo-continuation') {
+        const parent = ordered[0]
+        if (parent === undefined) throw new Error('todo continuation has no persisted Session')
+        const events = parseSessionLog(parent.content)
+        expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'todo-reconcile'))
+          .toHaveLength(5)
+        expect(events.filter(event => event.type === 'turn/start').map(event => event.data.turn)).toEqual([1, 2, 3, 4])
+        expect(events.filter(event => event.type === 'step/start' && event.data.turn === 1)).toHaveLength(9)
+        expect(events.filter(event => event.type === 'todo/policy').slice(0, 6).map(event => event.data.repairAttempts))
+          .toEqual([0, 1, 2, 3, 4, 5])
+        expect(events.filter(event => event.type === 'todo/write')[1]?.data.todos.every(todo => todo.status === 'completed'))
+          .toBe(true)
+        expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'goal')
+          .map(event => event.data.source)).toMatchObject([{ round: 1 }, { round: 2 }])
+        expect(events.filter(event => event.type === 'work-handoff/checkpoint')).toHaveLength(2)
+        const handoff = events.findLast(event => event.type === 'work-handoff/captured')
+        expect(handoff?.data).toMatchObject({ handoff: {
+          reason: 'goal-budget', goal: { roundsStarted: 2, maxGoalRounds: 2 },
+          status: 'budget-exhausted',
+        } })
+        expect(JSON.stringify(handoff?.data)).toContain('LAST_ALLOWED_CHECKPOINT')
+        expect(events.filter(event => event.type === 'work-handoff/saved')).toHaveLength(1)
+        expect(events.filter(event => event.type === 'tool/result').every(event => event.data.message.isError === false)).toBe(true)
+        expect(modelRequests).toHaveLength(16)
+        expect(JSON.stringify(modelRequests[2]?.messages)).toContain('<todo_continue>')
+        expect(JSON.stringify(modelRequests[4]?.messages)).toContain('Repeated responses have not increased verified completion')
+        expect(results[0]?.finalResponse).toBe('TODO_EXECUTION_FINISHED')
+        expect(results[1]?.finishReason).toBe('completed')
+      }
       if (scenario.name === 'orchestration-mode') {
         const parent = ordered[0]!
         const events = records(parent.content)

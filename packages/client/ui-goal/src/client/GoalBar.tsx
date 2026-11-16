@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalActivation, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
+import type {} from '@deepseek-ai/dsh-plan-mode/client'
 import {
   IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular, IconGoalOutlineRegular,
   IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Tooltip,
@@ -19,6 +20,7 @@ import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-clie
 import type { GoalActionResult, GoalBarActions, GoalBarInjected } from './slots.ts'
 import type { GoalKey } from './locales.ts'
 import css from './GoalBar.module.css'
+import { WorkHandoffBar } from './WorkHandoffBar.tsx'
 
 export interface GoalBarProps extends GoalBarActions {
   /** Current goal snapshot; undefined = capability absent or loading, null = no goal set. */
@@ -190,9 +192,15 @@ export type GoalDockProps =
 
 /** Dock adapter: overlays process-local activation on the durable goal projection. */
 export function GoalDock({
-  useProjection, useGoalActivation, onEdit, onPause, onResume, onClear, t,
+  useProjection, useSession, useGoalActivation, onEdit, onPause, onResume, onClear,
+  onContinueWork, onContinueNewSession, onDownloadHandoff, t,
 }: GoalDockProps) {
   const projection = useProjection('goal')
+  const handoff = useProjection('workHandoff')
+  const todos = useProjection('todos')
+  const todoPolicy = useProjection('todoPolicy')
+  const plan = useProjection('plan')
+  const running = useSession(session => session.running)
   const goal = projection === undefined || projection === null ? projection : projection.goal
   const goalId = goal?.id
   const revision = goal?.revision
@@ -201,15 +209,24 @@ export function GoalDock({
   ))
 
   return (
-    <GoalBar
-      goal={goal}
-      {...activation === undefined ? {} : { activation }}
-      {...projection === null || projection === undefined ? {} : { roundsStarted: projection.roundsStarted }}
-      onEdit={onEdit}
-      onPause={onPause}
-      onResume={onResume}
-      onClear={onClear}
-      t={t}
-    />
+    <>
+      <GoalBar
+        goal={goal}
+        {...activation === undefined ? {} : { activation }}
+        {...projection === null || projection === undefined ? {} : { roundsStarted: projection.roundsStarted }}
+        onEdit={onEdit}
+        onPause={onPause}
+        onResume={onResume}
+        onClear={onClear}
+        t={t}
+      />
+      <WorkHandoffBar key={handoff?.id ?? 'legacy'} handoff={handoff}
+        hasUnfinishedTodos={todos?.some(todo => todo.status !== 'completed') ?? false}
+        todoPolicy={todoPolicy}
+        continuationSuspended={plan?.active === true || plan?.pending === true
+          || (goal != null && goal.phase !== 'complete' && (goal.phase !== 'active' || activation !== 'armed'))}
+        running={running} onContinueWork={onContinueWork} onContinueNewSession={onContinueNewSession}
+        onDownloadHandoff={onDownloadHandoff} t={t} />
+    </>
   )
 }

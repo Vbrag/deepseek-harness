@@ -10,6 +10,7 @@
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActivation, GoalId } from '@deepseek-ai/dsh-goal/client'
+import type { WorkHandoffId, WorkHandoffView } from '@deepseek-ai/dsh-work-handoff/client'
 
 /**
  * The one failure the strip reports without a wire call: the session projects
@@ -60,4 +61,20 @@ export interface GoalBarActions {
 }
 
 /** Injected business face of the GoalBar dock entry. */
-export type GoalBarInjected = GoalBarActions & GoalActivationInjected
+export type GoalBarInjected = GoalBarActions & GoalActivationInjected & WorkHandoffActions
+
+/** Explicit user actions for retained unfinished work. */
+export interface WorkHandoffActions {
+  /** Queue the session's unfinished todos after a user gesture. */
+  onContinueWork: () => Promise<GoalActionResult>
+  /**
+   * Create and open a fresh session with the selected saved checkpoint.
+   * @param id - exact retained handoff selected by the user.
+   */
+  onContinueNewSession: (id: WorkHandoffId) => Promise<GoalActionResult>
+  /**
+   * Download the checkpoint as Markdown through the existing file-action owner.
+   * @param handoff - exact retained handoff selected by the user.
+   */
+  onDownloadHandoff: (handoff: WorkHandoffView) => Promise<void>
+}

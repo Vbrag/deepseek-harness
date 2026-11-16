@@ -1,0 +1,174 @@
+{
+  "finalResponse": "WORK_REMAINS_SAVED",
+  "auditEvents": [
+    {
+      "type": "todo/policy",
+      "seq": 3,
+      "time": 0,
+      "data": {
+        "purpose": "current-task",
+        "disposition": "limit",
+        "completedHighWater": 1,
+        "repairAttempts": 3
+      }
+    },
+    {
+      "type": "work-handoff/checkpoint",
+      "seq": 4,
+      "time": 0,
+      "data": {
+        "checkpoint": {
+          "summary": "Validation remains unresolved",
+          "completed": [
+            "Implemented the first step"
+          ],
+          "remaining": [
+            {
+              "task": "Verify the change",
+              "nextActions": [
+                "Inspect the failing trace"
+              ],
+              "references": [
+                "src/task.ts"
+              ]
+            }
+          ],
+          "validation": [
+            {
+              "command": "check",
+              "result": "failed",
+              "evidence": [
+                "Expected result was absent"
+              ]
+            }
+          ],
+          "blockers": []
+        }
+      }
+    },
+    {
+      "type": "work-handoff/captured",
+      "seq": 5,
+      "time": 0,
+      "data": {
+        "handoff": {
+          "id": "handoff-todo-limit",
+          "sourceSessionId": "sdk-todo-handoff",
+          "turn": 1,
+          "reason": "todo-limit",
+          "status": "work-remains",
+          "objective": "Finish the task",
+          "markdown": "# Work remains\n\nInspect the failing trace.\n",
+          "saved": false,
+          "todos": [
+            {
+              "content": "Verify the change",
+              "status": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "work-handoff/saved",
+      "seq": 6,
+      "time": 0,
+      "data": {
+        "id": "handoff-todo-limit"
+      }
+    }
+  ],
+  "auditNotifications": [
+    {
+      "method": "session.event",
+      "event": {
+        "type": "todo/policy",
+        "seq": 3,
+        "time": 0,
+        "data": {
+          "purpose": "current-task",
+          "disposition": "limit",
+          "completedHighWater": 1,
+          "repairAttempts": 3
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "work-handoff/checkpoint",
+        "seq": 4,
+        "time": 0,
+        "data": {
+          "checkpoint": {
+            "summary": "Validation remains unresolved",
+            "completed": [
+              "Implemented the first step"
+            ],
+            "remaining": [
+              {
+                "task": "Verify the change",
+                "nextActions": [
+                  "Inspect the failing trace"
+                ],
+                "references": [
+                  "src/task.ts"
+                ]
+              }
+            ],
+            "validation": [
+              {
+                "command": "check",
+                "result": "failed",
+                "evidence": [
+                  "Expected result was absent"
+                ]
+              }
+            ],
+            "blockers": []
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "work-handoff/captured",
+        "seq": 5,
+        "time": 0,
+        "data": {
+          "handoff": {
+            "id": "handoff-todo-limit",
+            "sourceSessionId": "sdk-todo-handoff",
+            "turn": 1,
+            "reason": "todo-limit",
+            "status": "work-remains",
+            "objective": "Finish the task",
+            "markdown": "# Work remains\n\nInspect the failing trace.\n",
+            "saved": false,
+            "todos": [
+              {
+                "content": "Verify the change",
+                "status": "pending"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "work-handoff/saved",
+        "seq": 6,
+        "time": 0,
+        "data": {
+          "id": "handoff-todo-limit"
+        }
+      }
+    }
+  ],
+  "assistantTexts": [
+    "WORK_REMAINS_SAVED"
+  ]
+}

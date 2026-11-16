@@ -9,8 +9,14 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 4e5bb11e4664bb1c
-  zh: 4855556d38701373
+  en: dd0bc5d4326c369e
+  zh: a18be387b9582b3b
+/tool-schema-catalog/deepseek-ai-dsh-work-handoff:
+  en: 32ccac37eff91335
+  zh: 32ccac37eff91335
+/tool-schema-catalog/deepseek-ai-dsh-work-handoff/work-checkpoint:
+  en: 6200d2fa715bb04c
+  zh: b9f592c60a21b1a7
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762
@@ -318,8 +324,8 @@
   en: dea62d26fb18ff68
   zh: dea62d26fb18ff68
 /tool-schema-catalog/deepseek-ai-dsh-tool-todo/todo-write:
-  en: f252137b940b38d1
-  zh: 25bd9c6b1ce783d8
+  en: 1ed6a6f9e0613818
+  zh: 882f2003e200dc7b
 /tool-schema-catalog/deepseek-ai-dsh-tool-working-directory:
   en: 1bdc4627ca4fff29
   zh: 1bdc4627ca4fff29

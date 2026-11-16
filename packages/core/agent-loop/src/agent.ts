@@ -17,6 +17,7 @@ import type {
   InboxState,
   PreStepDecision,
   RequestErrorAction,
+  TurnStoppingCause,
 } from '@deepseek-ai/dsh-agent'
 import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
@@ -28,13 +29,14 @@ import {
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
 import { assertNever, deepFreeze } from '@deepseek-ai/dsh-util-values'
+import { HarnessError } from '@deepseek-ai/dsh-error'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals, ToolCallRecovery } from '@deepseek-ai/dsh-session'
 import { renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
-import { ToolActivationError, ToolBatchExecutionError } from '@deepseek-ai/dsh-tools'
+import { ToolBatchExecutionError } from '@deepseek-ai/dsh-tools'
 import type { ResolvedToolSet } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
 import { ReactLoopInbox } from './inbox.ts'
@@ -59,8 +61,6 @@ type Phase =
     wakeRequested: boolean
   }
   | { kind: 'running'; abort: AbortController; turn: number; step: number; wakeRequested: boolean }
-
-type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 
 type PreparedStep =
   | { kind: 'reject' }
@@ -345,6 +345,7 @@ export class ReactLoopAgent implements Agent {
     }
     phase.turn = turn
     let turnEnds: TurnEndReason | null = null
+    let stoppingCause: TurnStoppingCause | null = null
     let target: InboxTarget = 'next-turn'
     try {
       while (true) {
@@ -371,12 +372,13 @@ export class ReactLoopAgent implements Agent {
             if (session === this.session) toolRecovery.observe(event)
           })
           try {
-            // max-tokens is sticky: once any step hits the ceiling, later steps
-            // that complete normally must not downgrade the turn outcome.
-            const stepEnd = await this.step(decision)
+            const stepCause = await this.step(decision)
             // max-tokens stays sticky: a later completed step must not
             // downgrade the turn outcome.
-            if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
+            if (turnEnds === null || turnEnds.kind !== 'max-tokens') {
+              stoppingCause = stepCause
+              turnEnds = stepCause === null ? null : { kind: stepCause === 'output-limit' ? 'max-tokens' : 'completed' }
+            }
           } catch (error: unknown) {
             try {
               for (const event of toolRecovery.results()) {
@@ -398,8 +400,8 @@ export class ReactLoopAgent implements Agent {
           decision.toolSet.dispose()
         }
         signal.throwIfAborted()
-        if (turnEnds && this.inbox.nextStep.length === 0) {
-          await this.dispatch.serial('agent/turn-stopping', { turn, signal })
+        if (stoppingCause !== null && this.inbox.nextStep.length === 0) {
+          await this.dispatch.serial('agent/turn-stopping', { turn, cause: stoppingCause, signal })
           signal.throwIfAborted()
         }
         if (turnEnds && this.inbox.nextStep.length === 0) break
@@ -412,14 +414,14 @@ export class ReactLoopAgent implements Agent {
         turnEnds = { kind: 'aborted', reason: cause }
         throw error
       }
-      // Every failure is structured: an `LlmError` keeps its facts, a tool
-      // activation failure keeps its code, and anything else flattens to
+      // Every failure is structured: an `LlmError` keeps its facts, a harness
+      // failure keeps its code, and anything else flattens to
       // `errorChain` text under the `UNKNOWN` code.
       turnEnds = {
         kind: 'error',
         error: error instanceof LlmError
           ? error.failure
-          : { message: errorChain(error), code: error instanceof ToolActivationError ? error.code : 'UNKNOWN' },
+          : { message: errorChain(error), code: error instanceof HarnessError ? error.code : 'UNKNOWN' },
       }
       this.throwError(error)
     } finally {
@@ -438,7 +440,7 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<StepEndReason | null> {
+  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<TurnStoppingCause | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
@@ -587,10 +589,10 @@ export class ReactLoopAgent implements Agent {
             stream: live.stream,
           }, { surfaceOp: 'append' }).seq,
         )
-        if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
+        if (finish.kind === 'max-tokens') return 'output-limit'
 
         const toolCalls = message.content.filter(block => block.type === 'tool-call')
-        if (toolCalls.length === 0) return { kind: 'completed' }
+        if (toolCalls.length === 0) return 'model-finished'
         const maxParallelToolCalls = this.loopCtx.agentLoop.config.maxParallelToolCalls.get()
         try {
           const result = await this.loopCtx.tools.execute({
@@ -600,7 +602,7 @@ export class ReactLoopAgent implements Agent {
           for (const context of result.additionalContexts) {
             this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context])
           }
-          return result.concluded ? { kind: 'completed' } : null
+          return result.concluded ? 'tool-concluded' : null
         } catch (error: unknown) {
           if (!(error instanceof ToolBatchExecutionError)) throw error
           for (const context of error.partial.additionalContexts) {

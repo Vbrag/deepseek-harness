@@ -1,8 +1,8 @@
-# Same-session goals
+# Same-session goals and work handoffs
 
 English | [中文](goal.zh.md)
 
-Types shared by the event-sourced goal service and its policy consumers. The [goal-domain reference](../../packages/goal/goal/README.md) owns the persistence and activation decisions; this page records the exact fields and variants from [`packages/goal/goal/src/types.ts`](../../packages/goal/goal/src/types.ts).
+Types shared by the event-sourced goal service, unfinished-work handoffs, and their policy consumers. The [goal-domain reference](../../packages/goal/goal/README.md) owns goal persistence and activation; the [work-handoff reference](../../packages/goal/work-handoff/README.md) owns recovery reports and explicit continuation. This page records their public fields and variants.
 
 ## Identity and lifecycle
 
@@ -163,6 +163,78 @@ interface GoalChanged {
 
 [`GoalService`](../../packages/goal/goal/src/index.ts) resolves creation defaults, reads strict replay from the optionally registered `goal` projection, enforces exact-live-agent identity and compare-and-set mutations, and emits contained `goal/changed` notifications. Its first dependent access fails if the projection registry or key is absent. The package [README](../../packages/goal/goal/README.md) defines the callable API and model-visible contract.
 
+## Work checkpoints and handoffs
+
+Work handoffs preserve unfinished execution separately from goal completion. The [work-handoff service](../../packages/goal/work-handoff/README.md) owns capture, persistence acknowledgement, and explicit continuation; its `workHandoff` projection exposes the latest `WorkHandoffView` or null. Checkpoint reports distinguish model-authored claims from bounded recorded evidence.
+
+```ts type-equiv
+/** Identity of one immutable unfinished-work capture. */
+type WorkHandoffId = Branded<'WorkHandoffId'>
+```
+
+```ts type-equiv
+/** Why unfinished work needs an explicit continuation decision. */
+type WorkStopReason =
+  | 'todo-limit' | 'goal-budget' | 'output-limit' | 'error' | 'cancelled'
+  | 'paused' | 'waiting' | 'legacy-confirmation'
+```
+
+```ts type-equiv
+/** Model-authored progress facts; validation evidence remains separate from completion claims. */
+interface WorkCheckpoint {
+  readonly summary: string
+  readonly completed: string[]
+  readonly remaining: { task: string; nextActions: string[]; references: string[] }[]
+  readonly validation: { command: string; result: 'passed' | 'failed' | 'unknown'; evidence: string[] }[]
+  readonly blockers: string[]
+}
+```
+
+```ts type-equiv
+/** Exact goal revision and allowance captured with a handoff. */
+interface WorkHandoffGoal {
+  readonly id: GoalId
+  readonly revision: number
+  readonly objective: string
+  readonly roundsStarted: number
+  readonly maxGoalRounds: number
+}
+```
+
+```ts type-equiv
+/** Latest captured handoff served directly to clients; saving acknowledges this exact id. */
+interface WorkHandoffView {
+  readonly id: WorkHandoffId
+  readonly sourceSessionId: SessionId
+  readonly turn: number
+  readonly reason: WorkStopReason
+  readonly status: 'work-remains' | 'waiting' | 'paused' | 'budget-exhausted'
+  readonly objective: string
+  /** Source event containing the full human objective when its host preview is bounded. */
+  readonly objectiveSeq?: SessionSeq | undefined
+  readonly markdown: string
+  readonly saved: boolean
+  readonly goal?: WorkHandoffGoal | undefined
+  readonly todos: TodoItem[]
+  readonly attachment?: FileAttachmentRef | undefined
+  readonly exportError?: string | undefined
+}
+```
+
+```ts type-equiv
+/** Capture inputs resolved by the owning service; omitted snapshots use its current domain readers. */
+interface WorkCaptureRequest {
+  readonly reason: WorkStopReason
+  readonly goal?: WorkHandoffGoal
+  readonly todos?: TodoItem[]
+  readonly signal?: AbortSignal
+  /** Consecutive repairs and stronger-guidance threshold; `limit` does not cap task continuation. */
+  readonly todoRepairs?: { readonly attempts: number; readonly limit: number }
+  /** Recorded host policy explanation for stopping, separate from model-authored blockers. */
+  readonly stopDetail?: string
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -267,6 +339,63 @@ block(agent: Agent, ref: GoalRef, reason: GoalBlockReason): GoalView
 Types: [Agent](core.md)
 
 Source: [`packages/goal/goal/src/index.ts`](../../packages/goal/goal/src/index.ts)
+
+<a id="ctxworkhandoffs--workhandoffservice"></a>
+
+### `ctx.workHandoffs` — `WorkHandoffService`
+
+Owns handoff persistence; model requests remain with the ordinary Agent runtime.
+
+```ts cordis-catalog
+/** Read the latest detached handoff without storage I/O.
+ * @param session - Prepared source Session.
+ * @returns Latest handoff or null after explicit continuation.
+ */
+viewOf(session: Session): WorkHandoffView | null
+
+/** Read a prepared Agent's latest handoff.
+ * @param agent - Source Agent resolved from its Session identity.
+ * @returns Latest projected handoff.
+ */
+@Remote('get') get(agent: Agent): WorkHandoffView | null
+
+/** Save a model-authored checkpoint with explicit unverified claims and evidence.
+ * @param agent - Calling live Agent.
+ * @param checkpoint - Complete structured progress report.
+ */
+checkpoint(agent: Agent, checkpoint: WorkCheckpoint): void
+
+/** Capture unfinished work exactly once for the same stopped turn and allowance.
+ * @param agent - Source Agent whose current work is captured.
+ * @param request - Stop cause and optional authoritative domain snapshots.
+ * @returns Saved handoff; storage failures reject without a saved acknowledgement.
+ */
+capture(agent: Agent, request: WorkCaptureRequest): Promise<WorkHandoffView>
+
+/** Recover already authorized unfinished work through one shared idle maintenance operation.
+ * @param agent - Live owner whose idle inbox may receive automatic recovery input.
+ * @param signal - Caller lifetime; unloading leaves existing authorization unchanged.
+ * @returns Whether one durable-checkpointed recovery input was queued.
+ */
+recoverTodos(agent: Agent, signal?: AbortSignal): Promise<boolean>
+
+/** Explicitly authorize this Session's current task list and queue one continuation.
+ * @param agent - Agent selected by the user action.
+ * @returns Completion after authorization and durable input admission.
+ */
+@Remote('resumeTodos') async resumeTodos(agent: Agent): Promise<void>
+
+/** Start one fresh Session from an explicitly selected saved handoff.
+ * @param agent - Source Agent whose restrictions and composition are retained.
+ * @param id - Exact saved handoff selected by the user.
+ * @returns The new Session identity; duplicate clicks share one creation.
+ */
+@Remote('continueInNewSession') continueInNewSession(agent: Agent, id: WorkHandoffId): Promise<{ sessionId: SessionId }>
+```
+
+Types: [Agent](core.md) · [Session](session.md) · [SessionId](core.md)
+
+Source: [`packages/goal/work-handoff/src/index.ts`](../../packages/goal/work-handoff/src/index.ts)
 
 <a id="goal-events"></a>
 

@@ -17,7 +17,7 @@ import SessionStore, { Session, type SessionId, SessionLogOffset, TurnEndReason 
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
-import AgentRegistry, { type Agent, type AgentCancelCause } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent, type AgentCancelCause, type TurnStoppingCause } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
@@ -905,8 +905,10 @@ describe('Agent.cancel()', () => {
     })
 
     let cancelled = false
-    ctx.on('agent/turn-stopping', ({ agent: subject }) => {
+    const causes: TurnStoppingCause[] = []
+    ctx.on('agent/turn-stopping', ({ agent: subject, cause }) => {
       if (subject === agent && !cancelled) {
+        causes.push(cause)
         cancelled = true
         agent.cancel({ kind: 'user' })
       }
@@ -919,6 +921,7 @@ describe('Agent.cancel()', () => {
     // and the shared turn signal classified the durable outcome as aborted.
     expect(steps).toBe(1)
     expect(reasons).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
+    expect(causes).toEqual(['model-finished'])
   })
 
   it('cancel from a synchronous agent/status(running) listener drops the turn (window 2)', async () => {

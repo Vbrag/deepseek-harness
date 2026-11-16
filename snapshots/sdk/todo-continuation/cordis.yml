@@ -1,0 +1,21 @@
+# Real SDK todo continuation and goal-budget recovery with a bounded visible tool set.
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false
+- id: llm-deepseek
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: time-context
+  disabled: true
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+- insert:
+    - id: todo-continuation-tools
+      name: './visible-tools-fixture.ts'
+    - id: todo-request-capture
+      name: '../manual-compact/capture-requests.mjs'
+      config:
+        path: !!js dshHomePath('todo-requests.jsonl')

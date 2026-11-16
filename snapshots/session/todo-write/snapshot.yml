@@ -3,5 +3,8 @@ scenario: todo-write
 profile: headless
 composition: default
 recording: live
+sessionFormat:
+  version: 4
+  coverage: [retired-tools]
 header:
   class: default

@@ -3,5 +3,8 @@ scenario: repeat-tool-reminder
 profile: headless
 composition: default
 recording: authored
+sessionFormat:
+  version: 4
+  coverage: [retired-tools]
 header:
   class: default

@@ -50,6 +50,12 @@ export interface CancelOptions {
   keepInbox?: boolean | undefined
 }
 
+/**
+ * Cause of a proposed turn stop, before final steering and cancellation checks.
+ * An output limit stays in effect through later completed steps in that turn.
+ */
+export type TurnStoppingCause = 'model-finished' | 'tool-concluded' | 'output-limit'
+
 /** Agent-owned access to the model choice for future steps. */
 export interface Model {
   /**
@@ -411,11 +417,12 @@ declare module '@deepseek-ai/cordis' {
      * closes only when that inbox drains.
      * @param payload.agent - the agent whose turn is at its stop boundary.
      * @param payload.turn - the turn about to close.
+     * @param payload.cause - model completion, explicit tool conclusion, or the turn's sticky output limit.
      * @param payload.signal - the current turn's explicit abort signal.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode serial
      */
-    'agent/turn-stopping'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; signal: AbortSignal }): Promise<void> | void
+    'agent/turn-stopping'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; cause: TurnStoppingCause; signal: AbortSignal }): Promise<void> | void
     // ---- error notifications (emit) ----
     /**
      * A step or turn errored. The machine reports a failure here even when

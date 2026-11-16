@@ -4383,6 +4383,23 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tmux-context -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-todo-reconcile-driver -->
+<a id="deepseek-aidsh-todo-reconcile-driver"></a>
+
+## `@deepseek-ai/dsh-todo-reconcile-driver`
+
+- `inject`: `agents` · `goals` · `sessions` · `workHandoffs`
+- `source`: [`packages/todo/todo-reconcile-driver/src/index.ts:21`](../packages/todo/todo-reconcile-driver/src/index.ts)
+
+```ts config-catalog
+/** Configurable recovery-reminder threshold without a new completed-item high-water mark. */
+export interface Config {
+  /** Repairs without net completion before stronger recovery guidance; defaults to three and never stops work. */
+  maxNoProgressRepairs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-todo-reconcile-driver -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-token-meter -->
 <a id="deepseek-aidsh-token-meter"></a>
 
@@ -5264,6 +5281,37 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-webhook-github -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-work-handoff -->
+<a id="deepseek-aidsh-work-handoff"></a>
+
+## `@deepseek-ai/dsh-work-handoff`
+
+- `inject`: `agents` · `sessions` · `sessionProjections` · `tools`
+- `source`: [`packages/goal/work-handoff/src/index.ts:53`](../packages/goal/work-handoff/src/index.ts)
+
+```ts config-catalog
+/** Deployment bounds for captured evidence and read-only workspace inspection. */
+export interface Config extends WorkHandoffProjectionConfig {
+  /** Shared deadline in milliseconds for read-only Git workspace inspection. */
+  readonly gitTimeoutMs: number
+  /** Termination grace period in milliseconds for a cancelled Git process. */
+  readonly processGraceMs: number
+}
+
+/** Deployment bounds applied to replay state and model-authored checkpoints. */
+export interface WorkHandoffProjectionConfig {
+  /** Maximum retained tool observations and entries in each checkpoint list. */
+  readonly maxEvidence: number
+  /** Maximum serialized checkpoint characters and characters in each retained evidence preview. */
+  readonly maxTextChars: number
+  /** Maximum retained pending-job and pending-subagent observations. */
+  readonly maxPending: number
+  /** Maximum characters in each complete retained policy payload; larger policies refuse carryover. */
+  readonly maxPolicyChars: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-work-handoff -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-workflow-ptc -->
 <a id="deepseek-aidsh-workflow-ptc"></a>
 
@@ -5431,7 +5479,7 @@ export interface Config {
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `tools` · `worktrees` | [`packages/experimental/tool-worktree/src/index.ts`](../packages/experimental/tool-worktree/src/index.ts) |
 | `@deepseek-ai/dsh-fs-observation-policy` | — | [`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts) |
 | `@deepseek-ai/dsh-fs-ssh` | `ssh` · `sandboxPolicy` | [`packages/ssh/fs-ssh/src/index.ts`](../packages/ssh/fs-ssh/src/index.ts) |
-| `@deepseek-ai/dsh-goal-round-driver` | `agents` · `goals` · `sessions` | [`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts) |
+| `@deepseek-ai/dsh-goal-round-driver` | `agents` · `goals` · `sessions` · `workHandoffs` | [`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts) |
 | `@deepseek-ai/dsh-harness-dev-context` | `systemPrompt` · `sessionProjections` · `webApp` | [`packages/context/harness-dev-context/src/index.ts`](../packages/context/harness-dev-context/src/index.ts) |
 | `@deepseek-ai/dsh-host-directory-picker-auto` | `webServer` · `connection` · `loader` | [`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts) |
 | `@deepseek-ai/dsh-host-directory-picker-native` | — | [`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts) |
@@ -5454,7 +5502,6 @@ export interface Config {
 | `@deepseek-ai/dsh-subprocess-local` | — | [`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts) |
 | `@deepseek-ai/dsh-subprocess-ssh` | `ssh` | [`packages/ssh/subprocess-ssh/src/index.ts`](../packages/ssh/subprocess-ssh/src/index.ts) |
 | `@deepseek-ai/dsh-terminal` | — | [`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts) |
-| `@deepseek-ai/dsh-todo-reconcile-driver` | `agents` · `goals` · `sessions` · `sessionProjections` | [`packages/todo/todo-reconcile-driver/src/index.ts`](../packages/todo/todo-reconcile-driver/src/index.ts) |
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | `tools` | [`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts) |
 | `@deepseek-ai/dsh-tool-cordis` | `tools` · `cordisInspect` | [`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts) |
 | `@deepseek-ai/dsh-tool-executor-native` | `tools` | [`packages/core/tool-executor-native/src/index.ts`](../packages/core/tool-executor-native/src/index.ts) |

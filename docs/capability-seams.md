@@ -7,6 +7,13 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_tool_todo["tool-todo"]
+  svc_todoPolicy["ctx.todoPolicy<br/>Todo authorization and repair accounting"]
+  pkg_todo_reconcile_driver["todo-reconcile-driver"]
+  pkg_work_handoff["work-handoff"]
+  svc_workHandoffs["ctx.workHandoffs<br/>Unfinished-work handoffs"]
+  pkg_goal_round_driver["goal-round-driver"]
+  pkg_client_ui_goal["client-ui-goal"]
   pkg_action_cards["action-cards"]
   svc_actionCards["ctx.actionCards<br/>Optional action cards"]
   pkg_creation_recommendations["creation-recommendations"]
@@ -196,7 +203,6 @@ flowchart LR
   pkg_tool_ask_user["tool-ask-user"]
   pkg_tool_cordis["tool-cordis"]
   pkg_tool_skill["tool-skill"]
-  pkg_tool_todo["tool-todo"]
   pkg_user_questions["user-questions"]
   svc_userQuestions["ctx.userQuestions<br/>Human question/answer seam"]
   pkg_plan_mode["plan-mode"]
@@ -491,6 +497,7 @@ flowchart LR
   pkg_terminal_panel --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
   pkg_tool_subagent --> svc_subagentModelSelection
+  pkg_tool_todo --> svc_todoPolicy
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
   pkg_user_approval --> svc_approval
@@ -501,6 +508,7 @@ flowchart LR
   pkg_web_fetch_http --> svc_web
   pkg_web_search_deepseek --> svc_web
   pkg_webhook --> svc_webhookRuntime
+  pkg_work_handoff --> svc_workHandoffs
   pkg_workflow --> svc_workflowEngine
   pkg_workflow_ptc --> svc_workflowEngine
   pkg_working_directory --> svc_workingDirectory
@@ -647,6 +655,8 @@ flowchart LR
   svc_systemPrompt --> pkg_tool_web
   svc_systemPrompt --> pkg_tools
   svc_terminals --> pkg_tool_terminal
+  svc_todoPolicy --> pkg_todo_reconcile_driver
+  svc_todoPolicy --> pkg_work_handoff
   svc_tokenMeter --> pkg_compaction_basic
   svc_toolResultPruner --> pkg_compaction_basic
   svc_tools --> pkg_agent_loop
@@ -669,6 +679,9 @@ flowchart LR
   svc_webServer --> pkg_client_hmr
   svc_webServer --> pkg_client_modules
   svc_webhookRuntime --> pkg_webhook_github
+  svc_workHandoffs --> pkg_client_ui_goal
+  svc_workHandoffs --> pkg_goal_round_driver
+  svc_workHandoffs --> pkg_todo_reconcile_driver
   svc_workflowEngine --> pkg_tool_ralph
   svc_workflowEngine --> pkg_tool_workflow
   svc_workingDirectory --> pkg_sdk_jsonrpc_server
@@ -685,6 +698,8 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.todoPolicy` | `service` | [`tool-todo`](../packages/todo/tool-todo) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`work-handoff`](../packages/goal/work-handoff) | - | Owns list purpose, suspension, completion high-water marks and repair accounting. |
+| `ctx.workHandoffs` | `service` | [`work-handoff`](../packages/goal/work-handoff) | - | [`goal-round-driver`](../packages/goal/goal-round-driver), [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | Saves checkpoints and host observations; explicit continuation retains source restrictions. |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | Owns the card tool, card state, user actions and status notices; card kinds register their actions and handlers. |
 | `ctx.orchestrations` | `service` | [`orchestration`](../packages/experimental/dsh-orchestration) | - | [`client-ui-orchestration`](../packages/experimental/client-ui-orchestration) | - | Owns logged session mode and pool settings; registers a model router on the subagent service, which retains child activation and teardown ownership. |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/experimental/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/experimental/client-ui-plugin-recommendations) | - | Reads the current catalog text of an official plugin card and enables the plugin through the profile plugin manager after a click. |

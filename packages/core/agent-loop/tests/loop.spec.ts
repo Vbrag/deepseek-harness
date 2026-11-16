@@ -9,7 +9,7 @@ import SessionStore, { type SessionId, TurnEndReason } from '@deepseek-ai/dsh-se
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
-import AgentRegistry, { type Agent, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent, type AssistantStreamFrame, type TurnStoppingCause } from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -1232,8 +1232,10 @@ describe('agent loop', () => {
     const agent = await ctx.agentLoop.create(brandString<SessionId>('a1'), { provider: 'mock', model: 'mock' })
 
     let steps = 0
+    const causes: TurnStoppingCause[] = []
     ctx.on('session/event', (_session, event) => { if (event.type === 'step/end') steps++ })
-    ctx.on('agent/turn-stopping', ({ agent: subject }) => {
+    ctx.on('agent/turn-stopping', ({ agent: subject, cause }) => {
+      causes.push(cause)
       if (steps < 3) {
         subject.steer(createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'loop-test' } }))
       }
@@ -1243,6 +1245,7 @@ describe('agent loop', () => {
     await waitForIdle(ctx, agent)
     expect(steps).toBe(3)
     expect(adapter.requests).toHaveLength(3)
+    expect(causes).toEqual(['model-finished', 'model-finished', 'model-finished'])
   })
 
   it('a tool can conclude the turn despite owing a follow-up request', async () => {
@@ -1259,12 +1262,15 @@ describe('agent loop', () => {
     }))
     const agent = await ctx.agentLoop.create(brandString<SessionId>('a1'), { provider: 'mock', model: 'mock' })
 
+    const causes: TurnStoppingCause[] = []
+    ctx.on('agent/turn-stopping', ({ cause }) => { causes.push(cause) })
     send(agent, 'go')
     await waitForIdle(ctx, agent)
     // only one model call despite the tool call requesting a follow-up
     expect(adapter.requests).toHaveLength(1)
     // The tool still executes and durably records its result.
     expect(agent.session.snapshotEvents().some(e => e.type === 'tool/result')).toBe(true)
+    expect(causes).toEqual(['tool-concluded'])
   })
 
   it('continues for steering that arrived during a concluding tool step', async () => {
@@ -1286,6 +1292,8 @@ describe('agent loop', () => {
       },
     }))
 
+    const causes: TurnStoppingCause[] = []
+    ctx.on('agent/turn-stopping', ({ cause }) => { causes.push(cause) })
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
@@ -1298,6 +1306,7 @@ describe('agent loop', () => {
       .filter(block => block.type === 'text')
       .map(block => block.text)
     expect(texts).toContain('late steering')
+    expect(causes).toEqual(['model-finished'])
   })
 
   it.each(['provider', 'model'] as const)('rejects an agent/request replacement that changes %s after step preparation', async (field) => {
@@ -1435,33 +1444,41 @@ describe('agent loop', () => {
     const agent = await ctx.agentLoop.create(brandString<SessionId>('a1'), { provider: 'mock', model: 'mock' })
 
     const reasons: TurnEndReason[] = []
+    const causes: TurnStoppingCause[] = []
     ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+    ctx.on('agent/turn-stopping', ({ cause }) => { causes.push(cause) })
 
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
     expect(adapter.requests).toHaveLength(1)
     expect(reasons).toEqual([{ kind: 'max-tokens' }])
+    expect(causes).toEqual(['output-limit'])
     // Assert the durable row, not only the live listener.
     const turnEnd = agent.session.snapshotEvents().findLast(e => e.type === 'turn/end')
     expect(turnEnd!.data.reason).toEqual({ kind: 'max-tokens' })
   })
 
-  it('a max-tokens step earlier in a turn still surfaces as max-tokens after a later completed step', async () => {
-    // Step 1 is cut off (max-tokens, no tool calls → would stop by default), so continuation
-    // must be FORCED to reach step 2 which finishes normally (stop).
+  it.each(['model-finished', 'tool-concluded'] as const)('keeps output-limit after a later %s step', async (laterCause) => {
     const adapter = new MockAdapter([
       maxTokensResponse('first half'),
-      textResponse('second half'),
+      laterCause === 'model-finished' ? textResponse('second half') : toolCallResponse('finish', 'finalize', {}),
     ])
     const ctx = await harness(adapter)
+    ctx.tools.register(defineContentToolFixture({
+      name: 'finalize', description: '', parameters: {},
+      async execute(_args, exec) {
+        exec.concludeTurn()
+        return []
+      },
+    }))
     const agent = await ctx.agentLoop.create(brandString<SessionId>('a1'), { provider: 'mock', model: 'mock' })
 
     let steps = 0
+    const causes: TurnStoppingCause[] = []
     ctx.on('session/event', (_session, event) => { if (event.type === 'step/end') steps++ })
-    // Force exactly one continuation (step 1 → step 2), then defer to default
-    // (step 2 is a plain stop with no tool calls → stops).
-    ctx.on('agent/turn-stopping', ({ agent: subject }) => {
+    ctx.on('agent/turn-stopping', ({ agent: subject, cause }) => {
+      causes.push(cause)
       if (steps < 2) {
         subject.steer(createUserMessage({ content: [{ type: 'text', text: 'continue after truncation' }], source: { kind: 'max-tokens-test' } }))
       }
@@ -1498,6 +1515,7 @@ describe('agent loop', () => {
     // A max-token step is sticky: the later completed step must not
     // downgrade the turn outcome.
     expect(reasons).toEqual([{ kind: 'max-tokens' }])
+    expect(causes).toEqual(['output-limit', 'output-limit'])
   })
 
   it('a completed step after no max-tokens keeps the turn completed (max-tokens does not leak across turns)', async () => {
@@ -1508,7 +1526,9 @@ describe('agent loop', () => {
     const agent = await ctx.agentLoop.create(brandString<SessionId>('a1'), { provider: 'mock', model: 'mock' })
 
     const reasons: TurnEndReason[] = []
+    const causes: TurnStoppingCause[] = []
     ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+    ctx.on('agent/turn-stopping', ({ cause }) => { causes.push(cause) })
 
     send(agent, 'first')
     await waitForIdle(ctx, agent)
@@ -1516,6 +1536,7 @@ describe('agent loop', () => {
     await waitForIdle(ctx, agent)
 
     expect(reasons).toEqual([{ kind: 'max-tokens' }, { kind: 'completed' }])
+    expect(causes).toEqual(['output-limit', 'model-finished'])
   })
 
   it('does not dispatch tool calls from a max-tokens-truncated step', async () => {

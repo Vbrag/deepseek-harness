@@ -2,6 +2,18 @@
 
 # The fixture corpus must not depend on the developer's personal skill roots.
 # Ordinary product launches retain the sdk profile's default skill discovery.
+- insert:
+    - id: portable-sdk-skills
+      name: '../bash-tool/portable-skills-fixture.ts'
+- id: bash-sandbox
+  disabled: false
+- id: pwsh-sandbox
+  disabled: true
+- id: tool-bash
+  disabled: false
+- id: tool-pwsh
+  disabled: true
+
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:

@@ -27,6 +27,32 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
+/** Whether a newly authored list describes execution or a proposed plan. */
+export type TodoListPurpose = 'current-task' | 'proposal'
+
+/** Durable execution state; historical `limit` records remain automatically recoverable. */
+export type TodoDisposition = 'active' | 'paused' | 'waiting' | 'limit'
+
+/** Durable continuation policy; legacy lists require explicit human confirmation. */
+export interface TodoPolicyView {
+  readonly purpose: TodoListPurpose | 'legacy'
+  readonly disposition: TodoDisposition
+  readonly completedHighWater: number
+  readonly repairAttempts: number
+  readonly reason?: string
+}
+
+/** Attribution for logged current-task recovery and same-turn repair input. */
+export interface TodoReconcileMessageSource {
+  readonly kind: 'todo-reconcile'
+}
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'todo-reconcile': TodoReconcileMessageSource
+  }
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
@@ -35,6 +61,8 @@ declare module '@deepseek-ai/dsh-session/types' {
      * it. Log-only UI state; never derived history.
      */
     'todo/write': { todos: TodoItem[] }
+    /** Whole-value continuation policy, separate from the portable list. */
+    'todo/policy': TodoPolicyView
   }
 }
 
@@ -50,5 +78,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      * pre-first-write value stays expressible.
      */
     todos: SessionProjectionSummaryExcluded<TodoItem[]> | null
+    /** Current list classification and repair accounting, absent for an empty list. */
+    todoPolicy: TodoPolicyView | null
   }
 }

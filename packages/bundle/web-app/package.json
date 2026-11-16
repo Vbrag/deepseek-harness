@@ -213,6 +213,7 @@
     "@deepseek-ai/dsh-shell-env": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis-plugin-group": "workspace:~",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",

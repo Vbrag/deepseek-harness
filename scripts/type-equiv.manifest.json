@@ -303,6 +303,36 @@
       "source": "packages/goal/goal/src/domain.ts"
     },
     {
+      "doc": "docs/subsystems/goal.md",
+      "symbol": "WorkHandoffId",
+      "source": "packages/goal/work-handoff/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/goal.md",
+      "symbol": "WorkStopReason",
+      "source": "packages/goal/work-handoff/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/goal.md",
+      "symbol": "WorkCheckpoint",
+      "source": "packages/goal/work-handoff/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/goal.md",
+      "symbol": "WorkHandoffGoal",
+      "source": "packages/goal/work-handoff/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/goal.md",
+      "symbol": "WorkHandoffView",
+      "source": "packages/goal/work-handoff/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/goal.md",
+      "symbol": "WorkCaptureRequest",
+      "source": "packages/goal/work-handoff/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/agent-team.md",
       "symbol": "TeamTaskView",
       "source": "packages/team/agent-team/src/types.ts"
@@ -3027,6 +3057,31 @@
       "doc": "docs/subsystems/subagent.md",
       "source": "packages/subagent/subagent/src/types.ts",
       "symbol": "SubagentModelRouter"
+    },
+    {
+      "doc": "docs/subsystems/todo.md",
+      "symbol": "TodoListPurpose",
+      "source": "packages/todo/tool-todo/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/todo.md",
+      "symbol": "TodoDisposition",
+      "source": "packages/todo/tool-todo/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/todo.md",
+      "symbol": "TodoPolicyView",
+      "source": "packages/todo/tool-todo/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/todo.md",
+      "symbol": "TodoReconcileMessageSource",
+      "source": "packages/todo/tool-todo/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/core.md",
+      "symbol": "TurnStoppingCause",
+      "source": "packages/core/agent/src/runtime-types.ts"
     }
   ]
 }

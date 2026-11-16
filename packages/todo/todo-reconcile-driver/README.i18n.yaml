@@ -3,62 +3,44 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/todo/todo-reconcile-driver/README.md
 /:
-  en: 86b1cf56088697e1
-  zh: 3527fa4b4eccd9b2
+  en: a310c5fa9326a897
+  zh: a2edc639fc42bab7
 /deepseek-ai-dsh-todo-reconcile-driver:
   en: 3f4e064fd043b837
   zh: a42719c27089758d
 /deepseek-ai-dsh-todo-reconcile-driver/summary:
-  en: e20cee5badc7dfd8
-  zh: 954d556c9a6d75d6
+  en: c71c7f08ac0a4e3d
+  zh: 5bba617f14cfc04c
 /deepseek-ai-dsh-todo-reconcile-driver/table-of-contents:
   en: d152484eb41ac6b4
-  zh: dbb94479b1334720
+  zh: 09388d293f9be9cb
 /deepseek-ai-dsh-todo-reconcile-driver/use-this-package:
-  en: 7c9b28b33af3783a
-  zh: 25a3824214a5c8a3
-/deepseek-ai-dsh-todo-reconcile-driver/use-this-package/compose-it:
-  en: 49153deb9c680861
-  zh: b0c490337a9c3bec
-/deepseek-ai-dsh-todo-reconcile-driver/use-this-package/when-a-reconcile-occurs:
-  en: 16f2da60d50cd7c7
-  zh: 204e4079f2b74369
-/deepseek-ai-dsh-todo-reconcile-driver/use-this-package/when-reconcile-does-not-happen:
-  en: da3d97ba0bcd17d3
-  zh: f21abeee3946a2c5
+  en: 1966aca24794e973
+  zh: a7bacf1ddbb920e8
 /deepseek-ai-dsh-todo-reconcile-driver/understand-the-implementation:
-  en: 84b5dc9c0fd8c05d
-  zh: fd5309e641f1b9e8
-/deepseek-ai-dsh-todo-reconcile-driver/understand-the-implementation/design:
-  en: 6df69c2283866d60
-  zh: 399167349fbe2ab1
-/deepseek-ai-dsh-todo-reconcile-driver/understand-the-implementation/source-map:
-  en: 4123e09f563fa364
-  zh: 14996a2f1f88b192
-/deepseek-ai-dsh-todo-reconcile-driver/understand-the-implementation/the-reconcile-prompt:
-  en: 77838d1310c5073f
-  zh: f4e8cb092b15b481
+  en: f2c388fc96c13501
+  zh: b3ce0e561bc3b655
 /deepseek-ai-dsh-todo-reconcile-driver/further-exploration:
-  en: 7f2284fca472f88e
-  zh: 5cb51e20582e90a7
+  en: 5ee5ee17b184f100
+  zh: aff6925ed4f0c7e6
 /deepseek-ai-dsh-todo-reconcile-driver/model-experience:
   en: 215e7ba838619b7b
-  zh: 215e7ba838619b7b
-/deepseek-ai-dsh-todo-reconcile-driver/model-experience/reconcile-prompt:
-  en: c4529ba5c7c79ee3
-  zh: c4529ba5c7c79ee3
-/deepseek-ai-dsh-todo-reconcile-driver/model-experience/reconcile-prompt/what-the-model-sees:
-  en: a773aa0914465094
-  zh: 069ccc181b353cb9
-/deepseek-ai-dsh-todo-reconcile-driver/model-experience/reconcile-prompt/token-effect:
-  en: 8ddf511d031d0f81
-  zh: 3234cbe5cf2524e2
-/deepseek-ai-dsh-todo-reconcile-driver/model-experience/reconcile-prompt/kv-cache-effect:
-  en: dff668dd78eff18a
-  zh: 7b0f3018b0cde3c0
+  zh: a311da3843709f90
+/deepseek-ai-dsh-todo-reconcile-driver/model-experience/same-turn-repair:
+  en: 7ccfda5ffc55518d
+  zh: 07153c1aa15b7a79
+/deepseek-ai-dsh-todo-reconcile-driver/model-experience/same-turn-repair/what-the-model-sees:
+  en: ce599a13ca92c1de
+  zh: 768cb879e2740846
+/deepseek-ai-dsh-todo-reconcile-driver/model-experience/same-turn-repair/token-effect:
+  en: d75b9d6f1bedad6e
+  zh: d18571189230e08f
+/deepseek-ai-dsh-todo-reconcile-driver/model-experience/same-turn-repair/kv-cache-effect:
+  en: dee731f5dec2c5bd
+  zh: 6827ec00d5846fa3
 /deepseek-ai-dsh-todo-reconcile-driver/known-limitations-and-deferred-work:
-  en: 931f0b7ec83cd39d
-  zh: 8eb7a903df024193
+  en: 38504b47c7e4a0e7
+  zh: 187df42750f23744
 /deepseek-ai-dsh-todo-reconcile-driver/known-limitations-and-deferred-work/dev-note:
-  en: 0d964fbdceb771e3
-  zh: 06b8f601a5609126
+  en: 90702a8f1f1024a3
+  zh: c64d5813bd9c3180

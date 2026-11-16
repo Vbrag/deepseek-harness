@@ -280,6 +280,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-goal` | yes | Event-sourced same-session goal state and lifecycle service for the DeepSeek Harness |
 | `@deepseek-ai/dsh-goal-round-driver` | no | Race-fenced same-session goal-round driver |
 | `@deepseek-ai/dsh-tool-goal` | yes | Model-facing same-session goal tools with execution-time authority checks |
+| `@deepseek-ai/dsh-work-handoff` | yes | Durable unfinished-work checkpoints, handoffs, and explicit session continuation |
 
 ## guard
 
@@ -523,7 +524,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
-| `@deepseek-ai/dsh-todo-reconcile-driver` | no | Race-fenced resume re-conciliation for the persisted todo list |
+| `@deepseek-ai/dsh-todo-reconcile-driver` | yes | Bounded continuation of authorized unfinished todo tasks |
 | `@deepseek-ai/dsh-tool-todo` | yes | Model-facing todo_write tool over the DeepSeek Harness event-sourced session log |
 
 ## typert

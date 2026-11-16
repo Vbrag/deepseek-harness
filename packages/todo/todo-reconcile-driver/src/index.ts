@@ -1,399 +1,203 @@
-/**
- * Same-session resume to-do reconciliation over public agent, session, goal,
- * and session-projection services. On a resumed or freshly started session
- * that carries a persisted non-empty to-do list and a current goal, it issues
- * one model prompt asking the model to reconcile the list statuses via
- * `todo_write` — instead of asking the human to re-derive the plan.
- * @module @deepseek-ai/dsh-todo-reconcile-driver
- */
+/** Same-turn repair of prematurely finished current tasks, with durable recovery handoffs. */
 
-import { isDeepStrictEqual } from 'node:util'
-import { FiberState } from '@deepseek-ai/cordis'
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import type { GoalView } from '@deepseek-ai/dsh-goal'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageId, MessageSource, UserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
+import { setImmediate as nextImmediate } from 'node:timers/promises'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { emitAgentEvent, type Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
+import type { TodoItem, TodoPolicyView, TodoPolicyService } from '@deepseek-ai/dsh-tool-todo'
+import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-subagent'
-import { renderTodoReconcilePrompt } from './prompt.ts'
+import type {} from '@deepseek-ai/dsh-work-handoff'
+import type {} from '@deepseek-ai/dsh-plan-mode'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 
 export { renderTodoReconcilePrompt } from './prompt.ts'
-
+export type { TodoReconcileMessageSource } from '@deepseek-ai/dsh-tool-todo'
 export const name = 'todo-reconcile-driver'
-export const inject = ['agents', 'goals', 'sessions', 'sessionProjections']
+export const inject = ['agents', 'goals', 'sessions', 'workHandoffs']
 
-/** Message attribution for one admitted resume-reconcile prompt. */
-export interface TodoReconcileMessageSource {
-  readonly kind: 'todo-reconcile'
+/** Configurable recovery-reminder threshold without a new completed-item high-water mark. */
+export interface Config {
+  /** Repairs without net completion before stronger recovery guidance; defaults to three and never stops work. */
+  maxNoProgressRepairs?: number
 }
 
-declare module '@deepseek-ai/dsh-llm' {
-  interface MessageSourceMap {
-    'todo-reconcile': TodoReconcileMessageSource
+/** Deployment validation for the recovery-reminder threshold. */
+export const Config: z<Config> = z.object({ maxNoProgressRepairs: z.number().min(1).step(1).default(3) })
+
+/** Wait for a service-owned operation or the owning turn and plugin to stop. */
+async function waitFor(task: Promise<unknown>, signal: AbortSignal): Promise<void> {
+  let onAbort: () => void = () => {}
+  const aborted = new Promise<void>((resolve) => { onAbort = resolve })
+  if (signal.aborted) onAbort()
+  else signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    await Promise.race([task, aborted])
+  } finally {
+    signal.removeEventListener('abort', onAbort)
   }
 }
 
-/** The single admitted resume-reconcile prompt for one agent lifecycle. */
-interface ReconcileAttempt {
-  readonly messageId: MessageId
-  readonly content: ContentBlock[]
-  phase: 'queued' | 'claimed' | 'admitted'
-  cancelled: boolean
-  stale: boolean
-}
+/**
+ * Install current-task continuation through the stopping extension point.
+ * @param ctx - owners of the list, execution, and recovery handoff.
+ * @param config - deployment's recovery-reminder threshold.
+ */
+export function apply(ctx: Context, config: Config = {}): void {
+  const maxNoProgressRepairs = config.maxNoProgressRepairs ?? 3
+  const unloading = new AbortController()
+  const pending = new Set<Promise<void>>()
+  const recovering = new Set<Agent>()
 
-/** Serialized process-local scheduling state for one exact Agent lifecycle. */
-interface DriverState {
-  readonly agent: Agent
-  attempt: ReconcileAttempt | undefined
-  pending: boolean
-  competingQueued: boolean
-  needsCheckpoint: boolean
-  requested: boolean
-  run: Promise<void> | undefined
-  stopping: boolean
-}
-
-/** Whether a source identifies the driver's own reserved reconcile prompt. */
-function isReconcileSource(source: MessageSource): source is TodoReconcileMessageSource {
-  return source.kind === 'todo-reconcile'
-}
-
-/** Whether the queued message matches the driver's own reservation. */
-function isOwnAttempt(content: readonly ContentBlock[], source: MessageSource, attempt: ReconcileAttempt): boolean {
-  return isReconcileSource(source) && isDeepStrictEqual(content, attempt.content)
-}
-
-/** Human-readable unexpected values for logs. */
-function renderThrown(value: unknown): string {
-  return value instanceof Error ? value.message : String(value)
-}
-
-/** Install one-shot resume reconciliation and its race fences. */
-export function apply(ctx: Context): void {
-  const states = new Map<Agent, DriverState>()
-  // Releases drivers still joining subagents when the plugin unloads.
-  const unloading = Promise.withResolvers<void>()
-
-  /** Create state for an exact currently live agent. */
-  function stateFor(agent: Agent): DriverState {
-    const existing = states.get(agent)
-    if (existing !== undefined) return existing
-    const state: DriverState = {
-      agent,
-      attempt: undefined,
-      pending: false,
-      competingQueued: false,
-      needsCheckpoint: false,
-      requested: false,
-      run: undefined,
-      stopping: false,
-    }
-    states.set(agent, state)
-    return state
+  function policyOf(agent: Agent): TodoPolicyService | undefined {
+    return agent.ctx.get('agentPresets')?.serviceFor(agent, 'todoPolicy') ?? agent.ctx.get('todoPolicy')
   }
 
-  /** The persisted whole to-do list for one session, or undefined when absent. */
-  function currentTodos(session: Session): TodoItem[] | undefined {
-    try {
-      const snapshot = ctx.sessionProjections.snapshot(session)
-      const value: unknown = snapshot.values['todos']
-      return Array.isArray(value) ? (value as TodoItem[]) : undefined
-    } catch (error: unknown) {
-      ctx.logger.warn(`todo-reconcile-driver: could not read todos for "${session.id}": ${renderThrown(error)}`)
-      return undefined
-    }
+  function todosOf(agent: Agent): TodoItem[] {
+    return policyOf(agent)?.listOf(agent.session) ?? []
   }
 
-  /** Read only when the exact Agent remains live. */
-  function currentGoal(state: DriverState): GoalView | undefined {
-    if (ctx.agents.get(state.agent.id) !== state.agent) return undefined
-    return ctx.goals.get(state.agent)
+  function live(agent: Agent, signal: AbortSignal): boolean {
+    return !signal.aborted && ctx.fiber.state === FiberState.ACTIVE && ctx.agents.get(agent.id) === agent
   }
 
-  /** Whether a session resume may issue one reconcile prompt. */
-  function reconciliationDue(todos: TodoItem[] | undefined, goal: GoalView | undefined): boolean {
-    return (todos !== undefined && todos.length > 0) && goal !== undefined
+  function executionPolicy(agent: Agent): TodoPolicyView | undefined {
+    const goal = ctx.goals.get(agent)
+    // Goal continuation and explicit suspension remain owned by the goal service and driver.
+    if (goal !== undefined && goal.phase !== 'complete') return undefined
+    if (!todosOf(agent).some(todo => todo.status !== 'completed')) return undefined
+    return policyOf(agent)?.viewOf(agent.session)
   }
 
-  /** Whether this exact lifecycle is quiescent with no competing prompt. */
-  function readyToDrive(state: DriverState): boolean {
-    return ctx.fiber.state === FiberState.ACTIVE
-      && !state.stopping
-      && ctx.agents.get(state.agent.id) === state.agent
-      && state.agent.status === 'idle'
-      && !state.competingQueued
-  }
-
-  /** Recheck every condition that an awaited checkpoint may have changed. */
-  function readyAfterCheckpoint(state: DriverState): boolean {
-    return readyToDrive(state) && !state.needsCheckpoint
-  }
-
-  /** Process admitted reconciliation at quiescence. */
-  async function drive(state: DriverState): Promise<void> {
-    const { agent } = state
-    if (!readyToDrive(state)) return
-
-    if (state.needsCheckpoint) {
-      state.needsCheckpoint = false
-      try {
-        await ctx.sessions.flush(agent.session)
-      } catch (error: unknown) {
-        ctx.logger.warn(`todo-reconcile-driver: durability checkpoint failed for agent "${agent.id}": ${renderThrown(error)}`)
-        disarm(state)
-        return
+  async function checkpoint(agent: Agent, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return
+    await waitFor(ctx.sessions.flush(agent.session).then((saved) => {
+      if (!saved && !signal.aborted) {
+        throw new HarnessError('Cannot continue unfinished work because its Session checkpoint was not saved. '
+          + 'Configure durable Session storage, then choose Continue.', 'TODO_DURABILITY_REQUIRED')
       }
-      if (!readyAfterCheckpoint(state)) return
-    }
+    }), signal)
+  }
 
-    const attempt = state.attempt
-    if (attempt !== undefined) {
-      // A reservation already queued is the only admission we make; never
-      // enqueue a second reconcile in this lifecycle.
-      state.attempt = undefined
-      state.pending = false
-      return
-    }
+  async function capture(agent: Agent,
+    reason: 'todo-limit' | 'paused' | 'waiting' | 'legacy-confirmation', signal: AbortSignal): Promise<void> {
+    if (!live(agent, signal)) return
+    await ctx.workHandoffs.capture(agent, { reason, todos: todosOf(agent), signal,
+      todoRepairs: { attempts: policyOf(agent)?.viewOf(agent.session)?.repairAttempts ?? 0, limit: maxNoProgressRepairs } })
+  }
 
-    if (!state.pending) return
-    // Prefer the latest durable goal and the currently projected list.
-    const goal = currentGoal(state)
-    const todos = currentTodos(agent.session)
-    if (todos === undefined || todos.length === 0 || goal === undefined) {
-      state.pending = false
-      return
+  async function suspendAndCapture(agent: Agent, signal: AbortSignal): Promise<void> {
+    let policy = executionPolicy(agent)
+    if (!live(agent, signal) || policy === undefined || policy.purpose === 'proposal') return
+    if (policy.purpose === 'legacy') return capture(agent, 'legacy-confirmation', signal)
+    if (policy.disposition === 'active') {
+      await policyOf(agent)?.suspend(agent, 'paused', 'Execution stopped before the current task finished')
     }
-    // A reconcile started while descendants progress would only wait for them.
+    if (!live(agent, signal)) return
+    policy = executionPolicy(agent)
+    if (policy === undefined || policy.purpose === 'proposal') return
+    return capture(agent, policy.disposition === 'limit' ? 'todo-limit'
+      : policy.disposition === 'waiting' ? 'waiting' : 'paused', signal)
+  }
+
+  async function repair(agent: Agent, turnSignal: AbortSignal): Promise<void> {
+    const signal = AbortSignal.any([turnSignal, unloading.signal])
+    if (!live(agent, signal)) return
+    let policy = executionPolicy(agent)
+    if (policy === undefined || policy.purpose === 'proposal') return
+    await checkpoint(agent, signal)
+    if (!live(agent, signal)) return
     const subagents = ctx.get('subagents')
     if (subagents !== undefined) {
-      await Promise.race([subagents.waitForTreeWork(agent), unloading.promise])
-      if (!readyAfterCheckpoint(state)) return
+      await waitFor(subagents.waitForTreeWork(agent), signal)
+      if (!live(agent, signal)) return
     }
-
-    state.pending = false
-    const content = renderTodoReconcilePrompt(todos, goal)
-    const message = createUserMessage({ content, source: { kind: 'todo-reconcile' } })
-    const reservation: ReconcileAttempt = {
-      messageId: message.id,
-      content,
-      phase: 'queued',
-      cancelled: false,
-      stale: false,
+    await checkpoint(agent, signal)
+    if (!live(agent, signal)) return
+    policy = executionPolicy(agent)
+    if (policy === undefined || policy.purpose === 'proposal') return
+    const planMode = agent.ctx.get('agentPresets')?.serviceFor(agent, 'planMode') ?? agent.ctx.get('planMode')
+    const plan = planMode?.get(agent)
+    if (plan?.active === true || plan?.pending === true) return suspendAndCapture(agent, signal)
+    if (policy.purpose === 'legacy') return capture(agent, 'legacy-confirmation', signal)
+    if (policy.disposition === 'paused' || policy.disposition === 'waiting') {
+      return capture(agent, policy.disposition, signal)
     }
-    state.attempt = reservation
-    try {
-      agent.followup(message)
-    } catch (error: unknown) {
-      state.attempt = undefined
-      ctx.logger.warn(`todo-reconcile-driver: could not queue reconcile prompt for agent "${agent.id}": ${renderThrown(error)}`)
-    }
+    if (policy.disposition === 'limit' && !policyOf(agent)?.recoverAuthorizedTask(agent)) return
+    const reserved = policyOf(agent)?.recordRepair(agent)
+    await checkpoint(agent, signal)
+    if (!live(agent, signal) || reserved === undefined) return
+    policy = executionPolicy(agent)
+    if (policy === undefined || policy.purpose !== 'current-task' || policy.disposition !== 'active'
+      || policy.repairAttempts !== reserved.repairAttempts || policy.completedHighWater !== reserved.completedHighWater) return
+    const remaining = todosOf(agent).filter(todo => todo.status !== 'completed')
+    agent.steer(createUserMessage({
+      source: { kind: 'todo-reconcile' },
+      content: [{ type: 'text', text: '<todo_continue>\n'
+        + 'The authorized current task still has unfinished work. Continue executing the next item now; '
+        + 'a statement of intent does not complete it. Verify completed work and update the whole list with todo_write. '
+        + 'If the user requested a pause or required input is missing, record paused or waiting with a concrete reason.\n'
+        + (reserved.repairAttempts >= maxNoProgressRepairs
+          ? 'Repeated responses have not increased verified completion. Re-read the latest failure and tool results, '
+            + 'change the approach, and execute a concrete diagnostic or implementation action before responding.\n' : '')
+        + remaining.map(todo => `- ${JSON.stringify(todo.content)} [${todo.status}]`).join('\n')
+        + '\n</todo_continue>' }],
+    }))
   }
 
-  /** Remove the driver's automatic authority for this lifecycle. */
-  function disarm(state: DriverState): void {
-    state.pending = false
+  function track(task: Promise<void>): Promise<void> {
+    pending.add(task)
+    return task.finally(() => { pending.delete(task) })
   }
 
-  /** Coalesce triggers onto one agent-local serialized driver. */
-  function requestDrive(state: DriverState): void {
-    /* v8 ignore next -- teardown may race a final trigger after synchronously closing the step fence */
-    if (state.stopping) return
-    state.requested = true
-    if (state.run !== undefined) return
-    let run: Promise<void>
-    try {
-      run = ctx.agents.withoutInitiator(async () => {
-        while (state.requested && !state.stopping) {
-          state.requested = false
-          try {
-            await drive(state)
-          } catch (error: unknown) {
-            ctx.logger.warn(`todo-reconcile-driver: driver failed for agent "${state.agent.id}": ${renderThrown(error)}`)
-            disarm(state)
-          }
-        }
+  function recover(agent: Agent, creationSignal?: AbortSignal): void {
+    if (recovering.has(agent)) return
+    const initial = executionPolicy(agent)
+    if (initial === undefined || initial.purpose === 'proposal') return
+    const signal = creationSignal === undefined ? unloading.signal : AbortSignal.any([creationSignal, unloading.signal])
+    recovering.add(agent)
+    const task = ctx.agents.withoutInitiator(async () => {
+      await nextImmediate()
+      // Factory announcement runs inside maintenance; never hold its serial listener while waiting for admission.
+      await waitFor(agent.whenIdle(), signal)
+      if (!live(agent, signal)) return
+      const policy = executionPolicy(agent)
+      if (policy === undefined || policy.purpose === 'proposal') return
+      if (policy.purpose === 'current-task' && (policy.disposition === 'active' || policy.disposition === 'limit')) {
+        await ctx.workHandoffs.recoverTodos(agent, signal)
+        return
+      }
+      const saved = ctx.workHandoffs.viewOf(agent.session)
+      if (saved?.saved === true && saved.turn === ctx.agents.turnBoundaryOf(agent.session).lastTurn) return
+      await suspendAndCapture(agent, signal)
+    }).catch((error: unknown) => {
+      if (!live(agent, signal)) return
+      emitAgentEvent(ctx, agent, 'agent/error', {
+        turn: ctx.agents.turnBoundaryOf(agent.session).lastTurn, step: 0,
+        error: error instanceof HarnessError ? error : new HarnessError(
+          'Todo continuation could not prepare its saved work. Check Session storage and retry.',
+          'TODO_RECOVERY_FAILED', { cause: error }),
       })
-    } catch (error: unknown) {
-      ctx.logger.warn(`todo-reconcile-driver: could not start driver for agent "${state.agent.id}": ${renderThrown(error)}`)
-      disarm(state)
-      return
-    }
-    state.run = run
-    const retire = (): void => {
-      state.run = undefined
-      if (state.requested && !state.stopping) requestDrive(state)
-    }
-    void run.then(retire, (error: unknown) => {
-      ctx.logger.warn(`todo-reconcile-driver: driver task rejected for agent "${state.agent.id}": ${renderThrown(error)}`)
-      disarm(state)
-      retire()
-    })
+    }).finally(() => { recovering.delete(agent) })
+    void track(task)
   }
 
-  // One composite effect keeps the step fence installed until this
-  // plugin's own scheduling tasks settle.
   ctx.effect(function* () {
-    ctx.on('agent/error', ({ agent }) => {
-      disarm(stateFor(agent))
+    ctx.on('agent/turn-stopping', ({ agent, signal, cause }) => {
+      if (cause === 'tool-concluded') return track(suspendAndCapture(agent, AbortSignal.any([signal, unloading.signal])))
+      if (cause !== 'model-finished') return
+      return track(repair(agent, signal))
     })
-
-    ctx.on('agent/disposed', ({ agent }) => { states.delete(agent) })
-    ctx.on('agent/created', ({ agent, source }) => {
-      const state = stateFor(agent)
-      state.attempt = undefined
-      state.competingQueued = false
-      state.needsCheckpoint = false
-      // A fresh resume/startup may reconcile a persisted list; `clear` and
-      // `compact` must not re-trigger.
-      if (source === 'resume' || source === 'startup') {
-        const goal = currentGoal(state)
-        const todos = currentTodos(agent.session)
-        if (reconciliationDue(todos, goal)) {
-          state.pending = true
-          requestDrive(state)
-        }
-      }
+    ctx.on('agent/created', ({ agent, source, signal }): undefined => {
+      if (source !== 'resume' && source !== 'startup') return undefined
+      recover(agent, signal)
+      return undefined
     })
-    ctx.on('agent/status', ({ agent, status }) => {
-      const state = stateFor(agent)
-      if (status === 'idle') {
-        state.competingQueued = false
-        const attempt = state.attempt
-        // A reservation still queued when the agent reaches idle cannot run:
-        // withdraw it so human input queued behind it is not stranded.
-        if (attempt !== undefined && (attempt.phase === 'queued' || attempt.cancelled)) {
-          state.attempt = undefined
-          try {
-            if (attempt.phase === 'queued') agent.inbox.remove(attempt.messageId)
-          } catch (error: unknown) {
-            ctx.logger.warn(`todo-reconcile-driver: could not settle reconcile prompt for agent "${agent.id}": ${renderThrown(error)}`)
-          }
-        }
-        requestDrive(state)
-      }
-    })
-
-    ctx.on('agent/inbox/inserted', ({ agent, message }) => {
-      if (!agent.inbox.nextTurn.some(candidate => candidate.id === message.id)) return
-      const state = stateFor(agent)
-      const attempt = state.attempt
-      if (attempt !== undefined && isOwnAttempt(message.content, message.source, attempt)) return
-      state.competingQueued = true
-      if (attempt?.phase === 'queued') attempt.stale = true
-    })
-    ctx.on('agent/inbox/claimed', ({ agent, message }) => {
-      const state = stateFor(agent)
-      const attempt = state.attempt
-      if (attempt !== undefined && isOwnAttempt(message.content, message.source, attempt)) {
-        attempt.phase = 'claimed'
-      }
-    })
-    ctx.on('agent/inbox/discarded', ({ agent, message }) => {
-      const state = stateFor(agent)
-      const attempt = state.attempt
-      if (attempt !== undefined && isOwnAttempt(message.content, message.source, attempt)) {
-        attempt.cancelled = true
-      }
-    })
-
-    ctx.on('session/event', (session: Session, event: SessionEvent) => {
-      const agent = ctx.agents.get(session.id)
-      if (agent === undefined || agent.session !== session) return
-      const state = stateFor(agent)
-      if (event.type === 'user/message') {
-        const source = event.data.source
-        if (isReconcileSource(source) && state.attempt !== undefined
-          && event.data.id === state.attempt.messageId) {
-          state.attempt.phase = 'admitted'
-        }
-      }
-    })
-
-    /** Fail closed unless the queued prompt is still the driver's own. */
-    function validReservation(state: DriverState, content: readonly ContentBlock[], source: MessageSource): boolean {
-      const attempt = state.attempt
-      return ctx.fiber.state === FiberState.ACTIVE
-        && !state.stopping && attempt !== undefined && attempt.phase === 'claimed'
-        && !attempt.stale && isOwnAttempt(content, source, attempt)
-    }
-
-    ctx.on('agent/pre-step', async ({ agent, messages, signal }, next): Promise<PreStepDecision> => {
-      const submitted = messages.find((message): message is UserMessage & { source: TodoReconcileMessageSource } =>
-        isReconcileSource(message.source))
-      if (submitted === undefined) return next()
-      const { content, source } = submitted
-      const state = stateFor(agent)
-      let valid = false
-      try {
-        valid = validReservation(state, content, source)
-      } catch (error: unknown) {
-        ctx.logger.warn(`todo-reconcile-driver: pre-step check failed for agent "${agent.id}": ${renderThrown(error)}`)
-        disarm(state)
-      }
-      if (!valid) {
-        state.attempt = undefined
-        return { kind: 'reject' }
-      }
-      let decision: PreStepDecision
-      try {
-        decision = await next()
-      } catch (error: unknown) {
-        if (signal.aborted) throw error
-        // A throwing downstream hook drops the whole step proposal. Clear the
-        // reservation before the balanced no-step turn returns to idle.
-        state.attempt = undefined
-        requestDrive(state)
-        throw error
-      }
-      if (signal.aborted) return decision
-      if (decision.kind === 'reject') {
-        state.attempt = undefined
-        return decision
-      }
-      try {
-        valid = validReservation(state, content, source)
-      } catch (error: unknown) {
-        ctx.logger.warn(`todo-reconcile-driver: post-decision check failed for agent "${agent.id}": ${renderThrown(error)}`)
-        disarm(state)
-        valid = false
-      }
-      if (!valid) {
-        state.attempt = undefined
-        return { kind: 'reject' }
-      }
-      return { ...decision, startsRequestSeries: true }
-    })
-
-    // Loading a lifecycle driver over existing agents never inherits hidden
-    // automatic authority from an earlier producer instance.
-    for (const agent of ctx.agents.list()) {
-      disarm(stateFor(agent))
-    }
-
-    // Yielded after listener registration, so this close runs first and the
-    // composite effect removes listeners only after its promise settles.
+    for (const agent of ctx.agents.list()) recover(agent)
     yield async () => {
-      unloading.resolve()
-      const waits: Promise<void>[] = []
-      for (const state of states.values()) {
-        state.stopping = true
-        disarm(state)
-        const attempt = state.attempt
-        if (attempt !== undefined) {
-          attempt.stale = true
-          /* v8 ignore next -- followup reserves the live agent before publishing a queued attempt */
-          if (state.agent.status === 'running') {
-            state.agent.cancel({ kind: 'parent' })
-            waits.push(state.agent.whenIdle())
-          }
-        }
-        if (state.run !== undefined) waits.push(state.run)
-      }
-      await Promise.allSettled(waits)
-      states.clear()
+      unloading.abort()
+      await Promise.allSettled(pending)
     }
-  }, 'todo-reconcile-driver lifecycle')
+  }, 'todo continuation policy')
 }

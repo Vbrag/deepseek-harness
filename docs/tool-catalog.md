@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-work-handoff` | `work_checkpoint` | `ctx.tools`, `ctx.agents`, `ctx.sessions`, `ctx.sessionProjections`, `a calling Agent` | `tool/call`, `work-handoff/checkpoint`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
@@ -52,6 +53,106 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-work-handoff"></a>
+
+## `@deepseek-ai/dsh-work-handoff`
+
+### `work_checkpoint`
+
+Save a concise structured handoff before a stopping limit. Distinguish verified evidence from unverified claims; the complete checkpoint must fit 16384 characters.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "completed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "remaining": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "task",
+          "nextActions",
+          "references"
+        ]
+      }
+    },
+    "validation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unknown"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "command",
+          "result",
+          "evidence"
+        ]
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "completed",
+    "remaining",
+    "validation",
+    "blockers"
+  ]
+}
+```
+
+Source: [`packages/goal/work-handoff/src/index.ts`](../packages/goal/work-handoff/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 
@@ -2647,12 +2748,33 @@ Four task-board tools share the subagent tree’s root Session. Enabling Team mo
 
 ### `todo_write`
 
-Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done.
+Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. Classify a new list as current-task for authorized execution or proposal for planning only. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done. Set disposition paused or waiting with a reason when the user requests a pause or further input is required.
 
 ```json
 {
   "type": "object",
   "properties": {
+    "purpose": {
+      "type": "string",
+      "description": "Required for a new nonempty list: current-task executes authorized work; proposal only records a plan.",
+      "enum": [
+        "current-task",
+        "proposal"
+      ]
+    },
+    "disposition": {
+      "type": "string",
+      "description": "Pause or wait when instructed by the user or awaiting required input.",
+      "enum": [
+        "active",
+        "paused",
+        "waiting"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Required explanation when disposition is paused or waiting."
+    },
     "todos": {
       "type": "array",
       "description": "The COMPLETE task list, replacing any previous list.",
