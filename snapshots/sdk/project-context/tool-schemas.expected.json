@@ -1,0 +1,96 @@
+{
+  "initial": [],
+  "changes": [
+    [
+      {
+        "name": "project_context_read",
+        "description": "Read complete project Markdown documents and retain their exact versions before updating or consolidating them. Use relative paths. This does not authorize replacing instruction files, README entrypoints, scoped, generated, archived, or vendor documents.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "paths"
+          ]
+        }
+      },
+      {
+        "name": "project_context_update",
+        "description": "Finish the project-document assessment: updated publishes current project context, unchanged confirms it is current, or deferred records a concrete blocker. Preserve unique facts and rationale before consolidating observed ordinary Markdown guides. Never treat unfinished task work or an unverified test as complete. Context replaces only the managed context section; other authored text is preserved.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "unchanged",
+                "deferred"
+              ]
+            },
+            "summary": {
+              "type": "string",
+              "description": "Specific changes, why existing context is current, or the concrete blocker."
+            },
+            "context": {
+              "type": "string",
+              "description": "Complete current project facts for the managed canonical section; required for updated."
+            },
+            "guideUpdates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "oldText": {
+                    "type": "string"
+                  },
+                  "newText": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "oldText",
+                  "newText"
+                ]
+              }
+            },
+            "forwardingStubs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "oldText": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "oldText"
+                ]
+              }
+            }
+          },
+          "required": [
+            "outcome",
+            "summary"
+          ]
+        }
+      }
+    ]
+  ]
+}

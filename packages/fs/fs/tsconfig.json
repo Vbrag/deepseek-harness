@@ -19,7 +19,7 @@
       "path": "../../util/brand"
     },
     {
-      "path": "../../llm/llm"
+      "path": "../../util/error"
     },
     {
       "path": "../../sandbox/sandbox"

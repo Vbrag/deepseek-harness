@@ -50,6 +50,8 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'orchestration/mode',
   'permission/preset',
   'plan/mode',
+  'project-context/document-observed',
+  'project-context/status',
   'request/context',
   'request/header',
   'sandbox/mode',

@@ -2779,6 +2779,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'projectContext',
+    summary: 'Owns discovery, logged original documents, and one write queue per project filesystem.',
+    description: 'Owns discovery, logged original documents, and one write queue per project filesystem.',
+    methods: [
+      {
+        signature: 'viewOf(session: Session): ProjectContextView | null',
+        description: 'Read detached projected maintenance status without filesystem I/O.',
+        parameters: [{ name: 'session', description: 'Prepared Session whose latest root turn is displayed.' }],
+        returns: 'Latest assessment or null before the first root turn.',
+      },
+      {
+        signature: 'activeOf(agent: Agent): boolean',
+        description: 'Whether this live lead Agent is in its current turn\'s document phase.',
+        parameters: [{ name: 'agent', description: 'Model-tool owner being admitted.' }],
+        returns: 'True only for the active root turn and retained filesystem preparation.',
+      },
+      {
+        signature: 'prepare(agent: Agent, turn: number, signal: AbortSignal): Promise<boolean>',
+        description: 'Prepare or remind the current root turn\'s ordinary project-document step.',
+        parameters: [{ name: 'agent', description: 'Lead Agent already at its normal stopping boundary.' }, { name: 'turn', description: 'Current source turn; newer work invalidates preparation.' }, { name: 'signal', description: 'Current turn and caller cancellation.' }],
+        returns: 'Whether one logged maintenance input was queued.',
+      },
+      {
+        signature: 'readDocuments(agent: Agent, paths: readonly string[], signal: AbortSignal): Promise<ProjectContextDocument[]>',
+        description: 'Read exact complete project documents for a guarded maintenance request.',
+        parameters: [{ name: 'agent', description: 'Active lead Agent whose phase owns the observations.' }, { name: 'paths', description: 'Explicit project-relative Markdown files; no recursive discovery.' }, { name: 'signal', description: 'Ordinary tool cancellation.' }],
+        returns: 'Complete logged original contents and freshness tokens.',
+      },
+      {
+        signature: 'executeUpdate(agent: Agent, request: ProjectContextUpdateRequest, signal: AbortSignal): Promise<ProjectContextUpdateResult>',
+        description: 'Publish a model\'s explicit assessment through the project\'s shared write queue.',
+        parameters: [{ name: 'agent', description: 'Active lead Agent admitted by the ordinary tool pipeline.' }, { name: 'request', description: 'Bounded assessment and exact observed guide replacements.' }, { name: 'signal', description: 'Ordinary tool cancellation.' }],
+        returns: 'Actual terminal assessment and the paths successfully changed.',
+      },
+    ],
+  },
+  {
     key: 'ptcRuntime',
     summary: 'Registers one `ctx.ptcRuntime` implementation.',
     description: 'Registers one `ctx.ptcRuntime` implementation. Program, budget, abort, and substrate failures resolve in PtcRunResult; only Service Definition contract misuse rejects, with PtcRuntimeError. Implementations bridge structured-cloneable bindings, materialize each declared namespace rejection class, treat programs as hostile peers, isolate distinct state owners, and terminate and await in-flight runs during disposal.',
@@ -5239,6 +5276,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
 /** Every harness event, sorted by name. */
 export const EVENT_API: readonly EventApiEntry[] = [
   {
+    name: 'agent-instructions/discovery',
+    mode: 'bail',
+    signature: '\'agent-instructions/discovery\'(this: Scoped<Agent>, payload: { agent: Agent }): AgentInstructionDiscovery | undefined',
+    summary: 'Read the instruction loader selected by the requesting Agent\'s scope.',
+    description: 'Read the instruction loader selected by the requesting Agent\'s scope.',
+    parameters: [{ name: 'payload', description: '.agent - Agent whose loader must admit the written project file.' }],
+  },
+  {
     name: 'agent-loop/config-start-failed',
     mode: 'emit',
     signature: '\'agent-loop/config-start-failed\'(payload: { sessionId: SessionId; error: unknown }): void',
@@ -6157,6 +6202,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentHandle',
     declaration: 'export interface AgentHandle {\n    agent: Agent;\n    dispose(): Promise<void>;\n}',
+  },
+  {
+    name: 'AgentInstructionDiscovery',
+    declaration: 'export interface AgentInstructionDiscovery {\n    readonly projectContextFileName: string;\n    readonly projectRootMarkers: readonly string[];\n    readonly instructionFileCandidates: readonly string[];\n    readonly localInstructionFileCandidates: readonly string[];\n    readonly enabled: boolean;\n}',
   },
   {
     name: 'AgentOptions',
@@ -8597,6 +8646,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProfileReconciliation',
     declaration: 'export interface ProfileReconciliation {\n    warnings: string[];\n    pending: PendingModule[];\n    restartReason?: \'module-comparison\' | \'package-moved\';\n}',
+  },
+  {
+    name: 'ProjectContextDocument',
+    declaration: 'export interface ProjectContextDocument {\n    readonly path: string;\n    readonly version: FsVersion | null;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'ProjectContextForwardingStub',
+    declaration: 'export interface ProjectContextForwardingStub {\n    readonly path: string;\n    readonly oldText: string;\n}',
+  },
+  {
+    name: 'ProjectContextGuideUpdate',
+    declaration: 'export interface ProjectContextGuideUpdate {\n    readonly path: string;\n    readonly oldText: string;\n    readonly newText: string;\n}',
+  },
+  {
+    name: 'ProjectContextStatus',
+    declaration: 'export type ProjectContextStatus = \'pending\' | \'updating\' | \'updated\' | \'unchanged\' | \'deferred\' | \'failed\';',
+  },
+  {
+    name: 'ProjectContextUpdateRequest',
+    declaration: 'export interface ProjectContextUpdateRequest {\n    readonly outcome: \'updated\' | \'unchanged\' | \'deferred\';\n    readonly summary: string;\n    readonly context?: string | undefined;\n    readonly guideUpdates?: ProjectContextGuideUpdate[] | undefined;\n    readonly forwardingStubs?: ProjectContextForwardingStub[] | undefined;\n}',
+  },
+  {
+    name: 'ProjectContextUpdateResult',
+    declaration: 'export interface ProjectContextUpdateResult {\n    readonly outcome: \'updated\' | \'unchanged\' | \'deferred\';\n    readonly summary: string;\n    readonly contextPath: string;\n    readonly changedPaths: string[];\n}',
+  },
+  {
+    name: 'ProjectContextView',
+    declaration: 'export interface ProjectContextView {\n    readonly sourceTurn: number;\n    readonly knowledgeWatermark: SessionSeq;\n    readonly status: ProjectContextStatus;\n    readonly root?: string | undefined;\n    readonly contextPath?: string | undefined;\n    readonly summary?: string | undefined;\n    readonly reason?: string | undefined;\n}',
   },
   {
     name: 'ProjectionChangeListener',

@@ -48,7 +48,7 @@ import {
   reconcileInstructionContext,
   type InstructionVersionCache,
 } from '../src/state.ts'
-import { resolveConfig } from '../src/config.ts'
+import { resolveConfig, resolveProjectContextFileName, workspaceBaselineIdentity } from '../src/config.ts'
 import {
   AGENTS_GLOBAL_DIRECTORY,
   candidateScopeKey,
@@ -427,6 +427,64 @@ function expectNoDerivedMessages(agent: Agent): void {
 }
 
 describe('workspace context instruction discovery', () => {
+  it('loads root project knowledge after global guidance and before standing rules without nested knowledge files', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      const cwd = join(root, 'pkg')
+      await mkdir(join(root, '.git'))
+      await write(join(home, 'AGENTS.md'), 'global guidance')
+      await write(join(home, 'PROJECT_CONTEXT.md'), 'global knowledge is not a candidate')
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'project knowledge')
+      await write(join(root, 'AGENTS.md'), 'standing rules')
+      await write(join(cwd, 'PROJECT_CONTEXT.md'), 'nested knowledge is not a candidate')
+      await write(join(cwd, 'CLAUDE.md'), 'scoped rules')
+      pinHarnessHome(home)
+      const files = await discoverBaselineInstructionFiles({ cwd })
+      expect(files.map(file => file.displayPath)).toEqual([
+        '$DSH_HOME/AGENTS.md', 'PROJECT_CONTEXT.md', 'AGENTS.md', join('pkg', 'CLAUDE.md'),
+      ])
+      const loaded = await loadBaselineInstructions({ cwd, maxBytes: 65536 })
+      expect(loaded?.text.indexOf('project knowledge')).toBeLessThan(loaded?.text.indexOf('standing rules') ?? 0)
+      expect(loaded?.text).not.toContain('not a candidate')
+    } finally {
+      vi.unstubAllEnvs()
+      for (const path of [root, home]) await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('uses a configured project knowledge filename and rebuilds its baseline identity', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'default context')
+      await write(join(root, 'KNOWLEDGE.md'), 'configured context')
+      await write(join(root, 'AGENTS.md'), 'standing rules')
+      pinHarnessHome(home)
+      const files = await discoverBaselineInstructionFiles({ cwd: root, projectContextFileName: 'KNOWLEDGE.md' })
+      expect(files.map(file => file.displayPath)).toEqual(['KNOWLEDGE.md', 'AGENTS.md'])
+      const original = resolveConfig({ maxBytes: 65536 })
+      const changed = resolveConfig({ maxBytes: 65536, projectContextFileName: 'KNOWLEDGE.md' })
+      expect(workspaceBaselineIdentity(changed, root, root)).not.toBe(workspaceBaselineIdentity(original, root, root))
+    } finally {
+      vi.unstubAllEnvs()
+      for (const path of [root, home]) await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['', '.', '..', '../KNOWLEDGE.md', 'dir\\KNOWLEDGE.md', 'AGENTS.md', 'claude.local.md', 'unsafe.', 'CONTEXT.txt'])(
+    'rejects project knowledge filename %j before discovery', (projectContextFileName) => {
+      expect(() => resolveProjectContextFileName(projectContextFileName)).toThrow(
+        expect.objectContaining({ code: 'AGENT_INSTRUCTIONS_INVALID_PROJECT_CONTEXT_FILE' }),
+      )
+    },
+  )
+
+  it('rejects a project knowledge filename that also names a custom standing rule', () => {
+    expect(() => resolveConfig({ maxBytes: 65536, projectContextFileName: 'POLICY.md', instructionFileCandidates: ['POLICY.md'] }))
+      .toThrow(expect.objectContaining({ code: 'AGENT_INSTRUCTIONS_INVALID_PROJECT_CONTEXT_FILE' }))
+  })
+
   it('treats ENOTDIR while probing a host candidate as confirmed absence', async () => {
     const root = await tempRepo()
     const homeFile = join(root, 'not-a-directory')
@@ -2205,6 +2263,37 @@ describe('workspace context request injection', () => {
       vi.unstubAllEnvs()
       await rm(root, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('logs changed and removed project knowledge without repeating unchanged content', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'Original verified work')
+      await write(join(root, 'AGENTS.md'), 'Keep standing rules')
+      pinHarnessHome(home)
+      await mountAgentInstructions(ctx, { maxBytes: 65536 })
+      const agent = await stubAgent(root)
+      await composeBaselinePrefix(ctx, agent)
+      await composeBaselinePrefix(ctx, agent)
+      expect(baselineEvents(agent)).toHaveLength(1)
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'Updated verified work')
+      await composeBaselinePrefix(ctx, agent)
+      const updates = agent.session.snapshotEvents().filter(event => event.type === 'user/message'
+        && event.data.source.kind === 'agent-instructions' && event.data.source.baseline !== true)
+      expect(updates).toHaveLength(1)
+      expect(updates[0]?.type === 'user/message' ? blocksText(updates[0].data.content) : '').toContain('Updated verified work')
+      await rm(join(root, 'PROJECT_CONTEXT.md'))
+      await composeBaselinePrefix(ctx, agent)
+      const removed = agent.session.snapshotEvents().findLast(event => event.type === 'user/message'
+        && event.data.source.kind === 'agent-instructions')
+      expect(removed?.type === 'user/message' ? blocksText(removed.data.content) : '').toContain('Instructions removed: PROJECT_CONTEXT.md')
+    } finally {
+      vi.unstubAllEnvs()
+      await ctx.fiber.dispose()
+      for (const path of [root, home]) await rm(path, { recursive: true, force: true })
     }
   })
 
@@ -4361,6 +4450,110 @@ describe('dynamic nested workspace context injection', () => {
     expect(cache.get(agent.session)?.has(change.scope)).toBe(true)
     applyInstructionVersionUpdates(agent.session, [{ change: { ...change, action: 'remove' } }], cache)
     expect(cache.get(agent.session)).toBeUndefined()
+  })
+
+  it.each(['project_context_read', 'project_context_update'])(
+    'refreshes logged project knowledge from successful %s result metadata', async (name) => {
+      const root = await tempRepo()
+      const home = await tempRepo()
+      const ctx = new Context()
+      try {
+        await write(join(root, 'PROJECT_CONTEXT.md'), 'Original project knowledge')
+        pinHarnessHome(home)
+        await mountAgentInstructions(ctx, { maxBytes: 65536 })
+        const agent = await stubAgent(root)
+        await composeBaselinePrefix(ctx, agent)
+        await write(join(root, 'PROJECT_CONTEXT.md'), 'Updated project knowledge')
+        ctx.emit('tools/result', stubToolExecution({
+          callId: brandString<ToolCallId>('project-context-refresh'), name, arguments: {}, agent, signal: testToolSignal,
+        }), { isError: false, value: null, content: [], meta: { projectContextPaths: [join(root, 'PROJECT_CONTEXT.md')] } })
+        const queued = await agentInstructionsOf(agent)
+        expect(blocksText(queued.content)).toContain('Updated project knowledge')
+        expect(queued.source).toMatchObject({ kind: 'agent-instructions', changes: [{ scope: sk('.', 'PROJECT_CONTEXT.md') }] })
+      } finally {
+        vi.unstubAllEnvs()
+        await ctx.fiber.dispose()
+        for (const path of [root, home]) await rm(path, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it('defers a concluding project update refresh until another request is admitted', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'Original project knowledge')
+      pinHarnessHome(home)
+      await mountAgentInstructions(ctx, { maxBytes: 65536 })
+      const agent = await stubAgent(root)
+      await composeBaselinePrefix(ctx, agent)
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'Updated project knowledge')
+      ctx.emit('tools/result', stubToolExecution({
+        callId: brandString<ToolCallId>('concluding-project-context'), name: 'project_context_update',
+        arguments: {}, agent, signal: testToolSignal,
+      }), { isError: false, value: null, content: [], concludesTurn: true,
+        meta: { projectContextPaths: [join(root, 'PROJECT_CONTEXT.md')] } })
+      await Promise.resolve()
+      expect(agent.inbox.nextStep).toEqual([])
+      await composeBaselinePrefix(ctx, agent)
+      const update = agent.session.snapshotEvents().findLast(event => event.type === 'user/message'
+        && event.data.source.kind === 'agent-instructions')
+      expect(update?.type === 'user/message' ? blocksText(update.data.content) : '').toContain('Updated project knowledge')
+    } finally {
+      vi.unstubAllEnvs()
+      await ctx.fiber.dispose()
+      for (const path of [root, home]) await rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('retains PTC read hints after a concluding update without steering another request', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await mkdir(join(root, '.git'))
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'Original project knowledge')
+      await write(join(root, 'pkg/AGENTS.md'), 'Retained nested standing rules')
+      pinHarnessHome(home)
+      await mountAgentInstructions(ctx, { maxBytes: 65536 })
+      const agent = await stubAgent(root)
+      await composeBaselinePrefix(ctx, agent)
+      agent.session.append('turn/start', { turn: 1 })
+      agent.session.append('step/start', { turn: 1, step: 1 })
+      const outer = stubToolExecution({ callId: brandString<ToolCallId>('concluding-ptc'), name: 'run_code',
+        arguments: {}, agent, signal: testToolSignal })
+      ctx.emit('tools/result', stubToolExecution({ parent: outer.token, callId: brandString<ToolCallId>('ptc-read'),
+        name: 'project_context_read', arguments: {}, agent, signal: testToolSignal,
+      }), { isError: false, value: null, content: [], meta: { projectContextPaths: [join(root, 'pkg/guide.md')] } })
+      await write(join(root, 'PROJECT_CONTEXT.md'), 'Updated project knowledge')
+      ctx.emit('tools/result', stubToolExecution({ parent: outer.token, callId: brandString<ToolCallId>('ptc-update'),
+        name: 'project_context_update', arguments: {}, agent, signal: testToolSignal,
+      }), { isError: false, value: null, content: [], concludesTurn: true,
+        meta: { projectContextPaths: [join(root, 'PROJECT_CONTEXT.md')] } })
+      ctx.emit('tools/result', outer, { isError: false, value: null, content: [], concludesTurn: true })
+      const end = agent.session.append('step/end', { turn: 1, step: 1 })
+      ctx.emit('session/event', agent.session, end)
+      await Promise.resolve()
+      expect(agent.inbox.nextStep).toEqual([])
+      const rejected = await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+        modelSelection: { provider: 'mock', model: 'mock' }, messages: [], turn: 2, step: 1, signal: testToolSignal,
+      }, async () => ({ kind: 'reject' }))
+      expect(rejected.kind).toBe('reject')
+      const next = createUserMessage({ content: [{ type: 'text', text: 'Continue ordinary work' }], source: { kind: 'user' } })
+      const decision = await agentEvents(ctx, agent).waterfall('agent/pre-step', {
+        modelSelection: { provider: 'mock', model: 'mock' }, messages: [next], turn: 2, step: 1, signal: testToolSignal,
+      }, async () => ({ kind: 'enter', messages: [next] }))
+      if (decision.kind !== 'enter') throw new Error('Expected the next ordinary request to enter')
+      expect(decision.messages.flatMap(message => message.content).some(block =>
+        block.type === 'text' && block.text.includes('Retained nested standing rules'))).toBe(true)
+      expect(decision.messages.flatMap(message => message.content).some(block =>
+        block.type === 'text' && block.text.includes('Updated project knowledge'))).toBe(true)
+    } finally {
+      vi.unstubAllEnvs()
+      await ctx.fiber.dispose()
+      for (const path of [root, home]) await rm(path, { recursive: true, force: true })
+    }
   })
 
   it('does not refresh dynamic instructions after the tool signal is aborted', async () => {

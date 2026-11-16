@@ -64,6 +64,7 @@ interface DiscoverOptions {
    */
   agentsHome?: string
   projectRootMarkers?: string[]
+  projectContextFileName?: string
   instructionFileCandidates?: string[]
   localInstructionFileCandidates?: string[]
   projectRoot?: string
@@ -356,6 +357,9 @@ async function discoverInstructionFiles(
   const cwd = resolve(options.cwd)
   const projectRoot = options.projectRoot
     ?? await findProjectRoot(cwd, config.projectRootMarkers, fileSystem, options.signal)
+  for (const file of await allExistingInstructionFiles(
+    projectRoot, projectRoot, [config.projectContextFileName], fileSystem, options.signal,
+  )) addFile(file)
   for (const dir of ancestorChain(projectRoot, cwd)) {
     for (const candidates of [config.instructionFileCandidates, config.localInstructionFileCandidates]) {
       for (const file of await allExistingInstructionFiles(dir, projectRoot, candidates, fileSystem, options.signal)) {

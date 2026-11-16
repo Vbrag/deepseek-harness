@@ -31,11 +31,13 @@ Mount this plugin when agents should work from the workspace's own instruction f
 
 ### What the agent gets
 
-The first request includes one durable baseline message with the user-global chain — `$DSH_HOME/AGENTS.md`, then `<agentsHome>/AGENTS.md` — followed by the project chain: every existing candidate file from the project root down to the session working directory, in broad-to-specific order. Within one candidate group, files whose content matches after trimming render once: a `CLAUDE.md` that duplicates its `AGENTS.md` is not repeated, and a shared-root `AGENTS.md` that duplicates the harness-home file collapses behind it. After a successful `read`, `write`, or `edit` call reaches a deeper directory, the next request includes the newly applicable instruction file; a changed file replaces its content, and a file that disappears or duplicates an earlier candidate produces a removal notice.
+The first request includes one durable baseline message with the user-global chain — `$DSH_HOME/AGENTS.md`, then `<agentsHome>/AGENTS.md` — followed by the root `PROJECT_CONTEXT.md` knowledge file and the project instruction chain: every existing candidate file from the project root down to the session working directory, in broad-to-specific order. Within one candidate group, files whose content matches after trimming render once: a `CLAUDE.md` that duplicates its `AGENTS.md` is not repeated, and a shared-root `AGENTS.md` that duplicates the harness-home file collapses behind it. After a successful `read`, `write`, or `edit` call reaches a deeper directory, the next request includes the newly applicable instruction file; a changed file replaces its content, and a file that disappears or duplicates an earlier candidate produces a removal notice.
+
+Project context records goals, completed and remaining work, decisions, and verification facts across chats. Standing instructions retain precedence. The root knowledge file shares the existing project-chain byte budget and logged refresh/removal behavior; user-global and nested instruction candidates retain their existing selection. A concluding project update refreshes instructions at the next admitted request, without starting another request solely for changed knowledge. See the [project-context writer](../project-context/README.md) for maintenance.
 
 ### Configuration
 
-The defaults suit a typical checkout: `.git` marks the project root, `AGENTS.md` and `CLAUDE.md` are the base candidates, and `AGENTS.local.md` and `CLAUDE.local.md` are additive local overlays. Only `maxBytes` is required — it caps the user-global chain and the project chain separately within each rendered message, so each deployment chooses its prompt budget explicitly; a message that holds both chains is at most twice `maxBytes`.
+The defaults suit a typical checkout: `.git` marks the project root, `AGENTS.md` and `CLAUDE.md` are the base candidates, and `AGENTS.local.md` and `CLAUDE.local.md` are additive local overlays. `projectContextFileName` selects the root knowledge filename and must differ from every standing-rule candidate. Its writer validates the same filename and loader configuration before preparing changes. Only `maxBytes` is required — it caps the user-global chain and the project chain separately within each rendered message, so each deployment chooses its prompt budget explicitly; a message that holds both chains is at most twice `maxBytes`.
 
 The harness home holding the user-global `AGENTS.md` is process policy rather than row configuration: the plugin resolves `$DSH_HOME`, or `~/.dsh`, through `@deepseek-ai/dsh-home-paths`, so instruction loading always reads the process home. The shared agents root resolves the same way, from `$DSH_AGENTS_HOME` or `~/.agents`. Stray `dshHome` and `agentsHome` row keys are ignored.
 
@@ -52,6 +54,7 @@ The accepted fields, at a glance:
 ```ts
 export interface Config {
   projectRootMarkers?: string[]
+  projectContextFileName?: string
   maxBytes: number
   maxSourceBytes?: number
   instructionFileCandidates?: string[]
@@ -64,6 +67,7 @@ export interface Config {
 | `maxBytes` | required | Cap on each instruction chain (user-global, project) in one rendered message, in bytes; a message holding both chains is at most twice this size |
 | `maxSourceBytes` | `1048576` | Cap on one source instruction file before rendering |
 | `projectRootMarkers` | `['.git']` | Directory names that mark the project root |
+| `projectContextFileName` | `PROJECT_CONTEXT.md` | Root knowledge file loaded before standing instruction files |
 | `instructionFileCandidates` | `['AGENTS.md', 'CLAUDE.md']` | Base file names loaded in each project directory |
 | `localInstructionFileCandidates` | `['AGENTS.local.md', 'CLAUDE.local.md']` | Local overlay file names loaded after the base files |
 
@@ -146,6 +150,10 @@ Instructions from: ~/.dsh/AGENTS.md
 Instructions from: ~/.agents/AGENTS.md
 
 <shared-agents-instructions>
+
+Instructions from: PROJECT_CONTEXT.md
+
+<project-knowledge>
 
 Instructions from: AGENTS.md
 

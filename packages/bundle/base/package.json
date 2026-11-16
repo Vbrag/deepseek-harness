@@ -137,7 +137,8 @@
     "@deepseek-ai/dsh-web-search-deepseek": "workspace:*",
     "@deepseek-ai/dsh-workflow-ptc": "workspace:*",
     "@deepseek-ai/dsh-working-directory": "workspace:*",
-    "@deepseek-ai/dsh-work-handoff": "workspace:*"
+    "@deepseek-ai/dsh-work-handoff": "workspace:*",
+    "@deepseek-ai/dsh-project-context": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

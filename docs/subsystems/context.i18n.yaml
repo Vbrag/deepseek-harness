@@ -1,0 +1,10 @@
+# Bilingual-pair consistency record for context.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/context.md
+/project-context:
+  en: 48394425d7b76145
+  zh: cdee35a794f26b68
+/project-context/assessment-and-document-updates:
+  en: 74c1a93acdf5acb8
+  zh: 465830c86421809c

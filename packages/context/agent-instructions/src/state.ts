@@ -274,6 +274,7 @@ export async function reconcileInstructionContext(
   const scopes = new Set<string>()
   const baselineScopes = new Set<string>()
   const addDirScopes = (target: Set<string>, directory: string): void => {
+    if (directory === '.') target.add(candidateScopeKey(directory, resolved.projectContextFileName))
     for (const candidate of resolved.instructionFileCandidates) target.add(candidateScopeKey(directory, candidate))
     for (const candidate of resolved.localInstructionFileCandidates) target.add(candidateScopeKey(directory, candidate))
   }

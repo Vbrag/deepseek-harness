@@ -101,6 +101,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   fs: 'filesystem.md',
   goals: 'goal.md',
   workHandoffs: 'goal.md',
+  projectContext: 'context.md',
   todoPolicy: 'todo.md',
   schedule: 'schedule.md',
   inspector: 'extensions.md',
@@ -244,6 +245,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
  * {@link EVENT_WALK_EXEMPTIONS} names each one with its documentation owner.
  */
 export const EVENT_SCOPE_PAGE: Record<string, string> = {
+  'agent-instructions': 'context.md',
   'app-boot': 'boot.md',
   hmr: 'boot.md',
   'plugin-manager': 'boot.md',
@@ -322,6 +324,12 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  AgentInstructionDiscovery: 'context.md',
+  ProjectContextService: 'context.md',
+  ProjectContextView: 'context.md',
+  ProjectContextDocument: 'context.md',
+  ProjectContextUpdateRequest: 'context.md',
+  ProjectContextUpdateResult: 'context.md',
   TurnStoppingCause: 'core.md',
   AuthenticationProvider: '../../packages/client/connection/README.md#browser-authentication-and-request-trust',
   PeerId: 'typert.md',

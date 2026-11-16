@@ -108,6 +108,14 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'projectContext',
+    pkg: 'project-context',
+    title: 'Project documentation checkpoints',
+    mode: 'service',
+    consumers: ['todo-reconcile-driver', 'client-ui-goal'],
+    note: 'Owns logged turn-end documentation assessment and guarded project-guide updates.',
+  },
+  {
     key: 'todoPolicy',
     pkg: 'tool-todo',
     title: 'Todo authorization and repair accounting',

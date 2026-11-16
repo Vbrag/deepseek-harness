@@ -31,11 +31,13 @@ kind: "package-reference"
 
 ### agent 获得的内容
 
-第一次请求包含一条持久基线消息：先是用户全局指令链——`$DSH_HOME/AGENTS.md`，然后是 `<agentsHome>/AGENTS.md`——再按从宽泛到具体的顺序包含项目指令链：从项目根目录到会话工作目录的每个目录中所有现有候选文件。同一候选组内去除首尾空白后内容一致的文件只渲染一次：复制了 `AGENTS.md` 的 `CLAUDE.md` 不会被重复加载，与 harness home 文件重复的共享根 `AGENTS.md` 也会折叠在其后。当成功的 `read`、`write` 或 `edit` 调用到达更深的目录后，下一次请求会包含新适用的指令文件；已改变的文件会替换其内容，消失或成为较早候选文件重复项的文件会产生移除通知。
+第一次请求包含一条持久基线消息：先是用户全局指令链——`$DSH_HOME/AGENTS.md`，然后是 `<agentsHome>/AGENTS.md`——再包含根目录的 `PROJECT_CONTEXT.md` 知识文件，然后按从宽泛到具体的顺序包含项目指令链：从项目根目录到会话工作目录的每个目录中所有现有候选文件。同一候选组内去除首尾空白后内容一致的文件只渲染一次：复制了 `AGENTS.md` 的 `CLAUDE.md` 不会被重复加载，与 harness home 文件重复的共享根 `AGENTS.md` 也会折叠在其后。当成功的 `read`、`write` 或 `edit` 调用到达更深的目录后，下一次请求会包含新适用的指令文件；已改变的文件会替换其内容，消失或成为较早候选文件重复项的文件会产生移除通知。
+
+项目上下文跨聊天记录目标、已完成与剩余工作、决策及验证事实。长期指令保留优先级。根知识文件沿用项目指令链的字节预算及持久的刷新、移除行为；用户全局与嵌套指令候选保留原有选择方式。结束轮次的项目更新会在下一次获准请求时刷新指令，不会仅因知识变化而启动另一次请求。维护说明见 [project-context 写入方](../project-context/README.zh.md)。
 
 ### 配置
 
-默认设置适合典型检出：`.git` 标记项目根目录，`AGENTS.md` 与 `CLAUDE.md` 是基础候选，`AGENTS.local.md` 与 `CLAUDE.local.md` 是叠加的本地 overlay。只有 `maxBytes` 必填——它在每条渲染消息内分别限制用户全局指令链与项目指令链，让每个部署显式选择自己的提示词预算；同时包含两条链的消息最多为 `maxBytes` 的两倍。
+默认设置适合典型检出：`.git` 标记项目根目录，`AGENTS.md` 与 `CLAUDE.md` 是基础候选，`AGENTS.local.md` 与 `CLAUDE.local.md` 是叠加的本地 overlay。`projectContextFileName` 选择根知识文件名，且必须不同于所有长期规则候选名。写入方在准备更改前验证相同文件名与加载配置。只有 `maxBytes` 必填——它在每条渲染消息内分别限制用户全局指令链与项目指令链，让每个部署显式选择自己的提示词预算；同时包含两条链的消息最多为 `maxBytes` 的两倍。
 
 存放用户全局 `AGENTS.md` 的 harness home 属于进程策略，而不是配置行：该插件通过 `@deepseek-ai/dsh-home-paths` 解析 `$DSH_HOME` 或 `~/.dsh`，因此指令加载始终读取进程 home。共享 agents 根目录同样如此解析：`$DSH_AGENTS_HOME` 或 `~/.agents`。残留的 `dshHome` 与 `agentsHome` 配置行字段会被忽略。
 
@@ -52,6 +54,7 @@ kind: "package-reference"
 ```ts
 export interface Config {
   projectRootMarkers?: string[]
+  projectContextFileName?: string
   maxBytes: number
   maxSourceBytes?: number
   instructionFileCandidates?: string[]
@@ -64,6 +67,7 @@ export interface Config {
 | `maxBytes` | 必填 | 一条渲染消息中每条指令链（用户全局、项目）的上限，单位为字节；同时包含两条链的消息最多为该值的两倍 |
 | `maxSourceBytes` | `1048576` | 渲染前单个源指令文件的上限 |
 | `projectRootMarkers` | `['.git']` | 标记项目根目录的目录名 |
+| `projectContextFileName` | `PROJECT_CONTEXT.md` | 在长期指令文件之前加载的根知识文件 |
 | `instructionFileCandidates` | `['AGENTS.md', 'CLAUDE.md']` | 每个项目目录中加载的基础文件名 |
 | `localInstructionFileCandidates` | `['AGENTS.local.md', 'CLAUDE.local.md']` | 在基础文件之后加载的本地 overlay 文件名 |
 
@@ -146,6 +150,10 @@ Instructions from: ~/.dsh/AGENTS.md
 Instructions from: ~/.agents/AGENTS.md
 
 <shared-agents-instructions>
+
+Instructions from: PROJECT_CONTEXT.md
+
+<project-knowledge>
 
 Instructions from: AGENTS.md
 

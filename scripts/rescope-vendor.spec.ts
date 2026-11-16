@@ -124,6 +124,7 @@ describe('product identifiers', () => {
     'docs/user/guide/schedule.md',
     'docs/user/guide/schedule.zh.md',
     'packages/bundle/web-app/cordis.patch.yml',
+    'packages/bundle/web-app/tests/todo-policy-presets.spec.ts',
     'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
     'packages/client/ui-agent-preset/src/client/analytics.ts',
     'packages/client/ui-agent-preset/tests/analytics.client.spec.ts',
@@ -163,6 +164,22 @@ describe('product identifiers', () => {
     expect(rescopeText(scoped, file)).toEqual({ text: scoped, lines: 0 })
     expect(rescopeText(scoped, file, true)).toEqual({ text, lines: 2 })
     expect(rescopeText("ctx.emit('cordis/inspect-query')", file).text).toBe("ctx.emit('@deepseek-ai/cordis/inspect-query')")
+  })
+
+  it('preserves shipped preset ids and builtin names while still rewriting package imports in their fixture', () => {
+    const file = 'packages/bundle/web-app/tests/todo-policy-presets.spec.ts'
+    const product = "const preset = 'cordis'\nconst row = { name: 'cordis:todoFixture' }\n"
+    expectRoundTrip(file, `${product}import { Context } from 'cordis'\n`,
+      `${product}import { Context } from '@deepseek-ai/cordis'\n`, 1)
+  })
+
+  it.each([
+    ['packages/example/src/index.ts', "const row = { name: 'cordis:todoFixture' }\n"],
+    ['packages/example/cordis.yml', '- name: cordis:todoFixture\n'],
+    ['docs/example.md', '```yaml\n- name: cordis:todoFixture\n```\n'],
+  ])('preserves the Loader builtin protocol in %s', (file, text) => {
+    expect(rescopeText(text, file)).toEqual({ text, lines: 0 })
+    expect(rescopeText(text, file, true)).toEqual({ text, lines: 0 })
   })
 
   it.each([

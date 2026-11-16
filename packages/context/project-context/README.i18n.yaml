@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/context/project-context/README.md
+/:
+  en: fe3d72e86aa4476d
+  zh: b21521328b12d1b2
+/deepseek-ai-dsh-project-context:
+  en: 5832c7cb839c3210
+  zh: 4c815fbfdb799c56
+/deepseek-ai-dsh-project-context/summary:
+  en: ba7c47f5e7d83ee1
+  zh: f37d118e524d3a9f
+/deepseek-ai-dsh-project-context/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-project-context/use-this-package:
+  en: 613b81be6d997198
+  zh: fbd58757176ad863
+/deepseek-ai-dsh-project-context/use-this-package/maintain-project-knowledge:
+  en: 333c71960220c6b3
+  zh: 96ca72785342031e
+/deepseek-ai-dsh-project-context/use-this-package/continuation-and-failures:
+  en: 4cd4351a21438c7f
+  zh: c014e92d181c1a21
+/deepseek-ai-dsh-project-context/understand-the-implementation:
+  en: 182f762b0b5cadfb
+  zh: 7e5cbd373a2f9838
+/deepseek-ai-dsh-project-context/further-exploration:
+  en: e1dc040e7a0360df
+  zh: aac6c315c15b5cdc
+/deepseek-ai-dsh-project-context/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-project-context/model-experience/project-document-assessment:
+  en: 6271e80fc23f1d97
+  zh: fd3ee2f410dc11a5
+/deepseek-ai-dsh-project-context/model-experience/project-document-assessment/what-the-model-sees:
+  en: 46c269d23c68efd5
+  zh: e88ffa47b2fc8367
+/deepseek-ai-dsh-project-context/model-experience/project-document-assessment/token-effect:
+  en: 3d1244a5aebc1503
+  zh: e3cbf3418da6b0b5
+/deepseek-ai-dsh-project-context/model-experience/project-document-assessment/kv-cache-effect:
+  en: 5ef2a0e2769a3be0
+  zh: 8b699b46e07cd1b1
+/deepseek-ai-dsh-project-context/known-limitations-and-deferred-work:
+  en: fb187461e65272fc
+  zh: 73b70435de3ea8eb
+/deepseek-ai-dsh-project-context/known-limitations-and-deferred-work/dev-note:
+  en: f05d38bd9fe85caf
+  zh: 8ae885b0c69b7240

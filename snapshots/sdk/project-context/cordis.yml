@@ -1,0 +1,23 @@
+# Execute root documentation maintenance through the actual SDK profile.
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false
+- id: llm-deepseek
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: time-context
+  disabled: true
+- id: project-context
+  disabled: false
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+- insert:
+    - id: project-context-tools
+      name: './visible-tools-fixture.ts'
+    - id: project-context-request-capture
+      name: '../manual-compact/capture-requests.mjs'
+      config:
+        path: !!js dshHomePath('project-context-requests.jsonl')

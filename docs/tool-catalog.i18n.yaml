@@ -9,8 +9,17 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: dd0bc5d4326c369e
-  zh: a18be387b9582b3b
+  en: 8153a206d3bb2066
+  zh: fb9cff2d1fb37bfb
+/tool-schema-catalog/deepseek-ai-dsh-project-context:
+  en: e44460b8b137b878
+  zh: e44460b8b137b878
+/tool-schema-catalog/deepseek-ai-dsh-project-context/project-context-read:
+  en: fdd09eed0f318e1f
+  zh: 7a15c6f9f9ffaebf
+/tool-schema-catalog/deepseek-ai-dsh-project-context/project-context-update:
+  en: 2512241a389ccb01
+  zh: ef4afe7a98d0f3cf
 /tool-schema-catalog/deepseek-ai-dsh-work-handoff:
   en: 32ccac37eff91335
   zh: 32ccac37eff91335

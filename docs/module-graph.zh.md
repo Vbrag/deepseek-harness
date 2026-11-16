@@ -249,6 +249,7 @@ flowchart TD
     pkg_file_reference["file-reference"]
     pkg_file_reference_local["file-reference-local"]
     pkg_harness_dev_context["harness-dev-context"]
+    pkg_project_context["project-context"]
     pkg_session_reference["session-reference"]
     pkg_time_context["time-context"]
     pkg_tmux_context["tmux-context"]
@@ -581,7 +582,6 @@ flowchart TD
   pkg_remote_mock --> pkg_typert_protocol
   pkg_session_snapshot --> pkg_http_proxy
   pkg_session_snapshot --> pkg_session
-  pkg_fs --> pkg_llm
   pkg_fs --> pkg_sandbox
   pkg_skill_codemap_docs --> pkg_skill
   pkg_skill_continuous_learning --> pkg_skill
@@ -1553,15 +1553,22 @@ flowchart TD
   pkg_goal_round_driver --> pkg_session
   pkg_goal_round_driver --> pkg_subagent
   pkg_goal_round_driver --> pkg_work_handoff
-  pkg_todo_reconcile_driver --> pkg_agent
-  pkg_todo_reconcile_driver --> pkg_agent_preset_registry
-  pkg_todo_reconcile_driver --> pkg_goal
-  pkg_todo_reconcile_driver --> pkg_llm
-  pkg_todo_reconcile_driver --> pkg_plan_mode
-  pkg_todo_reconcile_driver --> pkg_session
-  pkg_todo_reconcile_driver --> pkg_subagent
-  pkg_todo_reconcile_driver --> pkg_tool_todo
-  pkg_todo_reconcile_driver --> pkg_work_handoff
+  pkg_project_context --> pkg_agent
+  pkg_project_context --> pkg_agent_instructions
+  pkg_project_context --> pkg_agent_preset_registry
+  pkg_project_context --> pkg_fs
+  pkg_project_context --> pkg_goal
+  pkg_project_context --> pkg_llm
+  pkg_project_context --> pkg_plan_mode
+  pkg_project_context --> pkg_sandbox
+  pkg_project_context --> pkg_sandbox_policy
+  pkg_project_context --> pkg_session
+  pkg_project_context --> pkg_session_projection
+  pkg_project_context --> pkg_subagent
+  pkg_project_context --> pkg_tool_todo
+  pkg_project_context --> pkg_tools
+  pkg_project_context --> pkg_work_handoff
+  pkg_project_context --> pkg_working_directory
   pkg_schedule --> pkg_agent
   pkg_schedule --> pkg_api_session_controller
   pkg_schedule --> pkg_llm
@@ -1610,6 +1617,16 @@ flowchart TD
   pkg_subagent_dsh_sdk --> pkg_session
   pkg_subagent_dsh_sdk --> pkg_subagent
   pkg_subagent_dsh_sdk --> pkg_subprocess
+  pkg_todo_reconcile_driver --> pkg_agent
+  pkg_todo_reconcile_driver --> pkg_agent_preset_registry
+  pkg_todo_reconcile_driver --> pkg_goal
+  pkg_todo_reconcile_driver --> pkg_llm
+  pkg_todo_reconcile_driver --> pkg_plan_mode
+  pkg_todo_reconcile_driver --> pkg_project_context
+  pkg_todo_reconcile_driver --> pkg_session
+  pkg_todo_reconcile_driver --> pkg_subagent
+  pkg_todo_reconcile_driver --> pkg_tool_todo
+  pkg_todo_reconcile_driver --> pkg_work_handoff
   pkg_tool_schedule --> pkg_llm
   pkg_tool_schedule --> pkg_schedule
   pkg_tool_schedule --> pkg_subagent
@@ -1832,7 +1849,7 @@ flowchart TD
 | [`otel`](../packages/telemetry/otel) | `telemetry` | [`session`](../packages/core/session) |
 | [`remote-mock`](../packages/test-support/remote-mock) | `test-support` | [`typert-protocol`](../packages/typert/protocol) |
 | [`session-snapshot`](../packages/test-support/session-snapshot) | `test-support` | [`http-proxy`](../packages/util/http-proxy), [`session`](../packages/core/session) |
-| [`fs`](../packages/fs/fs) | `fs` | [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox) |
+| [`fs`](../packages/fs/fs) | `fs` | [`sandbox`](../packages/sandbox/sandbox) |
 | [`skill-codemap-docs`](../packages/skill/skill-codemap-docs) | `skill` | [`skill`](../packages/skill/skill) |
 | [`skill-continuous-learning`](../packages/skill/skill-continuous-learning) | `skill` | [`skill`](../packages/skill/skill) |
 | [`skill-eval-harness`](../packages/skill/skill-eval-harness) | `skill` | [`skill`](../packages/skill/skill) |
@@ -2017,12 +2034,13 @@ flowchart TD
 | [`agent-team`](../packages/team/agent-team) | `team` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`workflow-ptc`](../packages/workflow/workflow-ptc) | `workflow` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow), [`working-directory`](../packages/session/working-directory) |
 | [`goal-round-driver`](../packages/goal/goal-round-driver) | `goal` | [`agent`](../packages/core/agent), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`work-handoff`](../packages/goal/work-handoff) |
-| [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver) | `todo` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`plan-mode`](../packages/plan/plan-mode), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tool-todo`](../packages/todo/tool-todo), [`work-handoff`](../packages/goal/work-handoff) |
+| [`project-context`](../packages/context/project-context) | `context` | [`agent`](../packages/core/agent), [`agent-instructions`](../packages/context/agent-instructions), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`fs`](../packages/fs/fs), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`plan-mode`](../packages/plan/plan-mode), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`tool-todo`](../packages/todo/tool-todo), [`tools`](../packages/core/tools), [`work-handoff`](../packages/goal/work-handoff), [`working-directory`](../packages/session/working-directory) |
 | [`schedule`](../packages/schedule/schedule) | `schedule` | [`agent`](../packages/core/agent), [`api-session-controller`](../packages/api/session-controller), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`storage-domain`](../packages/storage/storage-domain), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`util-time`](../packages/util/time), [`workspace`](../packages/workspace/workspace) |
 | [`sdk-client`](../packages/sdk/client) | `sdk` | [`llm`](../packages/llm/llm), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session) |
 | [`tool-agent-team`](../packages/team/tool-agent-team) | `team` | [`agent`](../packages/core/agent), [`agent-team`](../packages/team/agent-team), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`client-test-runtime`](../packages/test-support/client-runtime) | `test-support` | [`api-gateway`](../packages/api/gateway), [`api-session-controller`](../packages/api/session-controller), [`api-workspace-controller`](../packages/api/workspace-controller), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-hmr`](../packages/client/hmr), [`client-modules`](../packages/client/modules), [`client-store`](../packages/client/store), [`client-ui-chat`](../packages/client/ui-chat), [`client-ui-context-menu`](../packages/client/ui-context-menu), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-renderer`](../packages/client/ui-renderer), [`client-ui-session`](../packages/client/ui-session), [`client-ui-session-status`](../packages/client/ui-session-status), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`client-web`](../packages/client/web), [`remote-mock`](../packages/test-support/remote-mock), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`sdk-client`](../packages/sdk/client), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess) |
+| [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver) | `todo` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`plan-mode`](../packages/plan/plan-mode), [`project-context`](../packages/context/project-context), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tool-todo`](../packages/todo/tool-todo), [`work-handoff`](../packages/goal/work-handoff) |
 | [`tool-schedule`](../packages/schedule/tool-schedule) | `schedule` | [`llm`](../packages/llm/llm), [`schedule`](../packages/schedule/schedule), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`sdk-jsonrpc-server`](../packages/sdk/server) | `sdk` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`commands`](../packages/interaction/commands), [`goal`](../packages/goal/goal), [`llm`](../packages/llm/llm), [`llm-deepseek-api-key`](../packages/llm/llm-deepseek-api-key), [`schedule`](../packages/schedule/schedule), [`scope`](../packages/core/scope), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`user-approval`](../packages/interaction/user-approval), [`user-questions`](../packages/interaction/user-questions), [`working-directory`](../packages/session/working-directory) |
 <!-- END GENERATED module-graph:packages -->

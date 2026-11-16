@@ -1,5 +1,5 @@
 /** Durable unfinished-work capture and explicitly requested continuation. */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { FiberState, Service, symbols, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -410,7 +410,10 @@ export class WorkHandoffService extends TypertRemoteService {
       ?? this.owningService(agent, 'todoPolicy')?.viewOf(agent.session)?.reason
     const resolved = { ...request, ...(goal === undefined ? {} : { goal }),
       ...stopDetail === undefined ? {} : { stopDetail }, todos: request.todos ?? this.todosOf(agent) }
-    const key = [agent.id, state.turn, request.reason, goal?.id, goal?.revision, goal?.roundsStarted, goal?.maxGoalRounds].join(':')
+    const identity: (string | number | undefined)[] = [agent.id, state.turn, request.reason, goal?.id,
+      goal?.revision, goal?.roundsStarted, goal?.maxGoalRounds]
+    if (stopDetail !== undefined) identity.push(createHash('sha256').update(stopDetail).digest('hex'))
+    const key = identity.join(':')
     const id = brandString<WorkHandoffId>(key)
     if (state.latest?.id === id) {
       if (!state.latest.saved) {

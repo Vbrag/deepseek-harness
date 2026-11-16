@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-project-context` | `project_context_read`, `project_context_update` | `ctx.tools`, `ctx.agents`, `ctx.sessions`, `ctx.sessionProjections`, `可写项目` | `tool/call`, `project-context/status`, `project-context/document-observed`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-work-handoff` | `work_checkpoint` | `ctx.tools`, `ctx.agents`, `ctx.sessions`, `ctx.sessionProjections`, `a calling Agent` | `tool/call`, `work-handoff/checkpoint`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
@@ -58,6 +59,109 @@
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
 
+
+<a id="deepseek-aidsh-project-context"></a>
+
+## `@deepseek-ai/dsh-project-context`
+
+### `project_context_read`
+
+读取完整的项目 Markdown 文档，并在更新或整合前保留其确切版本。使用相对路径。此操作不授权替换指令文件、README 入口、作用域文档、生成内容、归档或 vendor 文档。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "paths"
+  ]
+}
+```
+
+来源： [`packages/context/project-context/src/index.ts`](../packages/context/project-context/src/index.ts)
+
+### `project_context_update`
+
+完成项目文档评估：updated 发布当前项目上下文，unchanged 确认其仍然有效，deferred 记录具体阻碍。整合观察过的普通 Markdown 指南前，先保留独有事实与理由。不得将未完成任务或未经验证的测试视为完成。Context 只替换托管的上下文区域；其他人工文本保持不变。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "updated",
+        "unchanged",
+        "deferred"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "description": "Specific changes, why existing context is current, or the concrete blocker."
+    },
+    "context": {
+      "type": "string",
+      "description": "Complete current project facts for the managed canonical section; required for updated."
+    },
+    "guideUpdates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "oldText": {
+            "type": "string"
+          },
+          "newText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "oldText",
+          "newText"
+        ]
+      }
+    },
+    "forwardingStubs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "oldText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "oldText"
+        ]
+      }
+    }
+  },
+  "required": [
+    "outcome",
+    "summary"
+  ]
+}
+```
+
+来源： [`packages/context/project-context/src/index.ts`](../packages/context/project-context/src/index.ts)
 
 <a id="deepseek-aidsh-work-handoff"></a>
 

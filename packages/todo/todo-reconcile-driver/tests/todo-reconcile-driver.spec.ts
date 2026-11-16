@@ -218,6 +218,16 @@ it('leaves a proposal unfinished without driving execution', async () => {
   expect(test.captures).toHaveLength(0)
 })
 
+it('leaves an active project-document phase to its owner without injecting ordinary task repairs', async () => {
+  const test = await harness([text('Project documentation assessment in progress')])
+  test.ctx.todoPolicy.writeList(test.agent, six, 'current-task')
+  test.ctx.provide('projectContext', { activeOf: () => true })
+  await test.run()
+  expect(repairs(test.agent)).toHaveLength(0)
+  expect(test.captures).toHaveLength(0)
+  expect(test.ctx.todoPolicy.viewOf(test.agent.session)).toMatchObject({ disposition: 'active', repairAttempts: 0 })
+})
+
 it('offers one confirmation for a legacy list and authorizes it only through human Continue', async () => {
   const test = await harness([write(finished(six)), text('Done')])
   test.agent.session.append('todo/write', { todos: six })

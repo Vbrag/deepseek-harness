@@ -21,6 +21,7 @@ import type { GoalActionResult, GoalBarActions, GoalBarInjected } from './slots.
 import type { GoalKey } from './locales.ts'
 import css from './GoalBar.module.css'
 import { WorkHandoffBar } from './WorkHandoffBar.tsx'
+import { ProjectContextStatus } from './ProjectContextStatus.tsx'
 
 export interface GoalBarProps extends GoalBarActions {
   /** Current goal snapshot; undefined = capability absent or loading, null = no goal set. */
@@ -200,6 +201,7 @@ export function GoalDock({
   const todos = useProjection('todos')
   const todoPolicy = useProjection('todoPolicy')
   const plan = useProjection('plan')
+  const projectContext = useProjection('projectContext')
   const running = useSession(session => session.running)
   const goal = projection === undefined || projection === null ? projection : projection.goal
   const goalId = goal?.id
@@ -220,6 +222,7 @@ export function GoalDock({
         onClear={onClear}
         t={t}
       />
+      <ProjectContextStatus view={projectContext} t={t} />
       <WorkHandoffBar key={handoff?.id ?? 'legacy'} handoff={handoff}
         hasUnfinishedTodos={todos?.some(todo => todo.status !== 'completed') ?? false}
         todoPolicy={todoPolicy}

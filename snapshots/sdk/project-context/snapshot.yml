@@ -1,0 +1,10 @@
+version: 1
+scenario: project-context
+profile: sdk
+composition: sdk-project-context
+recording: authored
+header:
+  class: sdk-project-context
+  pin: true
+workspace:
+  final: true

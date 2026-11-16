@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-work-handoff'
 import type {} from '@deepseek-ai/dsh-plan-mode'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type {} from '@deepseek-ai/dsh-project-context'
 
 export { renderTodoReconcilePrompt } from './prompt.ts'
 export type { TodoReconcileMessageSource } from '@deepseek-ai/dsh-tool-todo'
@@ -63,6 +64,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   function executionPolicy(agent: Agent): TodoPolicyView | undefined {
+    if (ctx.get('projectContext')?.activeOf(agent)) return undefined
     const goal = ctx.goals.get(agent)
     // Goal continuation and explicit suspension remain owned by the goal service and driver.
     if (goal !== undefined && goal.phase !== 'complete') return undefined

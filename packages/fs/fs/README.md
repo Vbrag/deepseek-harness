@@ -25,6 +25,8 @@ Use `dsh-fs` for consistent file access across local, confined, and SSH executio
 <a id="use-this-package"></a>
 ## Use this package
 
+The `@deepseek-ai/dsh-fs/types` entry exposes filesystem values and errors without importing Host services; Client code uses this entry for version tokens.
+
 You rarely load `dsh-fs` directly: you mount a backend that registers as `ctx.fs`, then either call the service from your own plugin or let the `dsh-tool-fs` tools call it for you. This page serves the two audiences that do touch it — deployments choosing a backend, and developers implementing or consuming the contract.
 
 ### Choosing and mounting a backend

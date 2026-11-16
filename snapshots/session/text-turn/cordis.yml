@@ -93,3 +93,7 @@
 - id: tool-fs
   config:
     applyPatch: true
+
+# This shared composition records task execution without a project-document finalization phase.
+- id: project-context
+  disabled: true

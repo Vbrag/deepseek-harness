@@ -113,7 +113,7 @@ turn/end
 
 工厂 setup 在 Session 进入 SessionStore 并完成 `session/created` 之后、`agent/created` 之前运行；收尾事件在移除之前提交。
 
-`agent/turn-stopping` 以类型化 cause 报告模型完成、工具显式结束或持续生效的输出限制；插件拥有继续执行的策略。
+`agent/turn-stopping` 区分模型完成、工具结束与输出限制。插件拥有继续策略；[project-context](../packages/context/project-context/README.zh.md)在任务继续策略处理完毕后完成文档维护，并遵守现有限制。
 
 输入通过同一个 inbox 到达驱动器；注入的上下文等待一条唤醒消息。AgentLoop 的持久 `inbox` 投影使待处理输入在没有活跃 Agent 时仍可读取。
 

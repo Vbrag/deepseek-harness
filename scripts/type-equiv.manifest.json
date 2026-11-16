@@ -3082,6 +3082,61 @@
       "doc": "docs/subsystems/core.md",
       "symbol": "TurnStoppingCause",
       "source": "packages/core/agent/src/runtime-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextStatus",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextView",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextDocument",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextDocumentObserved",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextGuideUpdate",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextForwardingStub",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextUpdateRequest",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextUpdateResult",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextMessageSource",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextState",
+      "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context.md",
+      "symbol": "ProjectContextProjectionConfig",
+      "source": "packages/context/project-context/src/types.ts"
     }
   ]
 }

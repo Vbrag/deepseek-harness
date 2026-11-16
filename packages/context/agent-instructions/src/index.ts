@@ -19,6 +19,7 @@ import type { ToolExecution, ToolExecutionResult, ToolExecutionToken } from '@de
 import { Config, resolveConfig, workspaceBaselineIdentity, type ResolvedConfig } from './config.ts'
 import { findProjectRoot, loadBaselineInstructionSet } from './files.ts'
 import { trimmedInstructionDigest } from './digest.ts'
+import type {} from './discovery.ts'
 import {
   applyInstructionVersionUpdates,
   baselineInstructionState,
@@ -82,8 +83,24 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
   return filePath.length > 0 ? filePath : undefined
 }
 
+function projectContextPaths(exec: ToolExecution, result: ToolExecutionResult): string[] {
+  if (exec.name !== 'project_context_read' && exec.name !== 'project_context_update') return []
+  const meta = result.meta
+  if (meta === undefined || meta === null || typeof meta !== 'object' || Array.isArray(meta)) return []
+  const paths = meta.projectContextPaths
+  return Array.isArray(paths) ? paths.filter((path): path is string => typeof path === 'string' && path.length > 0) : []
+}
+
 export function apply(ctx: Context, config: Config): void {
   const resolved: ResolvedConfig = resolveConfig(config)
+  ctx.on('agent-instructions/discovery', () => ({
+    projectContextFileName: resolved.projectContextFileName,
+    projectRootMarkers: [...resolved.projectRootMarkers],
+    instructionFileCandidates: [...resolved.instructionFileCandidates],
+    localInstructionFileCandidates: [...resolved.localInstructionFileCandidates],
+    enabled: resolved.maxBytes > 0 && Number.isFinite(resolved.maxBytes)
+      && resolved.maxSourceBytes > 0 && Number.isFinite(resolved.maxSourceBytes),
+  }))
   const instructionVersions: InstructionVersionCache = new WeakMap()
   const baselinePreparations = new WeakMap<Session, {
     identity: string
@@ -104,7 +121,8 @@ export function apply(ctx: Context, config: Config): void {
   const projectionTails = new WeakMap<Agent, Promise<void>>()
   // Execution ancestry and the enclosing durable step are the two commit
   // boundaries before an asynchronous projection may mutate the agent inbox.
-  const stepTouches = new WeakMap<Session, ProjectionTouch[]>()
+  const stepTouches = new WeakMap<Session, { touches: ProjectionTouch[]; concluded: boolean }>()
+  const deferredTouches = new WeakMap<Agent, Set<string>>()
 
   const compose = async (
     agent: Agent,
@@ -143,6 +161,7 @@ export function apply(ctx: Context, config: Config): void {
         dshHome: resolved.dshHome,
         agentsHome: resolved.agentsHome,
         projectRootMarkers: resolved.projectRootMarkers,
+        projectContextFileName: resolved.projectContextFileName,
         maxBytes: resolved.maxBytes,
         maxSourceBytes: resolved.maxSourceBytes,
         instructionFileCandidates: resolved.instructionFileCandidates,
@@ -308,6 +327,12 @@ export function apply(ctx: Context, config: Config): void {
       && boundary.lastStepBoundary.seq > boundary.openTurnStartSeq
   }
 
+  const deferTouch = ({ agent, path }: ProjectionTouch): void => {
+    const paths = deferredTouches.get(agent) ?? new Set<string>()
+    paths.add(path)
+    deferredTouches.set(agent, paths)
+  }
+
   const projectTouch = (touch: ProjectionTouch): void => {
     const session = touch.agent.session
     if (!stepIsOpen(session)) {
@@ -315,8 +340,8 @@ export function apply(ctx: Context, config: Config): void {
       return
     }
     const pending = stepTouches.get(session)
-    if (pending === undefined) stepTouches.set(session, [touch])
-    else pending.push(touch)
+    if (pending === undefined) stepTouches.set(session, { touches: [touch], concluded: false })
+    else pending.touches.push(touch)
   }
 
   ctx.on('session/event', (session, event) => {
@@ -324,7 +349,10 @@ export function apply(ctx: Context, config: Config): void {
     const pending = stepTouches.get(session)
     if (pending === undefined) return
     stepTouches.delete(session)
-    for (const touch of pending) queueProjection(touch.agent, touch.path)
+    for (const touch of pending.touches) {
+      if (pending.concluded) deferTouch(touch)
+      else queueProjection(touch.agent, touch.path)
+    }
   })
 
   ctx.on('agent/pre-step', async (
@@ -334,7 +362,9 @@ export function apply(ctx: Context, config: Config): void {
     const decision = await next()
     await waitForProjections(agent)
     const pending = agent.inbox.nextStep.filter(isAgentInstructionsMessage)
-    const desired = await compose(agent, signal, messages, pending)
+    const accepted = decision.kind === 'enter' && (step !== 1 || decision.messages.length > 0)
+    const touchedPaths = accepted ? [...deferredTouches.get(agent) ?? []] : []
+    const desired = await compose(agent, signal, messages, pending, touchedPaths)
     signal.throwIfAborted()
     // An empty first entry owns a no-step turn; keep context pending instead
     // of turning it into a standalone request. Later entries may be tool continuations.
@@ -342,6 +372,7 @@ export function apply(ctx: Context, config: Config): void {
       syncInbox(agent, messages, desired)
       return decision
     }
+    deferredTouches.delete(agent)
     // A proceeding step settles the pending context: it either enters below as
     // `desired`, or its payload is already covered by the batch, so nothing stays pending.
     for (const message of pending) agent.inbox.remove(message.id)
@@ -361,12 +392,26 @@ export function apply(ctx: Context, config: Config): void {
     if (!result.isError && exec.agent !== undefined && !exec.signal.aborted) {
       const ownPath = filePathFromExecution(exec)
       if (ownPath !== undefined) touches.push({ agent: exec.agent, path: ownPath })
+      for (const path of projectContextPaths(exec, result)) touches.push({ agent: exec.agent, path })
     }
     if (exec.parent !== undefined) {
       if (touches.length > 0) {
         const parentTouches = executionTouches.get(exec.parent)
         if (parentTouches === undefined) executionTouches.set(exec.parent, touches)
         else parentTouches.push(...touches)
+      }
+      return
+    }
+    // Concluding batches retain discovery hints without making another request owed.
+    if (result.concludesTurn === true) {
+      if (exec.agent !== undefined && stepIsOpen(exec.agent.session)) {
+        const pending = stepTouches.get(exec.agent.session) ?? { touches: [], concluded: false }
+        pending.concluded = true
+        stepTouches.set(exec.agent.session, pending)
+      }
+      for (const touch of touches) {
+        if (stepIsOpen(touch.agent.session)) projectTouch(touch)
+        else deferTouch(touch)
       }
       return
     }

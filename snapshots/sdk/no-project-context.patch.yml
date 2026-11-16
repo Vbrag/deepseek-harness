@@ -1,0 +1,3 @@
+# Existing recordings select their original task workflow; the project-context scenario exercises the new default.
+- id: project-context
+  disabled: true

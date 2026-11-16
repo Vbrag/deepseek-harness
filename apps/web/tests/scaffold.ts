@@ -14,8 +14,9 @@
 // Composition divergences from `dsh web`, all deliberate, all via include
 // patches after the shipped bundle layers, over the SAME tree (never a
 // second yml): temp persistenceRoot; host-level skill roots confined to the
-// temp workspace while project skill discovery remains real; agent-instructions
-// disabled (recorded fixtures must not embed this repo's AGENTS.md);
+// temp workspace while project skill discovery remains real; project-context and
+// agent-instructions disabled outside their owner scenario (recorded fixtures must
+// not embed this repo's AGENTS.md or trigger unrecorded maintenance requests);
 // session-title-llm disabled (its fire-and-forget title call would race the
 // loop for the session's replay cursor); webserver pinned to port 0 with the
 // built dist; ordinary keyless modes disable both direct adapters and fill the open
@@ -306,6 +307,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Exercise project-document maintenance and its real instruction loader in an isolated workspace. */
+  projectContext?: boolean
   /** Override the developer-tools preference; omitted uses the shipped default. */
   developerTools?: boolean
   /** Enable the real Open In rows with deterministic launch-environment facts. */
@@ -621,7 +624,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // fs/bash cwd default to process.cwd(); the gateway injects the same
     // value into session.cwd — chdir below anchors all three to the temp
     // workspace, keeping the composition untouched.
-    { id: 'agent-instructions', disabled: true },
+    { id: 'agent-instructions', disabled: options.projectContext !== true },
+    { id: 'project-context', disabled: options.projectContext !== true },
     { id: 'session-title-llm', disabled: true },
     // Fixture sessions must never leave the process: the shipped row defaults
     // to the production OTLP endpoint (or whatever DSH_TELEMETRY_OTLP_URL

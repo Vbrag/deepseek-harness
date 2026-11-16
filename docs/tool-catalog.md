@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-project-context` | `project_context_read`, `project_context_update` | `ctx.tools`, `ctx.agents`, `ctx.sessions`, `ctx.sessionProjections`, `a writable project` | `tool/call`, `project-context/status`, `project-context/document-observed`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-work-handoff` | `work_checkpoint` | `ctx.tools`, `ctx.agents`, `ctx.sessions`, `ctx.sessionProjections`, `a calling Agent` | `tool/call`, `work-handoff/checkpoint`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
@@ -53,6 +54,109 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-project-context"></a>
+
+## `@deepseek-ai/dsh-project-context`
+
+### `project_context_read`
+
+Read complete project Markdown documents and retain their exact versions before updating or consolidating them. Use relative paths. This does not authorize replacing instruction files, README entrypoints, scoped, generated, archived, or vendor documents.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "paths"
+  ]
+}
+```
+
+Source: [`packages/context/project-context/src/index.ts`](../packages/context/project-context/src/index.ts)
+
+### `project_context_update`
+
+Finish the project-document assessment: updated publishes current project context, unchanged confirms it is current, or deferred records a concrete blocker. Preserve unique facts and rationale before consolidating observed ordinary Markdown guides. Never treat unfinished task work or an unverified test as complete. Context replaces only the managed context section; other authored text is preserved.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "updated",
+        "unchanged",
+        "deferred"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "description": "Specific changes, why existing context is current, or the concrete blocker."
+    },
+    "context": {
+      "type": "string",
+      "description": "Complete current project facts for the managed canonical section; required for updated."
+    },
+    "guideUpdates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "oldText": {
+            "type": "string"
+          },
+          "newText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "oldText",
+          "newText"
+        ]
+      }
+    },
+    "forwardingStubs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "oldText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "oldText"
+        ]
+      }
+    }
+  },
+  "required": [
+    "outcome",
+    "summary"
+  ]
+}
+```
+
+Source: [`packages/context/project-context/src/index.ts`](../packages/context/project-context/src/index.ts)
 
 <a id="deepseek-aidsh-work-handoff"></a>
 

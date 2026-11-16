@@ -1,0 +1,75 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../util/error"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../fs/fs"
+    },
+    {
+      "path": "../../subagent/subagent"
+    },
+    {
+      "path": "../../goal/goal"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../../plan/plan-mode"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../goal/work-handoff"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
+      "path": "../../sandbox/sandbox"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../agent-instructions"
+    }
+  ]
+}

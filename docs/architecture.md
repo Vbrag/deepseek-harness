@@ -109,7 +109,7 @@ turn/end
 
 Factory setup follows SessionStore entry and `session/created`, preceding `agent/created`; closing events commit before removal.
 
-`agent/turn-stopping` reports a typed cause for model completion, explicit tool conclusion, or a sticky output limit; plugins own continuation policy.
+`agent/turn-stopping` distinguishes model completion, tool conclusions, and output limits. Plugins own continuation; [project-context](../packages/context/project-context/README.md) finalizes documentation after task continuation within existing limits.
 
 One inbox feeds the driver; injected context waits for a waking message. AgentLoop’s durable `inbox` projection exposes pending input without live Agents.
 

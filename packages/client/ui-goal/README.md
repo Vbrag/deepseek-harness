@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The Web GUI goal surface shows both the durable goal state and its current process-local activation, and lets users edit, pause, resume, or clear the goal; rejected changes appear inline. A separate work strip retains unfinished-work status and handoff actions even without a goal. It displays durable `/goal` runs as `Command input` bubbles so commands from users or the model remain visible after reload. Goal creation remains outside this package. Shipped Web presets other than `minimal` make `/goal` available to agents.
+The Web GUI goal surface shows both the durable goal state and its current process-local activation, and lets users edit, pause, resume, or clear the goal; rejected changes appear inline. A separate work strip retains unfinished-work status and handoff actions even without a goal. Project-note maintenance has an independent queued, updating, updated, unchanged, deferred, or failed status. It displays durable `/goal` runs as `Command input` bubbles so commands from users or the model remain visible after reload. Goal creation remains outside this package. Shipped Web presets other than `minimal` make `/goal` available to agents.
 
 ## Table of Contents
 
@@ -28,6 +28,8 @@ The Web GUI goal surface shows both the durable goal state and its current proce
 Mount this plugin alongside `ui-conversation` and the goal domain package; the strip then appears as the second card in the composer-context stack (after Todo, before Queue) whenever the session has a goal. Todo and Goal use the same panel elevation above the composer. The strip orders its actions edit, clear, then pause or resume, matching the Queue rows' edit and remove positions. An armed active goal offers pause, shown disabled until its activation is known; an active-but-disarmed, paused, or blocked goal offers resume; edit rewrites the objective in the ui-primitives `InlineEditor`, so multi-line objectives survive editing; clear removes the goal and suppresses the strip until the projection catches up.
 
 Authorized current-task lists with active or historical limit disposition show `Continuing automatically` while queued or running, with no manual Continue requirement after three reminders. Actual stopped work shows `Work remains`, `Waiting`, `Paused`, or `Paused: round budget exhausted`. Users can copy or download the saved Markdown and explicitly continue in a new session. Proposals show `Proposed work` with an explicit `Approve and continue` action; legacy todos show `Confirmation required` with `Confirm and continue`. Paused and waiting policies retain their labels even without a handoff. Goal-owned handoffs leave same-session resume to the goal controls. Active or pending planning restrictions suppress automatic status and todo continuation actions. Automatic work keeps its status visible; stopped-work actions hide while work is running; an unsaved checkpoint remains exportable and shows a warning, while continuation into a new session is disabled. A turn ending does not establish task completion.
+
+Project notes use a separate status row even without a goal. Queued and updating describe maintenance in progress; updated and unchanged record its assessment; deferred and failed retain the concrete reason. These labels do not assert task completion or offer another continuation action.
 
 ### The command-input bubble
 

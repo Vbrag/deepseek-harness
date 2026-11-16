@@ -409,6 +409,17 @@ describe('work handoff service', () => {
     expect(ctx.workHandoffs.viewOf(agent.session)?.markdown).toBe(view.markdown)
   })
 
+  it('retains a distinct pending-document explanation after an execution error handoff', async () => {
+    const { ctx, agent } = await fixture()
+    const first = await ctx.workHandoffs.capture(agent, { reason: 'error', stopDetail: 'Execution failed.' })
+    const request = { reason: 'error' as const, stopDetail: 'Project documentation remains unfinished for turn 1.' }
+    const next = await ctx.workHandoffs.capture(agent, request)
+    expect(next.id).not.toBe(first.id)
+    expect(next.markdown).toContain(request.stopDetail)
+    expect(await ctx.workHandoffs.capture(agent, request)).toEqual(next)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'work-handoff/captured')).toHaveLength(2)
+  })
+
   it('leaves failed persistence unsaved and retries the same capture after storage recovers', async () => {
     const { ctx, agent, failFlush } = await fixture()
     failFlush(true)

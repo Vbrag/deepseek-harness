@@ -32,6 +32,12 @@ export const zh = {
   'work.confirmationRequired': '需要确认',
   'work.confirmContinue': '确认并继续',
   'work.automatic': '正在自动继续',
+  'project.pending': '项目笔记待更新',
+  'project.updating': '正在更新项目笔记',
+  'project.updated': '项目笔记已更新',
+  'project.unchanged': '项目笔记无需更改',
+  'project.deferred': '项目笔记更新已延后',
+  'project.failed': '项目笔记更新失败',
 } satisfies Record<string, string>
 
 /** The goal namespace key union. */
@@ -69,6 +75,12 @@ export const en = {
   'work.confirmationRequired': 'Confirmation required',
   'work.confirmContinue': 'Confirm and continue',
   'work.automatic': 'Continuing automatically',
+  'project.pending': 'Project notes queued',
+  'project.updating': 'Updating project notes',
+  'project.updated': 'Project notes updated',
+  'project.unchanged': 'Project notes unchanged',
+  'project.deferred': 'Project notes deferred',
+  'project.failed': 'Project notes update failed',
 } satisfies Record<GoalKey, string>
 
 /** Japanese copy, checked against the English keys. */
@@ -103,6 +115,12 @@ export const ja = {
   'work.confirmationRequired': '確認が必要',
   'work.confirmContinue': '確認して続ける',
   'work.automatic': '自動的に続行中',
+  'project.pending': 'プロジェクトノートの更新待ち',
+  'project.updating': 'プロジェクトノートを更新中',
+  'project.updated': 'プロジェクトノートを更新済み',
+  'project.unchanged': 'プロジェクトノートに変更なし',
+  'project.deferred': 'プロジェクトノートの更新を延期',
+  'project.failed': 'プロジェクトノートの更新に失敗',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -137,6 +155,12 @@ export const es = {
   'work.confirmationRequired': 'Se requiere confirmación',
   'work.confirmContinue': 'Confirmar y continuar',
   'work.automatic': 'Continuando automáticamente',
+  'project.pending': 'Notas del proyecto en cola',
+  'project.updating': 'Actualizando notas del proyecto',
+  'project.updated': 'Notas del proyecto actualizadas',
+  'project.unchanged': 'Notas del proyecto sin cambios',
+  'project.deferred': 'Notas del proyecto aplazadas',
+  'project.failed': 'Error al actualizar notas del proyecto',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -171,6 +195,12 @@ export const fr = {
   'work.confirmationRequired': 'Confirmation requise',
   'work.confirmContinue': 'Confirmer et continuer',
   'work.automatic': 'Poursuite automatique',
+  'project.pending': 'Notes du projet en attente',
+  'project.updating': 'Mise à jour des notes du projet',
+  'project.updated': 'Notes du projet mises à jour',
+  'project.unchanged': 'Notes du projet inchangées',
+  'project.deferred': 'Notes du projet différées',
+  'project.failed': 'Échec de la mise à jour des notes du projet',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -205,6 +235,12 @@ export const de = {
   'work.confirmationRequired': 'Bestätigung erforderlich',
   'work.confirmContinue': 'Bestätigen und fortsetzen',
   'work.automatic': 'Wird automatisch fortgesetzt',
+  'project.pending': 'Projektnotizen vorgemerkt',
+  'project.updating': 'Projektnotizen werden aktualisiert',
+  'project.updated': 'Projektnotizen aktualisiert',
+  'project.unchanged': 'Projektnotizen unverändert',
+  'project.deferred': 'Projektnotizen zurückgestellt',
+  'project.failed': 'Aktualisierung der Projektnotizen fehlgeschlagen',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -239,6 +275,12 @@ export const ru = {
   'work.confirmationRequired': 'Требуется подтверждение',
   'work.confirmContinue': 'Подтвердить и продолжить',
   'work.automatic': 'Автоматическое продолжение',
+  'project.pending': 'Заметки проекта в очереди',
+  'project.updating': 'Обновление заметок проекта',
+  'project.updated': 'Заметки проекта обновлены',
+  'project.unchanged': 'Заметки проекта без изменений',
+  'project.deferred': 'Обновление заметок проекта отложено',
+  'project.failed': 'Не удалось обновить заметки проекта',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -273,4 +315,10 @@ export const pt = {
   'work.confirmationRequired': 'Confirmação necessária',
   'work.confirmContinue': 'Confirmar e continuar',
   'work.automatic': 'Continuando automaticamente',
+  'project.pending': 'Notas do projeto na fila',
+  'project.updating': 'Atualizando notas do projeto',
+  'project.updated': 'Notas do projeto atualizadas',
+  'project.unchanged': 'Notas do projeto sem alterações',
+  'project.deferred': 'Notas do projeto adiadas',
+  'project.failed': 'Falha ao atualizar notas do projeto',
 } satisfies Record<keyof typeof en, string>

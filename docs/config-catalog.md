@@ -75,11 +75,13 @@ export interface Config {
 ## `@deepseek-ai/dsh-agent-instructions`
 
 - `inject`: `agents` · `workingDirectory`
-- `source`: [`packages/context/agent-instructions/src/config.ts:18`](../packages/context/agent-instructions/src/config.ts)
+- `source`: [`packages/context/agent-instructions/src/config.ts:19`](../packages/context/agent-instructions/src/config.ts)
 
 ```ts config-catalog
 /** User-facing workspace instruction loader configuration. */
 export interface Config {
+  /** Root-level project knowledge file loaded before standing instruction candidates. */
+  projectContextFileName?: string
   /** Directory entries that identify the project root while walking upward from the current working directory. */
   projectRootMarkers?: string[]
   /**
@@ -2973,6 +2975,29 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-plugin-package-inventory-deepseek -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-project-context -->
+<a id="deepseek-aidsh-project-context"></a>
+
+## `@deepseek-ai/dsh-project-context`
+
+- `inject`: `agents` · `sessions` · `sessionProjections` · `tools`
+- `source`: [`packages/context/project-context/src/index.ts:41`](../packages/context/project-context/src/index.ts)
+
+```ts config-catalog
+/** Deployment limits for project-document maintenance and its logged original files. */
+export interface Config {
+  /** Root Markdown filename shared with the active instruction loader; defaults to PROJECT_CONTEXT.md. */
+  readonly projectContextFileName?: string
+  /** Complete model update JSON and each persisted status label, in characters. */
+  readonly maxTextChars: number
+  /** Maximum UTF-8 bytes in one complete observed or written project file. */
+  readonly maxSourceBytes: number
+  /** Maximum distinct documents observed in one maintenance phase, including context and primary instructions. */
+  readonly maxDocuments: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-project-context -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-ptc-runtime-node -->
 <a id="deepseek-aidsh-ptc-runtime-node"></a>
 
@@ -4387,7 +4412,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-todo-reconcile-driver`
 
 - `inject`: `agents` · `goals` · `sessions` · `workHandoffs`
-- `source`: [`packages/todo/todo-reconcile-driver/src/index.ts:21`](../packages/todo/todo-reconcile-driver/src/index.ts)
+- `source`: [`packages/todo/todo-reconcile-driver/src/index.ts:22`](../packages/todo/todo-reconcile-driver/src/index.ts)
 
 ```ts config-catalog
 /** Configurable recovery-reminder threshold without a new completed-item high-water mark. */

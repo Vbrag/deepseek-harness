@@ -6,6 +6,7 @@
 
 import { relative } from 'node:path'
 import z from '@deepseek-ai/schemastery'
+import { HarnessError } from '@deepseek-ai/dsh-error'
 import { resolveAgentsHome, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
 const DEFAULT_PROJECT_ROOT_MARKERS = ['.git'] as const
@@ -16,6 +17,8 @@ const RESERVED_PATH_SEGMENTS = new Set(['', '.', '..'])
 
 /** User-facing workspace instruction loader configuration. */
 export interface Config {
+  /** Root-level project knowledge file loaded before standing instruction candidates. */
+  projectContextFileName?: string
   /** Directory entries that identify the project root while walking upward from the current working directory. */
   projectRootMarkers?: string[]
   /**
@@ -39,6 +42,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  projectContextFileName: z.string().default('PROJECT_CONTEXT.md'),
   projectRootMarkers: z.array(z.string()).default([...DEFAULT_PROJECT_ROOT_MARKERS]),
   maxBytes: z.number().required(),
   maxSourceBytes: z.number().step(1).min(1).default(DEFAULT_MAX_SOURCE_BYTES),
@@ -51,6 +55,7 @@ export interface ResolvedDiscoveryConfig {
   dshHome: string
   agentsHome: string
   projectRootMarkers: string[]
+  projectContextFileName: string
   instructionFileCandidates: string[]
   localInstructionFileCandidates: string[]
 }
@@ -76,6 +81,7 @@ export function workspaceBaselineIdentity(
   return JSON.stringify({
     projectRoot: relative(cwd, projectRoot),
     projectRootMarkers: config.projectRootMarkers,
+    projectContextFileName: config.projectContextFileName,
     maxBytes: config.maxBytes,
     maxSourceBytes: config.maxSourceBytes,
     instructionFileCandidates: config.instructionFileCandidates,
@@ -92,6 +98,7 @@ export function workspaceBaselineIdentity(
 export function resolveConfig(config: Config): ResolvedConfig {
   return {
     ...resolveDiscoveryConfig({
+      ...config.projectContextFileName === undefined ? {} : { projectContextFileName: config.projectContextFileName },
       ...config.projectRootMarkers === undefined ? {} : { projectRootMarkers: config.projectRootMarkers },
       ...config.instructionFileCandidates === undefined ? {} : { instructionFileCandidates: config.instructionFileCandidates },
       ...config.localInstructionFileCandidates === undefined
@@ -115,13 +122,14 @@ export function resolveConfig(config: Config): ResolvedConfig {
  * @returns normalized home, root markers, and instruction candidates.
  */
 export function resolveDiscoveryConfig(
-  config: Pick<Config, 'projectRootMarkers' | 'instructionFileCandidates' | 'localInstructionFileCandidates'>
+  config: Pick<Config, 'projectRootMarkers' | 'projectContextFileName' | 'instructionFileCandidates' | 'localInstructionFileCandidates'>
     & { dshHome?: string; agentsHome?: string },
 ): ResolvedDiscoveryConfig {
-  return {
+  const resolved = {
     dshHome: resolveDshHome(config.dshHome),
     agentsHome: resolveAgentsHome(config.agentsHome),
     projectRootMarkers: config.projectRootMarkers ?? [...DEFAULT_PROJECT_ROOT_MARKERS],
+    projectContextFileName: resolveProjectContextFileName(config.projectContextFileName),
     instructionFileCandidates: resolveInstructionFileCandidates(
       config.instructionFileCandidates,
       DEFAULT_INSTRUCTION_FILE_CANDIDATES,
@@ -131,10 +139,33 @@ export function resolveDiscoveryConfig(
       DEFAULT_LOCAL_INSTRUCTION_FILE_CANDIDATES,
     ),
   }
+  if ([...resolved.instructionFileCandidates, ...resolved.localInstructionFileCandidates]
+    .some(candidate => candidate.toLowerCase() === resolved.projectContextFileName.toLowerCase())) {
+    throw new HarnessError('projectContextFileName must be distinct from configured standing instruction candidates.',
+      'AGENT_INSTRUCTIONS_INVALID_PROJECT_CONTEXT_FILE')
+  }
+  return resolved
 }
 
 function resolveInstructionFileCandidates(candidates: string[] | undefined, fallback: readonly string[]): string[] {
   return (candidates ?? [...fallback]).filter(candidate => (
     !RESERVED_PATH_SEGMENTS.has(candidate) && !/[\\/]/.test(candidate)
   ))
+}
+
+/**
+ * Resolve a portable project-context filename distinct from standing rules.
+ * @param value - optional configured same-directory filename.
+ * @returns the validated filename, defaulting to `PROJECT_CONTEXT.md`.
+ * @throws HarnessError when the filename is unsafe or names a standing instruction file.
+ */
+export function resolveProjectContextFileName(value?: string): string {
+  const fileName = value ?? 'PROJECT_CONTEXT.md'
+  if (fileName.length === 0 || !/\.md$/i.test(fileName) || RESERVED_PATH_SEGMENTS.has(fileName)
+    || /[\\/:<>"|?*\u0000-\u001f]/.test(fileName) || /[. ]$/.test(fileName)
+    || ['agents.md', 'claude.md', 'agents.local.md', 'claude.local.md'].includes(fileName.toLowerCase())) {
+    throw new HarnessError('projectContextFileName must be a portable Markdown filename distinct from AGENTS.md and CLAUDE.md rules.',
+      'AGENT_INSTRUCTIONS_INVALID_PROJECT_CONTEXT_FILE')
+  }
+  return fileName
 }

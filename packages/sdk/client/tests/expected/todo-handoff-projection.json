@@ -76,6 +76,32 @@
       "data": {
         "id": "handoff-todo-limit"
       }
+    },
+    {
+      "type": "project-context/document-observed",
+      "seq": 7,
+      "time": 0,
+      "data": {
+        "sourceTurn": 1,
+        "root": "/project",
+        "document": {
+          "path": "PROJECT_CONTEXT.md",
+          "version": null,
+          "content": ""
+        }
+      }
+    },
+    {
+      "type": "project-context/status",
+      "seq": 8,
+      "time": 0,
+      "data": {
+        "sourceTurn": 1,
+        "knowledgeWatermark": 2,
+        "status": "updated",
+        "contextPath": "/project/PROJECT_CONTEXT.md",
+        "summary": "Project documentation recorded."
+      }
     }
   ],
   "auditNotifications": [
@@ -164,6 +190,38 @@
         "time": 0,
         "data": {
           "id": "handoff-todo-limit"
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "project-context/document-observed",
+        "seq": 7,
+        "time": 0,
+        "data": {
+          "sourceTurn": 1,
+          "root": "/project",
+          "document": {
+            "path": "PROJECT_CONTEXT.md",
+            "version": null,
+            "content": ""
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "project-context/status",
+        "seq": 8,
+        "time": 0,
+        "data": {
+          "sourceTurn": 1,
+          "knowledgeWatermark": 2,
+          "status": "updated",
+          "contextPath": "/project/PROJECT_CONTEXT.md",
+          "summary": "Project documentation recorded."
         }
       }
     }

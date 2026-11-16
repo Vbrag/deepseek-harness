@@ -1,5 +1,5 @@
 ---
-description: "The context group map: request-context plugins that add durable, model-visible context without defining tools, for users and maintainers navigating the group."
+description: "The context group map: plugins that add durable model-visible context and maintain project documentation, for users and maintainers navigating the group."
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The context group provides plugins that add model-visible context to each request without defining any tool: workspace instruction files become guidance, `@file` mentions offer path completion, other sessions can be referenced as bounded snapshots, and the model can see the current time and the agent's tmux location. Only `agent-instructions` (`dsh-base`) ships mounted by default; the rest are opt-in. Context is durable: injected instructions and references enter session history as user-role messages, so they persist, replay, and compact like other conversation content. This page maps the group; each package README owns the per-package contract.
+The context group provides plugins that add model-visible context and maintain project documentation: workspace instruction files become guidance, `@file` mentions offer path completion, other sessions can be referenced as bounded snapshots, and the model can see the current time and the agent's tmux location. `dsh-base` mounts `agent-instructions` and `project-context` by default; the latter checks and updates project documentation before turns close. The rest are opt-in. Context is durable: injected instructions and references enter session history as user-role messages, so they persist, replay, and compact like other conversation content. This page maps the group; each package README owns the per-package contract.
 
 ## Table of Contents
 
@@ -25,6 +25,7 @@ The context group provides plugins that add model-visible context to each reques
 | Package | Role | ctx key |
 |---|---|---|
 | [`agent-instructions/`](agent-instructions/README.md) | Loads `AGENTS.md`/`CLAUDE.md` workspace instructions into context and refreshes them after file edits | — |
+| [`project-context/`](project-context/README.md) | Maintains canonical project knowledge and safely consolidates observed guides at root-turn completion | `ctx.projectContext` |
 | [`session-reference/`](session-reference/README.md) | References other sessions: mention one and its bounded read-only snapshot becomes context | `ctx.sessionReferenceResolver` |
 | [`file-reference/`](file-reference/README.md) | `@file` mention discovery and the shared mention grammar for host-backed UIs | `ctx.fileReferences` |
 | [`file-reference-local/`](file-reference-local/README.md) | Local-workspace completion provider for `@file` mentions | — |
@@ -37,6 +38,7 @@ The context group provides plugins that add model-visible context to each reques
 <a id="related-documentation"></a>
 ## Related documentation
 
+- [Project-context subsystem](../../docs/subsystems/context.md) — documentation assessment and durable state.
 - [Session-reference subsystem](../../docs/subsystems/session-reference.md) — canonical mention URIs, snapshot semantics, and the stable error taxonomy.
 - [Workspace-context decision record](../../.agents/notes/archived/feature/2026-06-24-workspace-context.md) — why instruction context is per-agent/per-session and durably logged.
 - [Generated configuration catalog](../../docs/config-catalog.md) — every config field the group's packages accept.

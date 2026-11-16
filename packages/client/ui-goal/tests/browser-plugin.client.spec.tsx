@@ -22,10 +22,11 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { makeTranslate, RemoteError, TestSessions } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionFixture } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionProjectionMap, UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { GoalActivationSnapshot, GoalBarActions, GoalBarInjected } from '../src/client/slots.ts'
+import type { GoalBarActions, GoalBarInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
-import { GoalDock } from '../src/client/GoalBar.tsx'
+import { GoalDock, type GoalDockProps } from '../src/client/GoalBar.tsx'
 import { zh } from '../src/client/locales.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
@@ -33,6 +34,20 @@ afterEach(cleanup)
 
 const sid = (k: string): SessionId => k as SessionId
 const GOAL_ID = 'g-1' as GoalId
+
+function projectionReader(values: { [K in keyof SessionProjectionMap]?: SessionProjectionMap[K] | undefined }): UseProjection {
+  function read<K extends Extract<keyof SessionProjectionMap, string>>(key: K): SessionProjectionMap[K] | undefined
+  function read<K extends Extract<keyof SessionProjectionMap, string>, S>(
+    key: K, selector: (value: SessionProjectionMap[K] | undefined) => S,
+  ): S
+  function read<K extends Extract<keyof SessionProjectionMap, string>, S>(
+    key: K, selector?: (value: SessionProjectionMap[K] | undefined) => S,
+  ): S | SessionProjectionMap[K] | undefined {
+    const value = values[key]
+    return selector === undefined ? value : selector(value)
+  }
+  return read
+}
 
 function makeProjection(revision = 3): GoalProjection {
   return {
@@ -346,10 +361,8 @@ describe('ui-goal browser plugin', () => {
 describe('GoalDock adapter', () => {
   it('renders goals and keeps active or pending planning work suspended', () => {
     const projection = makeProjection()
-    const useProjection = vi.fn((key: string) => key === 'goal' ? projection : null)
-    const useGoalActivation = (
-      selector: (snapshot: GoalActivationSnapshot) => unknown,
-    ) => selector({ id: GOAL_ID, revision: 3, activation: 'armed' })
+    const useGoalActivation: GoalDockProps['useGoalActivation'] = selector =>
+      selector({ id: GOAL_ID, revision: 3, activation: 'armed' })
     const actions: GoalBarActions = {
       onEdit: () => Promise.resolve({ ok: true, value: undefined }),
       onPause: () => Promise.resolve({ ok: true, value: undefined }),
@@ -358,13 +371,14 @@ describe('GoalDock adapter', () => {
     }
     const t = makeTranslate(zh, commonZh)
     const dockProps = (up: () => GoalProjection | null | undefined, planning?: PlanProjection) =>
-      ({ useProjection: (key: string) => key === 'goal' ? up()
-        : key === 'plan' ? planning
-          : key === 'todos' && planning !== undefined ? [{ content: 'Authorized work', status: 'pending' }]
-            : key === 'todoPolicy' ? { purpose: 'current-task', disposition: 'active', completedHighWater: 0, repairAttempts: 0 }
-              : null, useSession: () => false,
-      useGoalActivation, ...actions, t }) as unknown as Parameters<typeof GoalDock>[0]
-    const shown = render(<GoalDock {...dockProps(() => useProjection('goal'))} />)
+      ({ useProjection: projectionReader({ goal: up(), plan: planning,
+        // The summary-exclusion marker is type-only; wire values remain ordinary arrays.
+        todos: planning === undefined ? undefined
+          : [{ content: 'Authorized work', status: 'pending' }] as NonNullable<SessionProjectionMap['todos']>,
+        todoPolicy: { purpose: 'current-task', disposition: 'active', completedHighWater: 0, repairAttempts: 0 },
+      }), useSession: vi.fn<GoalDockProps['useSession']>(),
+      useGoalActivation, ...actions, t }) as GoalDockProps
+    const shown = render(<GoalDock {...dockProps(() => projection)} />)
     expect(shown.getByText('Ship it')).toBeTruthy()
     cleanup()
 
@@ -385,10 +399,9 @@ describe('GoalDock adapter', () => {
 
   it('matches activation by goal id and revision from the injected hook', () => {
     const projection = makeProjection()
-    const useProjection = vi.fn((key: string) => key === 'goal' ? projection : null)
-    const useGoalActivation = (
-      selector: (snapshot: GoalActivationSnapshot) => unknown,
-    ) => selector({ id: GOAL_ID, revision: 3, activation: 'disarmed' })
+    const useProjection = projectionReader({ goal: projection })
+    const useGoalActivation: GoalDockProps['useGoalActivation'] = selector =>
+      selector({ id: GOAL_ID, revision: 3, activation: 'disarmed' })
     const actions: GoalBarActions = {
       onEdit: () => Promise.resolve({ ok: true, value: undefined }),
       onPause: () => Promise.resolve({ ok: true, value: undefined }),
@@ -396,7 +409,7 @@ describe('GoalDock adapter', () => {
       onClear: () => Promise.resolve({ ok: true, value: undefined }),
     }
     const t = makeTranslate(zh, commonZh)
-    const props = { useProjection, useSession: () => false, useGoalActivation, ...actions, t } as unknown as Parameters<typeof GoalDock>[0]
+    const props = { useProjection, useSession: vi.fn<GoalDockProps['useSession']>(), useGoalActivation, ...actions, t } as GoalDockProps
     const rendered = render(<GoalDock {...props} />)
     expect(rendered.getByText('待继续的目标')).toBeTruthy()
     expect(screen.getByRole('button', { name: '恢复目标' })).toBeTruthy()

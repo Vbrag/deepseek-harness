@@ -327,6 +327,9 @@
     - id: goal
       name: '@deepseek-ai/dsh-goal'
 
+    - id: project-context
+      name: '@deepseek-ai/dsh-project-context'
+
     - id: work-handoff
       name: '@deepseek-ai/dsh-work-handoff'
       required: true

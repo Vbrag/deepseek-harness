@@ -4,16 +4,18 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
-import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { WorkHandoffId, WorkHandoffView } from '@deepseek-ai/dsh-work-handoff'
 import type {} from '@deepseek-ai/dsh-tool-todo/types'
+import type {} from '@deepseek-ai/dsh-project-context/types'
 import { createProcessDeepSeekHarness } from '../src/api.ts'
 
 const expectedPath = fileURLToPath(new URL('./expected/todo-handoff-projection.json', import.meta.url))
 const fakeRuntime = fileURLToPath(new URL('./fake-runtime.ts', import.meta.url))
-const auditTypes = new Set(['todo/policy', 'work-handoff/checkpoint', 'work-handoff/captured', 'work-handoff/saved'])
+const auditTypes = new Set(['todo/policy', 'work-handoff/checkpoint', 'work-handoff/captured', 'work-handoff/saved',
+  'project-context/status', 'project-context/document-observed'])
 
 function isAudit(event: unknown): event is { readonly type: string } {
   return typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string'
@@ -50,6 +52,10 @@ it('preserves saved unfinished-work state in both event collections and the orig
       }
       session.append('work-handoff/captured', { handoff })
       session.append('work-handoff/saved', { id: handoff.id })
+      session.append('project-context/document-observed', { sourceTurn: 1, root: '/project',
+        document: { path: 'PROJECT_CONTEXT.md', version: null, content: '' } })
+      session.append('project-context/status', { sourceTurn: 1, knowledgeWatermark: SessionSeq(2),
+        status: 'updated', contextPath: '/project/PROJECT_CONTEXT.md', summary: 'Project documentation recorded.' })
     } finally {
       clock.mockRestore()
     }
@@ -76,7 +82,7 @@ it('preserves saved unfinished-work state in both event collections and the orig
         .flatMap(event => event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : [])),
     }
     expect(projection).toEqual(JSON.parse(await readFile(expectedPath, 'utf8')))
-    expect(projection.auditEvents).toHaveLength(4)
+    expect(projection.auditEvents).toHaveLength(6)
   } finally {
     await harness.close()
   }

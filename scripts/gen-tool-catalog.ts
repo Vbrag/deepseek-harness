@@ -21,6 +21,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
 import GoalService from '@deepseek-ai/dsh-goal'
 import WorkHandoffService from '@deepseek-ai/dsh-work-handoff'
+import ProjectContextService from '@deepseek-ai/dsh-project-context'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native'
@@ -209,6 +210,18 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-project-context',
+    dir: 'project-context',
+    source: 'packages/context/project-context/src/index.ts',
+    requires: ['ctx.tools', 'ctx.agents', 'ctx.sessions', 'ctx.sessionProjections', 'a writable project'],
+    writes: ['tool/call', 'project-context/status', 'project-context/document-observed', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(ProjectContextService)
+    },
+  },
   {
     pkg: '@deepseek-ai/dsh-work-handoff',
     dir: 'work-handoff',

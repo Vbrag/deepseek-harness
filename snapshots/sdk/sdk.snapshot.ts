@@ -143,6 +143,10 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'project-context': {
+    modelRequestsFile: 'project-context-requests.jsonl',
+    environment: { DEEPSEEK_BASE_URL: 'http://127.0.0.1:9' },
+  },
   'todo-continuation': {
     modelRequestsFile: 'todo-requests.jsonl',
     environment: { DEEPSEEK_BASE_URL: 'http://127.0.0.1:9' },
@@ -766,6 +770,7 @@ const legacySdkCompositions = new Set([
   'system-prompt-in-history',
 ])
 const legacySdkContextPatch = fileURLToPath(new URL('./legacy-context.patch.yml', import.meta.url))
+const noProjectContextPatch = fileURLToPath(new URL('./no-project-context.patch.yml', import.meta.url))
 
 function authoredPatches(scenario: CorpusScenario, replaying: boolean): string[] {
   const owner = compositionOwner(scenario)
@@ -814,6 +819,7 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   await mkdir(patchRoot, { recursive: true })
   const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
   const patches = [
+    ...scenario.name === 'project-context' ? [] : [noProjectContextPatch],
     ...legacySdkCompositions.has(scenario.manifest.composition) ? [legacySdkContextPatch] : [],
     ...authoredPatches(scenario, !recording),
     ...assertions.patches ?? [],
@@ -825,11 +831,12 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   if (assertions.dshSdkChild !== undefined) {
     const childHome = join(cwd, '.child-dsh')
     const legacyChildPatch = materializeProfilePatch(legacySdkContextPatch, cwd, 'sdk', patchRoot, patches.length, installAnchor)
-    const childPatch = materializeProfilePatch(assertions.dshSdkChild.config, cwd, 'sdk', patchRoot, patches.length + 1, installAnchor)
+    const noProjectContextChildPatch = materializeProfilePatch(noProjectContextPatch, cwd, 'sdk', patchRoot, patches.length + 1, installAnchor)
+    const childPatch = materializeProfilePatch(assertions.dshSdkChild.config, cwd, 'sdk', patchRoot, patches.length + 2, installAnchor)
     await mkdir(childHome, { recursive: true })
     childSessionsRoot = join(childHome, 'sessions')
     childEnvironment = {
-      DSH_TEST_CHILD_PATCHES: JSON.stringify([legacyChildPatch, childPatch]),
+      DSH_TEST_CHILD_PATCHES: JSON.stringify([legacyChildPatch, noProjectContextChildPatch, childPatch]),
       DSH_TEST_CHILD_HOME: childHome,
     }
   }
@@ -1283,6 +1290,24 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       )
       reconcileCatalogCreationTimes(ordered.map(log => log.content), 'validate')
       const actualContext = contextOf(ordered, cwd)
+      if (scenario.name === 'project-context') {
+        const parent = ordered[0]
+        if (parent === undefined) throw new Error('project context has no persisted Session')
+        const events = parseSessionLog(parent.content)
+        expect(events.filter(event => event.type === 'turn/start')).toHaveLength(1)
+        expect(events.filter(event => event.type === 'project-context/status').map(event => event.data.status))
+          .toEqual(['updating', 'updated'])
+        expect(events.filter(event => event.type === 'project-context/document-observed').map(event => event.data.document.path))
+          .toEqual(['PROJECT_CONTEXT.md', 'AGENTS.md'])
+        expect(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'project-context'))
+          .toHaveLength(1)
+        expect(events.filter(event => event.type === 'tool/result').every(event => event.data.message.isError === false)).toBe(true)
+        expect(modelRequests).toHaveLength(2)
+        expect(JSON.stringify(modelRequests[1]?.messages)).toContain('Finalize current project documentation')
+        expect(notifications.some(notification => notification.method === 'session.event'
+          && notification.params.event.type === 'project-context/status')).toBe(true)
+        expect(results[0]?.finishReason).toBe('completed')
+      }
       if (scenario.name === 'todo-continuation') {
         const parent = ordered[0]
         if (parent === undefined) throw new Error('todo continuation has no persisted Session')

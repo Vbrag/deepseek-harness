@@ -7,13 +7,15 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_project_context["project-context"]
+  svc_projectContext["ctx.projectContext<br/>Project documentation checkpoints"]
+  pkg_todo_reconcile_driver["todo-reconcile-driver"]
+  pkg_client_ui_goal["client-ui-goal"]
   pkg_tool_todo["tool-todo"]
   svc_todoPolicy["ctx.todoPolicy<br/>Todo authorization and repair accounting"]
-  pkg_todo_reconcile_driver["todo-reconcile-driver"]
   pkg_work_handoff["work-handoff"]
   svc_workHandoffs["ctx.workHandoffs<br/>Unfinished-work handoffs"]
   pkg_goal_round_driver["goal-round-driver"]
-  pkg_client_ui_goal["client-ui-goal"]
   pkg_action_cards["action-cards"]
   svc_actionCards["ctx.actionCards<br/>Optional action cards"]
   pkg_creation_recommendations["creation-recommendations"]
@@ -439,6 +441,7 @@ flowchart LR
   pkg_plugin_market --> svc_pluginMarket
   pkg_plugin_package_inventory_deepseek --> svc_deepseekLlmApiExtensions
   pkg_plugin_recommendations --> svc_pluginRecommendations
+  pkg_project_context --> svc_projectContext
   pkg_ptc_runtime --> svc_ptcRuntime
   pkg_ptc_runtime_node --> svc_ptcRuntime
   pkg_pwsh_local --> svc_shell
@@ -585,6 +588,8 @@ flowchart LR
   svc_pluginRecommendations --> pkg_client_ui_plugin_recommendations
   svc_pluginRegistryProbe --> pkg_client_ui_plugin_manager
   svc_profileContext --> pkg_plugin_manager
+  svc_projectContext --> pkg_client_ui_goal
+  svc_projectContext --> pkg_todo_reconcile_driver
   svc_ptcRuntime --> pkg_tool_executor_ptc
   svc_ptcRuntime --> pkg_workflow_ptc
   svc_remoteAccess --> pkg_api_gateway
@@ -698,6 +703,7 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.projectContext` | `service` | [`project-context`](../packages/context/project-context) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | Owns logged turn-end documentation assessment and guarded project-guide updates. |
 | `ctx.todoPolicy` | `service` | [`tool-todo`](../packages/todo/tool-todo) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`work-handoff`](../packages/goal/work-handoff) | - | Owns list purpose, suspension, completion high-water marks and repair accounting. |
 | `ctx.workHandoffs` | `service` | [`work-handoff`](../packages/goal/work-handoff) | - | [`goal-round-driver`](../packages/goal/goal-round-driver), [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | Saves checkpoints and host observations; explicit continuation retains source restrictions. |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | Owns the card tool, card state, user actions and status notices; card kinds register their actions and handlers. |
