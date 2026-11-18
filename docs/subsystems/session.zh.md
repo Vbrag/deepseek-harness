@@ -537,6 +537,7 @@ declare class Session {
      * @param inheritedEventCount - exact fork-inherited prefix length decoded from storage.
      * @param eventState - aliasing state carried from the operation that produced the seed.
      * @param projections - pure interpreters for plugin-owned message changes.
+     * @param appended - optional owner-drained collection of new immutable events and the resume marker, excluding seed events.
      * @returns a restored detached session.
      * @throws when a seed event requires a missing message interpreter or fails validation.
      */
@@ -547,6 +548,7 @@ declare class Session {
       inheritedEventCount: SessionLogOffset,
       eventState: SessionSeedEventState,
       projections?: readonly SessionMessageProjection[],
+      appended?: SessionEvent[],
     ): Session;
   /**
      * Return the immutable event stored at one exact sequence number.

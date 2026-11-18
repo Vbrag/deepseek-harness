@@ -9,8 +9,8 @@
   en: 9f34c994e9217d1e
   zh: 75bb813b498fa800
 /deepseek-ai-dsh-orchestration/summary:
-  en: 26266e326eda68fb
-  zh: 9f52a4a48edf87a7
+  en: e491cc5849589174
+  zh: de48f37e2aa3e932
 /deepseek-ai-dsh-orchestration/table-of-contents:
   en: b563e4ec4727d0de
   zh: b7de025a91189679
@@ -21,17 +21,17 @@
   en: 3107d0ee6ef7a8f4
   zh: 3f02514478cd83e0
 /deepseek-ai-dsh-orchestration/use-this-package/task-assessment:
-  en: 81d9bad902b03dcb
-  zh: 166a5613aa3e1d15
+  en: 93e79253d1c02c58
+  zh: f10af3d929ab0bf0
 /deepseek-ai-dsh-orchestration/use-this-package/configuration:
-  en: ece0e56a8d674ec3
-  zh: e4c5454cff5c7be7
+  en: 80dc8417c47fcb30
+  zh: 29f1cacc0d15ddd7
 /deepseek-ai-dsh-orchestration/use-this-package/selection-and-failures:
-  en: 67f7316087c02dc3
-  zh: e461d89dbb7c2494
+  en: 926a3e5f06e521f8
+  zh: 5417e7b129fb9d36
 /deepseek-ai-dsh-orchestration/understand-the-implementation:
-  en: 089552fa9f3bf8ec
-  zh: d375bd54d68c43dc
+  en: 5da43e1bf2f62ae3
+  zh: 3e8ff5e893571168
 /deepseek-ai-dsh-orchestration/further-exploration:
   en: a29c00f40a69cacb
   zh: 175f45355371a729
@@ -42,8 +42,8 @@
   en: 29d44710cacce28b
   zh: f1d42b0990e97b35
 /deepseek-ai-dsh-orchestration/model-experience/task-aware-delegation/what-the-model-sees:
-  en: 1686c3107b4d64b1
-  zh: d33f9eacbc5e79d8
+  en: 9dc7c37dc734428d
+  zh: 07144fc11ee95f44
 /deepseek-ai-dsh-orchestration/model-experience/task-aware-delegation/what-the-model-sees/orchestration-runtime-guidance:
   en: eb0683fb6e297262
   zh: 02b8107b095be7e1
@@ -54,8 +54,8 @@
   en: ee2881e354eeb10a
   zh: 0fe623dde14f5ea4
 /deepseek-ai-dsh-orchestration/known-limitations-and-deferred-work:
-  en: f6cdaa629e6f628c
-  zh: fb4b9da37baaacc6
+  en: 2128f88f0ef875eb
+  zh: 02412cd1d36cda4b
 /deepseek-ai-dsh-orchestration/known-limitations-and-deferred-work/dev-note:
   en: 498e4cf9fe5741a7
   zh: d2877493bb4ffa8f

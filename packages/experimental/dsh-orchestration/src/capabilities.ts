@@ -51,9 +51,9 @@ export interface ModelCapability {
   readonly name: string
   /** Whether the model accepts image input (vision), not image generation. */
   readonly imageInput: boolean
-  /** Whether the model advertises reasoning support. */
+  /** Whether the gateway advertises API reasoning support; separate from the reasoning task specialty. */
   readonly reasoning: boolean
-  /** Disciplines this model is suggested for, from the catalog's tags/applications. */
+  /** Verified task specialties from gateway descriptions and exact model documentation. */
   readonly domains: readonly TaskDomain[]
   /** Every input modality the model accepts, text always included. */
   readonly modalities: readonly Modality[]
@@ -70,7 +70,8 @@ export interface ModelCapability {
 /**
  * The Paderborn AI-Gateway capability catalog: chat-mode, healthy, callable
  * entries only. Transcribed from `paderborn-ai-gateway-models.md` (investigation
- * of 2026-10-30). Embeddings, routers, image-generation, responses-only,
+ * of 2026-10-30), with task-specialty evidence recorded beside supplemented entries.
+ * Embeddings, routers, image-generation, responses-only,
  * upcoming, and unhealthy entries are excluded here because they are not
  * usable through the DSH chat pipeline or the current gateway key. The
  * media-capable Omni entry lists its catalog audio/video tags, but DSH does
@@ -87,9 +88,11 @@ export const PADERBORN_CATALOG: readonly ModelCapability[] = [
   // be reduced to one guaranteed ceiling, so they carry no static rate limit.
   { id: 'hs-de.latest-basemodel', name: 'HS-DE: Basismodel', imageInput: true, reasoning: true, domains: ['allrounder', 'reasoning', 'coding', 'vision'], modalities: ['text', 'image'], contextWindow: 262_000, health: 'routeable', suggested: 'Free default alias for research, coding, and agent tasks; currently Qwen 3.8.' },
   { id: 'gwdg.gemma-4-31b-it', name: 'Gemma 4', imageInput: true, reasoning: false, domains: ['allrounder', 'vision'], modalities: ['text', 'image'], contextWindow: 256_000, rateLimits: { rpm: 10, tpm: 500_000 }, health: 'routeable', suggested: 'Free general assistance and image understanding.' },
-  { id: 'gwdg.deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731', imageInput: false, reasoning: true, domains: ['reasoning', 'allrounder'], modalities: ['text'], contextWindow: 1_000_000, rateLimits: { rpm: 10, tpm: 500_000 }, health: 'routeable', suggested: 'Long-context text reasoning and general work.' },
+  // Coding and reasoning verified 2026-11-17: https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731
+  { id: 'gwdg.deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731', imageInput: false, reasoning: true, domains: ['reasoning', 'coding', 'allrounder'], modalities: ['text'], contextWindow: 1_000_000, rateLimits: { rpm: 10, tpm: 500_000 }, health: 'routeable', suggested: 'Long-context text reasoning, coding agents, and general work.' },
   { id: 'hs-de.openai-gpt-oss-120b', name: 'OpenAI GPT OSS', imageInput: false, reasoning: true, domains: ['reasoning', 'allrounder'], modalities: ['text'], contextWindow: 128_000, rateLimits: { rpm: 100, tpm: 500_000 }, health: 'routeable', suggested: 'Free open-weight text/reasoning without the proprietary service.' },
-  { id: 'gwdg.glm-5.3-flash', name: 'GLM 5.3 Flash', imageInput: false, reasoning: false, domains: ['coding'], modalities: ['text'], contextWindow: 200_000, rateLimits: { rpm: 10, tpm: 500_000 }, health: 'routeable', suggested: 'Free coding agents, multilingual programming, terminal tasks, tool use, mathematical reasoning.' },
+  // Coding and reasoning verified 2026-11-17: https://huggingface.co/zai-org/GLM-5.3-Flash
+  { id: 'gwdg.glm-5.3-flash', name: 'GLM 5.3 Flash', imageInput: false, reasoning: false, domains: ['coding', 'reasoning'], modalities: ['text'], contextWindow: 200_000, rateLimits: { rpm: 10, tpm: 500_000 }, health: 'routeable', suggested: 'Free coding agents, multilingual programming, terminal tasks, tool use, mathematical reasoning.' },
   { id: 'hs-de.qwen3.8-27b', name: 'Qwen 3.8', imageInput: true, reasoning: true, domains: ['reasoning', 'coding', 'vision', 'allrounder'], modalities: ['text', 'image'], contextWindow: 262_000, health: 'routeable', suggested: 'Free research, coding, reasoning, large agent tasks; image and video input listed.' },
   { id: 'hs-de.qwen3.8-27b-no-think', name: 'Qwen 3.8 (Ohne Thinking)', imageInput: true, reasoning: false, domains: ['vision', 'allrounder'], modalities: ['text', 'image'], contextWindow: 262_000, health: 'routeable', suggested: 'Fast direct writing and simple tasks without explicit thinking iterations.' },
   { id: 'gwdg.qwen3.6-35b-a3b-no-think', name: 'Qwen 3.6 (Ohne Thinking)', imageInput: true, reasoning: false, domains: ['vision', 'allrounder'], modalities: ['text', 'image'], contextWindow: 262_000, rateLimits: { rpm: 10, tpm: 500_000 }, health: 'routeable', suggested: 'Direct answers and quick text generation; vision listed.' },

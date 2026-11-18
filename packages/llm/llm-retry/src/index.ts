@@ -207,7 +207,7 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
           downstream.error,
         )
       }
-      if (downstream.type === 'decision' && downstream.decision?.kind === 'retry') {
+      if (downstream.type === 'decision' && downstream.decision !== undefined) {
         return downstream.decision
       }
     } else if (!policy.retryableCodes.includes(failure.code)) {

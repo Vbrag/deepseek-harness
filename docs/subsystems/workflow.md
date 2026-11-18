@@ -8,6 +8,8 @@ Service Definition: [dsh-workflow](../../packages/workflow/workflow) (`ctx.workf
 
 Sources: browser-safe vocabulary in [`packages/workflow/workflow/src/types.ts`](../../packages/workflow/workflow/src/types.ts), Host request and live-run handles in [`runtime-types.ts`](../../packages/workflow/workflow/src/runtime-types.ts).
 
+Scripts supply per-child model-routing requirements with [`agent(prompt, { task_assessment })`](../../packages/workflow/workflow/README.md#running-a-workflow-script). The PTC engine validates assessment JSON in the guest and host and forwards `SubagentTaskAssessment` to subagent startup; omission is allowed unless the composed router requires it.
+
 ## The start request
 
 What a caller asks for when starting a run. The ordinary workflow tool builds this from the model's `{ script, meta, args }` call plus the calling agent; specialized consumers may also select one engine-wide `subagentProvider` and lower `maxTotalAgents` for the run, but the script cannot observe or replace either policy. `meta` and `args` are plain JSON DATA (the engine validates `meta` against its schema and rejects loud BEFORE anything runs — no script text is ever evaluated to obtain it). `parent` is REQUIRED — every child the script starts is attributed to it, and cwd, lineage, and depth pass through the [subagent seam](subagent.md).

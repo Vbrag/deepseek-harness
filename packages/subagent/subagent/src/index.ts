@@ -67,6 +67,10 @@ import type {
   SubagentModelRouter,
   SubagentModelRoutingContext,
   SubagentModelRouting,
+  SubagentModelChangeRequest,
+  SubagentModelChangeContext,
+  SubagentColdModelChangeContext,
+  SubagentModelChangeResult,
 } from './types.ts'
 import { SubagentError } from './error.ts'
 import { assertSubagentMaxDepth } from './depth.ts'
@@ -79,10 +83,13 @@ import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinitio
 import { subagentCatalogProjectionDefinition } from './catalog.ts'
 import { ROOT_AGENT_NAME } from './names.ts'
 import { assertAllowedModelRoutes, subagentModelSelectionPolicy, subagentModelSelectionProjectionDefinition } from './model-selection-policy.ts'
+import { appendRunningModelPolicy, runningModelPolicyProjectionDefinition, runningModelRoutes } from './running-model-policy.ts'
+import type { RunningModelPolicyState } from './running-model-policy.ts'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 export type {} from './catalog.ts'
 export type {} from './projection.ts'
+export type {} from './running-model-policy.ts'
 export * from './out-of-process.ts'
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts'
 export { SubagentRunId } from './types.ts'
@@ -108,6 +115,10 @@ export type {
   SubagentModelRouter,
   SubagentModelRoutingContext,
   SubagentModelRouting,
+  SubagentModelChangeRequest,
+  SubagentModelChangeContext,
+  SubagentColdModelChangeContext,
+  SubagentModelChangeResult,
 } from './types.ts'
 export {
   foldSubagentDescriptor,
@@ -202,6 +213,12 @@ export interface Config {
   maxDepth: Volatile<number>
 }
 
+interface ModelRouterRegistration {
+  readonly router: SubagentModelRouter
+  readonly abort: AbortController
+  readonly pending: Set<Promise<unknown>>
+}
+
 /** Named provider registry with managed activations, durable discovery, and local child messaging. */
 export class SubagentRuntime extends TypertRemoteService {
   static Config = z.object({
@@ -211,8 +228,9 @@ export class SubagentRuntime extends TypertRemoteService {
   static inject = ['workingDirectory', 'sessionProjections']
   private providers = new Map<string, SubagentProvider>()
   private manager: SubagentManager | undefined
-  private modelRouter: SubagentModelRouter | undefined
+  private modelRouter: ModelRouterRegistration | undefined
   private modelPolicy: ProjectionHandle<SubagentModelRoute[] | null> | undefined
+  private runningModelPolicy: ProjectionHandle<RunningModelPolicyState> | undefined
   /**
    * The contained lifecycle-edge publisher. Built here because scoped dispatch
    * keys its carrier by this exact service instance, whose own context filter
@@ -231,6 +249,7 @@ export class SubagentRuntime extends TypertRemoteService {
     await ctx.sessionProjections.register(subagentTimingProjectionDefinition)
     const identityProjection = await ctx.sessionProjections.register(subagentIdentityProjectionDefinition)
     this.modelPolicy = await ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
+    this.runningModelPolicy = await ctx.sessionProjections.register(runningModelPolicyProjectionDefinition)
     if (ctx.fiber.uid === null) return
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentManager(childCtx, {
@@ -317,8 +336,13 @@ export class SubagentRuntime extends TypertRemoteService {
     // oxlint-disable-next-line typescript/no-misused-promises -- Router withdrawal is synchronous; return Cordis's exact disposer.
     return this.ctx.effect(() => {
       if (this.modelRouter !== undefined) throw new SubagentError('a subagent model router is already registered', 'DUPLICATE_MODEL_ROUTER')
-      this.modelRouter = router
-      return () => { if (this.modelRouter === router) this.modelRouter = undefined }
+      const registration: ModelRouterRegistration = { router, abort: new AbortController(), pending: new Set() }
+      this.modelRouter = registration
+      return async () => {
+        if (this.modelRouter === registration) this.modelRouter = undefined
+        registration.abort.abort(new DOMException('subagent model router unloaded', 'AbortError'))
+        await Promise.allSettled([...registration.pending])
+      }
     }, 'subagents.registerModelRouter()')
   }
 
@@ -342,12 +366,105 @@ export class SubagentRuntime extends TypertRemoteService {
     return subagentModelSelectionPolicy(this.modelPolicy, session)
   }
 
+  /** Read the child's immutable running-model grant or its original route for a legacy Session.
+   * @param session - Child Session; fork-inherited grants never authorize this child.
+   * @returns Detached authorized routes, or an empty list when the original route is unknown.
+   */
+  runningModelPolicyOf(session: Session): readonly SubagentModelRoute[] {
+    if (this.runningModelPolicy === undefined) throw new Error('subagent running-model policy is not ready')
+    return runningModelRoutes(this.runningModelPolicy.stateOf(session))
+  }
+
+  /** Request a policy-owned model change for an existing local child without changing its lineage or inbox.
+   * @param request - Exact live self or ancestor, explicit checkpoint, requirements, and caller cancellation.
+   * @returns Queued or applied admission; the router owns boundary timing, routing, and subsequent phase cleanup.
+   * @throws UNAUTHORIZED for a non-owner, UNSUPPORTED_CAPABILITY for an external backend, or MODEL_CHANGE_UNAVAILABLE without a handler.
+   */
+  requestModelChange(request: SubagentModelChangeRequest): Promise<SubagentModelChangeResult> {
+    request.signal.throwIfAborted()
+    const registration = this.modelRouter
+    if (registration === undefined) {
+      this.requireManager().modelChangeTarget(request.caller, request.target)
+      throw new SubagentError('the active model policy does not support running-child reassignment', 'MODEL_CHANGE_UNAVAILABLE')
+    }
+    const signal = AbortSignal.any([request.signal, registration.abort.signal])
+    const operation = this.requireManager().withModelChangeTarget(request.caller, request.target, signal, async (target) => {
+      const admitted = { ...request, signal: target.signal }
+      if (target.kind === 'live') {
+        if (registration.router.requestChange === undefined) {
+          throw new SubagentError('the active model policy does not support running-child reassignment', 'MODEL_CHANGE_UNAVAILABLE')
+        }
+        return this.changeModel(admitted, target, registration)
+      }
+      const coldChange = registration.router.requestColdChange?.bind(registration.router)
+      if (coldChange === undefined) {
+        throw new SubagentError('the active model policy does not support inactive-child reassignment', 'MODEL_CHANGE_UNAVAILABLE')
+      }
+      const policy = this.runningModelPolicy
+      if (policy === undefined) throw new SubagentError('running-child model policy is unavailable', 'MODEL_CHANGE_UNAVAILABLE')
+      const state = policy.stateOf(target.session)
+      if (state.allowedModels === null) {
+        appendRunningModelPolicy(target.session, this.modelSelectionPolicyOf(target.parentSession) ?? runningModelRoutes(state))
+      }
+      await target.flush()
+      target.signal.throwIfAborted()
+      if (this.modelRouter !== registration) {
+        throw new SubagentError('the model policy changed before reassignment admission', 'MODEL_ROUTER_CHANGED')
+      }
+      const context: SubagentColdModelChangeContext = {
+        request: admitted, session: target.session, allowedRoutes: this.runningModelPolicyOf(target.session), flush: target.flush,
+      }
+      return coldChange(context)
+    })
+    registration.pending.add(operation)
+    void operation.then(() => { registration.pending.delete(operation) }, () => { registration.pending.delete(operation) })
+    return operation
+  }
+
+  private async changeModel(request: SubagentModelChangeRequest,
+    target: { child: Agent; parentSessionId: SessionId }, registration: ModelRouterRegistration): Promise<SubagentModelChangeResult> {
+    const signal = AbortSignal.any([request.signal, registration.abort.signal])
+    signal.throwIfAborted()
+    const policy = this.runningModelPolicy
+    if (policy === undefined) throw new SubagentError('running-child model policy is unavailable', 'MODEL_CHANGE_UNAVAILABLE')
+    const { child } = target
+    const state = policy.stateOf(child.session)
+    if (state.allowedModels === null && request.caller !== child) {
+      const parent = this.ctx.get('sessions')?.get(target.parentSessionId)
+      if (parent === undefined) {
+        throw new SubagentError('the direct spawning parent is unavailable; its recorded model policy cannot authorize this legacy child',
+          'PERSISTENCE_UNAVAILABLE')
+      }
+      appendRunningModelPolicy(child.session, this.modelSelectionPolicyOf(parent) ?? runningModelRoutes(state))
+    }
+    const sessions = this.ctx.get('sessions')
+    if (sessions === undefined) throw new SubagentError('model reassignment requires Session persistence', 'PERSISTENCE_UNAVAILABLE')
+    try {
+      if (!await sessions.flush(child.session)) {
+        throw new SubagentError('the running-model permission checkpoint was not saved', 'PERSISTENCE_UNAVAILABLE')
+      }
+    } catch (cause) {
+      signal.throwIfAborted()
+      if (cause instanceof SubagentError) throw cause
+      throw new SubagentError('the running-model permission checkpoint was not saved', 'PERSISTENCE_UNAVAILABLE', { cause })
+    }
+    signal.throwIfAborted()
+    if (this.modelRouter !== registration || this.requireManager().modelChangeTarget(request.caller, request.target).child !== child) {
+      throw new SubagentError('the model policy or target changed before reassignment admission', 'MODEL_ROUTER_CHANGED')
+    }
+    const context: SubagentModelChangeContext = { ...request, signal, child,
+      allowedRoutes: this.runningModelPolicyOf(child.session) }
+    const change = registration.router.requestChange?.bind(registration.router)
+    if (change === undefined) throw new SubagentError('the model policy cannot accept reassignment', 'MODEL_CHANGE_UNAVAILABLE')
+    return await change(context)
+  }
+
   /**
    * Read router defaults for the existing fresh-root policy writer.
    * @returns detached defaults, or undefined when the router supplies none.
    */
   modelRoutingDefaults(): SubagentModelRoute[] | undefined {
-    const routes = this.modelRouter?.newRootPolicyDefaults?.()
+    const routes = this.modelRouter?.router.newRootPolicyDefaults?.()
     if (routes === undefined || routes.length === 0) return undefined
     assertAllowedModelRoutes(routes)
     return routes.map(route => ({ ...route }))
@@ -372,7 +489,10 @@ export class SubagentRuntime extends TypertRemoteService {
   private async resolveModelRouting(context: SubagentModelRoutingContext): Promise<SubagentModelRouting | undefined> {
     const router = this.modelRouter
     if (router === undefined) return undefined
-    const selection = await router.resolve(context)
+    const operation = router.router.resolve({ ...context, signal: AbortSignal.any([context.signal, router.abort.signal]) })
+    router.pending.add(operation)
+    let selection: SubagentModelRouting | undefined
+    try { selection = await operation } finally { router.pending.delete(operation) }
     if (this.modelRouter !== router) {
       selection?.release?.()
       throw new SubagentError('subagent model routing changed during startup; retry the delegation', 'MODEL_ROUTER_CHANGED')

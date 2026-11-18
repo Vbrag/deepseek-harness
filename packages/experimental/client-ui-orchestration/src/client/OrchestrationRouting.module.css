@@ -1,0 +1,72 @@
+.section {
+  min-width: 0;
+  padding: 8px 7px;
+}
+
+.title,
+.name {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.title {
+  margin-bottom: 4px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  min-width: 0;
+}
+
+.heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.status,
+.routes,
+.reason {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.row[data-status='blocked'] .status {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.routes {
+  display: grid;
+  grid-template-columns: fit-content(45%) minmax(0, 1fr);
+  gap: 2px 8px;
+  margin: 4px 0 0;
+}
+
+.routes dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.routes dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.reason {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}

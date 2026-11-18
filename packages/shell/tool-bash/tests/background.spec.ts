@@ -414,6 +414,7 @@ describe('foreground commands as jobs', () => {
       steer: () => {},
       inject: () => {},
       cancel: () => {},
+      interruptRequest: () => false,
       runMaintenance: task => task(new AbortController().signal),
       whenIdle: () => Promise.resolve(),
     }
@@ -531,6 +532,7 @@ describe('owned background output', () => {
       steer: () => {},
       inject: () => {},
       cancel: () => {},
+      interruptRequest: () => false,
       runMaintenance: task => task(new AbortController().signal),
       whenIdle: () => Promise.resolve(),
     }

@@ -66,6 +66,8 @@ kind: "package-reference"
 
 `registerModelRouter()` 注册一个由 effect 管理的策略，适用于不继承父级历史的新建本地子级。策略接收已捕获的选项、完整初始提示词、父级评估的可选任务要求与启动取消信号，在描述记录持久化和适配器预检之前选择实际模型，可以初始化尚未发布的子级，并返回在启动回滚或 activation 清理完成后调用的分配释放函数。Fork、外部和恢复的子级保留现有路由。路由等待参与根级关闭，不占用 activation 名额。
 
+子级自身首条 `subagent/running-model-policy` 记录授予切换其运行模型的路由权限，与后代委派权限独立。分叉继承的授权不会授权新子级。`runningModelPolicyOf()` 返回这份不可变授权；没有该记录的历史子级只能使用原始路由，直至获授权的祖先记录直接父级已保存的授权。`requestModelChange({ caller, target, taskAssessment, reason, checkpoint, preferredRoute?, maxTokens?, interruptCurrentRequest?, signal })` 仅接受确切的活跃子级自身或祖先调用，并由路由器决定生效时机。权限与阶段检查点必须在准入前持久保存。重新分配保留子级的 Session、谱系、inbox、历史、工具及工作区效果；外部子级不支持此操作。祖先可为非活跃的持久化子级排入阶段请求，无须创建或唤醒 Agent；子级在下一次获授权的恢复中，先应用该阶段，再请求模型。
+
 `modelSelectionPolicyOf()` 读取 Session 首次记录的子级路由授权；缺少记录时只允许已捕获的父级路由。自动选择不能扩大此策略。路由结果省略 `agentOptions` 时，保留普通默认值与已授权的显式选择，同时仍可初始化子级。默认继承父级路由不属于显式模型覆盖。`newRootPolicyDefaults()` 向现有 settings 所有者提供选中模型池，作为未来新根级的默认授权；已启用的显式设置优先，子级继承已记录授权，现有 Session 保持不变。
 
 `contextImagesOf()` 从 Session 已缓存的当前消息投影读取去重后的图片引用。较早但仍保留的图片仍可选择；surface 替换或图片卸载会从该视图移除相应引用。委派消费者在将图片转发到子级已记录的提示词之前校验其已存储字节。不保留独立图片历史或字节缓存。

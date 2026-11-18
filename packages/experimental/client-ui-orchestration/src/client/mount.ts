@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-commands/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { OrchestrationModeControl, type OrchestrationModeInjected } from './OrchestrationModeControl.tsx'
+import { OrchestrationRouting } from './OrchestrationRouting.tsx'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the renderer's Context merge (ctx.slots).
@@ -64,6 +65,12 @@ function registerUi(ctx: Context, initial: readonly PoolRoute[], catalog: Orches
     locale: NS,
     inject: (): OrchestrationInjected => ({ pool, catalog, setPool }),
   }, OrchestrationPanel))
+  ctx.slots.inject('conversation.session.header.actions.subagent.footer', () => ctx.slots.register({
+    name: 'conversation.session.header.actions.subagent.footer',
+    id: 'orchestration-routing',
+    order: 20,
+    locale: NS,
+  }, OrchestrationRouting))
   ctx.inject(['remote.commands'], (commandCtx) => {
     commandCtx.slots.inject('conversation.input.left', () => commandCtx.slots.register({
       name: 'conversation.input.left',

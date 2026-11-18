@@ -1,0 +1,8 @@
+- id: tool-executor-native
+  disabled: true
+- id: tool-executor-ptc
+  disabled: false
+- id: workflow-ptc
+  disabled: true
+- id: tool-workflow
+  disabled: true

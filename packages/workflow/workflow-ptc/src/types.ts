@@ -5,6 +5,7 @@
  */
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { WorkflowMeta } from '@deepseek-ai/dsh-workflow'
 
@@ -38,6 +39,10 @@ export interface WorkerInit {
 export interface ChildStartRequest {
   /** The child's prompt text. */
   prompt: string
+  /** Parent-assessed routing requirements; omission leaves assessment policy to the model router. */
+  taskAssessment?: SubagentTaskAssessment
+  /** Explicit child generation cap; omission preserves the inherited model options. */
+  maxTokens?: number
   /** The structured-output schema, if the call passed one (already subset-checked). */
   schema?: ObjectJsonSchema
   /** The per-child provider override, if the call passed one. */

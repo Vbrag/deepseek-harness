@@ -1,0 +1,28 @@
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      required: true
+      config:
+        providers:
+          - id: deepseek-official
+            models:
+              - id: deepseek-v4-flash
+                contextWindow: 131072
+                inputModalities: [text]
+          - id: uni-paderborn
+            models:
+              - id: gwdg.deepseek-v4-flash-0731
+                contextWindow: 1000000
+                inputModalities: [text]
+              - id: gwdg.glm-5.3-flash
+                contextWindow: 200000
+                inputModalities: [text]
+              - id: hs-de.qwen3.8-27b
+                contextWindow: 262000
+                inputModalities: [text]
+              - id: gwdg.gemma-4-31b-it
+                contextWindow: 256000
+                inputModalities: [text]
+              - id: hs-de.openai-gpt-oss-120b
+                contextWindow: 128000
+                inputModalities: [text]

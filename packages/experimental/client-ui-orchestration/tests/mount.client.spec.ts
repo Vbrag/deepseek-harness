@@ -16,6 +16,7 @@ import { expect, it, vi, type Mock } from 'vitest'
 import { apply as hostApply } from '../src/index.ts'
 import { apply as clientApply } from '../src/client/index.ts'
 import { OrchestrationPanel, type OrchestrationInjected } from '../src/client/OrchestrationPanel.tsx'
+import { OrchestrationRouting } from '../src/client/OrchestrationRouting.tsx'
 import { inject, mountOrchestration } from '../src/client/mount.ts'
 
 const REMOTE: TypertRemoteContribution = { package: '@deepseek-ai/dsh-orchestration', descriptors: [] }
@@ -68,6 +69,7 @@ async function buildCtx(options: {
   ctx.slots.register({ name: 'root', children: {
     'settings.section': { kind: 'list', scope: 'root' },
     'conversation.input.left': { kind: 'list', scope: 'session' },
+    'conversation.session.header.actions.subagent.footer': { kind: 'list', scope: 'session' },
   } } as never, () => null)
   return { ctx, unmount, persistPool, warn }
 }
@@ -123,6 +125,17 @@ it('mounts a session-bound composer selector and withdraws it with the Remote mo
 it('exposes the host marker and the browser inject list', () => {
   hostApply()
   expect(inject).toEqual(['layout', 'locale', 'slots', 'remote'])
+})
+
+it('adds model progress to the subagent catalog and withdraws it before its Remote owner', async () => {
+  const built = await buildCtx()
+  const dispose = await clientApply(built.ctx)
+  const slot = 'conversation.session.header.actions.subagent.footer'
+  expect(built.ctx.slots.entries(slot).some(entry => entry.component === OrchestrationRouting)).toBe(true)
+  await dispose()
+  expect(built.ctx.slots.entries(slot)).toEqual([])
+  expect(built.unmount).toHaveBeenCalledOnce()
+  await built.ctx.fiber.dispose()
 })
 
 it('registers the section through the client apply entry and withdraws it on dispose', async () => {

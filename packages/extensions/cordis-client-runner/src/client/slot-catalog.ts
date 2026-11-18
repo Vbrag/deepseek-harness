@@ -2211,6 +2211,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.session.header.actions\' (client-ui-subagent), so it exists while that entry is mounted',
     occupants: [
       'client-ui-agent-team TeamBoard id \'agent-team\'',
+      'client-ui-orchestration OrchestrationRouting id \'orchestration-routing\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.actions.subagent.footer\', () => ctx.slots.register(\n      { name: \'conversation.session.header.actions.subagent.footer\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',

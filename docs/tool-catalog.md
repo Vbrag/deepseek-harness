@@ -40,11 +40,11 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-tool-schedule` | `schedule_create`, `schedule_edit`, `schedule_list`, `schedule_view` | `ctx.tools`, `ctx.schedule`, `ctx.systemPrompt` | `tool/call`, `Schedule storage domain create, update, or delete`, `tool/result` | - | A preset or Agent scope mounts this package and decides which agents receive its tools. Management reads and writes Host tasks by id across Sessions. Tasks store an RFC 5545 recurrence and an existing, first-created-and-reused, or per-run-new Session target. Delegated subagents cannot call these tools. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.workingDirectory`, `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
-| `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
+| `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model supplies the objective, optional round cap, and optional task assessment. |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.workingDirectory`, `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `ctx.agents`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
 | `@deepseek-ai/dsh-experimental-tool-subagent-oar` | `subagent_oar` | `ctx.tools`, `ctx.subagents` | `tool/call`, `tool/result`, `parent subagent catalog and completion notices` | - | The subagent_oar tool selects among configured aliases for external providers. This catalog shows Codex and Claude Code aliases; each deployment chooses its providers. Native model and permission settings belong to the selected provider configuration. |
-| `@deepseek-ai/dsh-tool-subagent` | `list_subagent_models`, `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt`, `ctx.sessionProjections`, `ctx.llm for model discovery and selected-route validation` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The load-time `toolName` selects the delegation name (default `subagent`); `modelSelection` adds optional route fields. `modelDiscovery` defaults off and registers shared discovery on one instance per scope. Web and Desktop presets enable spawn discovery and route fields and leave `subagent_fork` route fields disabled. The Host settings service records authorization for each new top-level Session; child Sessions inherit it. Without a recorded policy, discovery and explicit selection permit only the current parent route. Every delegation returns the child's name promptly; local children accept follow-ups, while external backends report their single execution automatically. |
+| `@deepseek-ai/dsh-tool-subagent` | `list_subagent_models`, `reassign_subagent`, `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt`, `ctx.sessionProjections`, `ctx.llm for model discovery and selected-route validation` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The load-time `toolName` selects the delegation name (default `subagent`); `modelSelection` adds optional route fields. `modelDiscovery` defaults off and registers shared discovery on one instance per scope. Web and Desktop presets enable spawn discovery and route fields and leave `subagent_fork` route fields disabled. The Host settings service records authorization for each new top-level Session; child Sessions inherit it. Without a recorded policy, discovery and explicit selection permit only the current parent route. Every delegation returns the child's name promptly; local children accept follow-ups, while external backends report their single execution automatically. |
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message`, `wait_agent` | `ctx.tools`, `ctx.subagents`, `ctx.agents` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The shared control tools discover and contact agents in the subagent tree, interrupt owned descendants, and wait for input in the caller’s inbox. Provider-bound `tool-subagent` instances supply delegation tools. |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands and PTY sends are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-tool-agent-team` | `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `ctx.subagents`, `an exact live Team member Agent` | `tool/call`, `team/task`, `tool/result` | - | Four task-board tools share the subagent tree’s root Session. Enabling Team mode on the root Session adds task-board guidance alongside standard subagent delegation and control tools. Standard subagent controls provide required identity independently of Team mode. |
@@ -2084,6 +2084,48 @@ Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only
     "maxRounds": {
       "type": "number",
       "description": "Optional positive safe-integer round cap, bounded by the deployment ceiling."
+    },
+    "maxTokens": {
+      "type": "number",
+      "description": "Optional positive safe-integer generation cap for every round, independent of task_assessment.outputTokens."
+    },
+    "task_assessment": {
+      "type": "object",
+      "description": "Task requirements shared by every fresh Ralph round. Required when Orchestration mode is on; supply every capability and input modality the rounds need, including coding and vision for visual code changes.",
+      "additionalProperties": false,
+      "properties": {
+        "requiredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preferredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredModalities": {
+          "type": "array",
+          "description": "Inputs needed throughout the task, including images captured during visual checks.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contextTokens": {
+          "type": "integer",
+          "description": "Expected total input tokens per round, including files and context the child will read."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Expected positive response-token count; omit for the configured allowance."
+        }
+      },
+      "required": [
+        "requiredCapabilities",
+        "contextTokens"
+      ]
     }
   },
   "required": [
@@ -2094,7 +2136,7 @@ Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only
 
 Source: [`packages/experimental/tool-ralph/src/index.ts`](../packages/experimental/tool-ralph/src/index.ts)
 
-A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap.
+A fixed foreground workflow starts one fresh structured child per round; the model supplies the objective, optional round cap, and optional task assessment.
 
 <a id="deepseek-aidsh-tool-skill"></a>
 
@@ -2430,6 +2472,100 @@ Inspect the routes available for explicit subagent model selection. No arguments
 ```
 
 Source: [`packages/subagent/tool-subagent/src/list-models.ts`](../packages/subagent/tool-subagent/src/list-models.ts)
+
+### `reassign_subagent`
+
+Request a different model for an existing local subagent when its task needs change. Omit target to request your own model change; an ancestor may name its descendant. Supply a concrete reason, current checkpoint, and complete task requirements. The child keeps its Session, workspace, and task. Routing cannot expand its recorded model permissions. The active routing policy owns the safe application boundary; this does not create another child or increase delegation depth.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "string",
+      "description": "Child name/path or Session id. Omit for your own local subagent Session."
+    },
+    "task_assessment": {
+      "type": "object",
+      "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+      "additionalProperties": false,
+      "properties": {
+        "requiredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preferredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredModalities": {
+          "type": "array",
+          "description": "Inputs needed now or later, such as images captured during visual checks.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contextTokens": {
+          "type": "integer",
+          "description": "Expected total input tokens, including files and other context the child will read."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Expected positive response-token count; omit for the configured allowance."
+        }
+      },
+      "required": [
+        "requiredCapabilities",
+        "contextTokens"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Why the current model should change for the next task phase."
+    },
+    "checkpoint": {
+      "type": "string",
+      "description": "Current work, verified facts, pending work, and next actions retained across the model change."
+    },
+    "preferred_route": {
+      "type": "object",
+      "description": "Optional exact route preference, still subject to task requirements and permissions.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "model"
+      ]
+    },
+    "max_tokens": {
+      "type": "integer",
+      "description": "Optional positive safe-integer response limit for the requested model phase."
+    },
+    "interrupt_current_request": {
+      "type": "boolean",
+      "description": "Default false. Request interruption of the current model request only when supported by the routing policy."
+    }
+  },
+  "required": [
+    "task_assessment",
+    "reason",
+    "checkpoint"
+  ]
+}
+```
+
+Source: [`packages/subagent/tool-subagent/src/reassign-model.ts`](../packages/subagent/tool-subagent/src/reassign-model.ts)
 
 ### `subagent`
 
@@ -2978,10 +3114,14 @@ Enabled through the Change requests & worktrees bundle on Web and Desktop; other
 Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn.
 
 Script-body hooks:
-- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), and independent `provider`/`model` LLM target overrides.
+- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), independent `provider`/`model` LLM target overrides, and `task_assessment` for automatic model routing.
 - `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. A stage throw drops that ITEM to `null` and skips its remaining stages.
 - `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`.
 - `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim.
+
+`opts.task_assessment` is required when Orchestration mode is on. Pass `{ requiredCapabilities: string[], contextTokens: number, preferredCapabilities?: string[], requiredModalities?: string[], outputTokens?: number }`. Capability labels belong to the routing policy. Include all required capabilities, expected input tokens including files the child will read, and modalities needed throughout the task, including images captured later. `contextTokens` must be a non-negative safe integer; optional `outputTokens` must be a positive safe integer and otherwise uses the router's allowance. Omission preserves ordinary delegation when assessment is not required.
+
+`opts.maxTokens` sets the child's explicit generation cap as a positive safe integer. It is independent of the routing estimate `task_assessment.outputTokens`; omission preserves inherited model options.
 
 Misused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) end the whole script instead of producing `null`. The script has no filesystem, network, timer, or Node.js APIs; the agents do the work.
 

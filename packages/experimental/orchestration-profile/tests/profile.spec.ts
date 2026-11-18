@@ -5,10 +5,25 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as yaml from 'js-yaml'
+import { applyPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include/src/patch.ts'
 import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot'
 import { capabilityOf, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 
 describe('Orchestration profile bundle', () => {
+  it('sets small-route compaction defaults while preserving later explicit Loader overrides', () => {
+    const patches = yaml.load(readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')) as PatchOptions[]
+    const base = [{ id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' }]
+    const warn = (message: string): never => { throw new Error(message) }
+    const configured = applyPatches(base, patches, warn)
+    expect(configured.find(entry => entry.id === 'compaction-basic')?.config).toEqual({ modelPolicies: [
+      { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash', headroomTokens: 8192, maxTokens: 8192 },
+      { provider: 'uni-paderborn', model: 'hs-de.qwen3.8-27b', headroomTokens: 8192, maxTokens: 8192 },
+    ] })
+    const explicit = { headroomTokens: 4096, maxTokens: 2048, modelPolicies: [] }
+    const overridden = applyPatches(base, [...patches, { id: 'compaction-basic', config: explicit }], warn)
+    expect(overridden.find(entry => entry.id === 'compaction-basic')?.config).toEqual(explicit)
+  })
+
   it('declares a public parseable layer with normal subagent routing and the pool picker', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {

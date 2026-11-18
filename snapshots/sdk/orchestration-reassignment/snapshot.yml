@@ -1,0 +1,12 @@
+version: 1
+scenario: orchestration-reassignment
+profile: sdk
+composition: sdk-orchestration-reassignment
+recording: authored
+header:
+  class: sdk-orchestration-reassignment
+  pin: true
+  childSystemPrompts: [1]
+  childToolSchemas: [1]
+workspace:
+  final: true

@@ -1,5 +1,6 @@
 /** Headless production-profile smoke for the normal subagent routing policy. */
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { installModelSelection, type Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-subagent'
@@ -13,11 +14,18 @@ const ctx = await bootProductionProfile({
   binName: 'orchestration-profile-loader',
   profile: 'headless',
   overlayPaths: [
+    fileURLToPath(new URL('../../../cordis.patch.yml', import.meta.url)),
     fileURLToPath(new URL('./composition.patch.yml', import.meta.url)),
     ...(process.env['DSH_TEST_ORCHESTRATION_FAILURE'] === '1'
       ? [fileURLToPath(new URL('./failure.patch.yml', import.meta.url))] : []),
   ],
 })
+
+interface CapturedRequest {
+  sessionId: string
+  model: string
+  context: string
+}
 
 try {
   const parent = (await ctx.agents.create({
@@ -35,16 +43,24 @@ try {
     process.stdout.write(`${JSON.stringify({ rootOutput, defaultOutput, orchestrationAbsent: ctx.get('orchestrations') === undefined })}\n`)
   } else {
     ctx.orchestrations.select(parent, true)
+    await runFixtureTurn(ctx, { task: 'Reply with your assigned route.' })
     const codingOutput = await delegate(parent, ['coding'])
     const visionOutput = await delegate(parent, ['vision'])
     const mixedOutput = await delegate(parent, ['coding', 'vision'])
+    ctx.orchestrations.select(parent, false)
+    await runFixtureTurn(ctx, { task: 'Reply with your assigned route.' })
     const runToolPresent = ctx.tools.schemas(parent).some(tool => tool.name === 'run_orchestration')
     const persistedPool = [{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }]
     const persistAccepted = await ctx.orchestrations.persistPool(persistedPool)
+    const compactionConfig: unknown = [...ctx.loader.entries()].find(entry => entry.options.id === 'compaction-basic')?.options.config
     process.stdout.write(`${JSON.stringify({
       rootOutput, orchestrationsLoaded: ctx.get('orchestrations') !== undefined,
       runToolPresent, defaultOutput, codingOutput, visionOutput, mixedOutput,
       persistAccepted, persistedPool: ctx.orchestrations.getPool(),
+      compactionConfig,
+      parentId: parent.id,
+      requests: (await readFile('model-requests.jsonl', 'utf8')).trimEnd().split('\n')
+        .map(line => JSON.parse(line) as CapturedRequest),
     })}\n`)
   }
 } finally {

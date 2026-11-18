@@ -85,6 +85,18 @@ type CompactionTrigger = 'pressure' | 'context-overflow'
 
 预期的手动失败使用 `ManualCompactionErrorCode`：
 
+`pressureBudget(agent, proposedHeader, signal)` 返回 `CompactionPressureBudget`，不修改历史或请求摘要；提供方未声明压力策略或容量未知时，默认实现返回 `undefined`。基础提供方的无效预算以 `COMPACTION_INVALID_BUDGET` 拒绝。
+
+```ts type-equiv
+/** Read-only pressure limits for one proposed request route. */
+interface CompactionPressureBudget {
+  /** Estimated input tokens at which the provider considers automatic compaction. */
+  readonly thresholdTokens: number
+  /** Estimated input tokens preserved as a verbatim conversation tail. */
+  readonly retainTokens: number
+}
+```
+
 ```ts type-equiv
 /** Expected failure classes for an explicit idle-session compaction request. */
 type ManualCompactionErrorCode =
@@ -148,6 +160,16 @@ Abstract compaction service. Implementations own trigger policy, retention, and 
 
 ```ts cordis-catalog
 /**
+ * Inspect a proposed route's pressure policy without modifying the session or summarizing.
+ * @param _agent - owner of the conversation being admitted.
+ * @param _header - proposed request fields, including its effective output limit.
+ * @param _signal - cancellation for provider metadata resolution.
+ * @returns pressure limits, or `undefined` without a policy or known model capacity;
+ *   an invalid configured budget rejects with a structured provider failure.
+ */
+pressureBudget( _agent: CompactionAgentContext, _header: EpochHeader, _signal: AbortSignal, ): Promise<CompactionPressureBudget | undefined>
+
+/**
  * Consider automatic compaction for one explicit trigger. Pressure policy
  * uses the latest durable routed request, while context-overflow policy may
  * force a useful balanced reduction even below the normal threshold. Return
@@ -205,7 +227,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
 abstract compactRegion( start: SessionSeq, end: SessionSeq, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```
 
-Types: [CommandId](commands.zh.md) · [SessionSeq](session.zh.md)
+Types: [CommandId](commands.zh.md) · [EpochHeader](session.zh.md) · [SessionSeq](session.zh.md)
 
 Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 

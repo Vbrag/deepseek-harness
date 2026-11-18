@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-compaction-basic/config
  */
 
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import { LlmError, type LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
   BasicCompactionConfig,
@@ -49,14 +49,16 @@ const MODEL_POLICY_KEYS: ReadonlySet<string> = new Set([
   ...POLICY_CONFIG_KEYS,
 ])
 
-/** Target-specific pressure configuration failure eligible for warning suppression. */
-export class TargetPressureConfigError extends Error {
+/** Missing target capacity or an invalid known pressure budget. */
+export class TargetPressureConfigError extends LlmError {
   /**
-   * @param targetKey - exact provider/model route used as the warning key.
+   * @param targetKey - exact provider/model route whose pressure cannot be resolved.
    * @param message - actionable configuration failure detail.
+   * @param code - unavailable metadata or an invalid known budget; defaults to invalid budget.
    */
-  constructor(readonly targetKey: string, message: string) {
-    super(message)
+  constructor(readonly targetKey: string, message: string,
+    code: 'COMPACTION_CONTEXT_UNAVAILABLE' | 'COMPACTION_INVALID_BUDGET' = 'COMPACTION_INVALID_BUDGET') {
+    super(message, code)
   }
 }
 

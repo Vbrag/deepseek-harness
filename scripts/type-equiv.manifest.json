@@ -3137,6 +3137,51 @@
       "doc": "docs/subsystems/context.md",
       "symbol": "ProjectContextProjectionConfig",
       "source": "packages/context/project-context/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "PoolRoute",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "OrchestrationRouteExclusion",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "OrchestrationRouteAlternative",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "OrchestrationRouteDecision",
+      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentModelChangeRequest",
+      "source": "packages/subagent/subagent/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentModelChangeContext",
+      "source": "packages/subagent/subagent/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentModelChangeResult",
+      "source": "packages/subagent/subagent/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/compaction.md",
+      "symbol": "CompactionPressureBudget",
+      "source": "packages/compaction/compaction/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentColdModelChangeContext",
+      "source": "packages/subagent/subagent/src/types.ts"
     }
   ]
 }

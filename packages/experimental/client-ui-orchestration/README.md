@@ -36,6 +36,10 @@ The panel shows every model the provider catalog reports for the Paderborn AI-Ga
 
 The panel shows the applied selection count, a notice when the pool is empty, and a save failure notice if the Host refuses an update. Save reports success only after the Host applies the pool; a refused write shows a failure notice instead. The Host applies the selection in memory and persists it to the profile as a plain user-layer value, so the saved pool survives a restart.
 
+### Follow child model changes
+
+Open the conversation's subagent catalog to see **Subagent models** below the child list. Each observed local child shows the model used by its last recorded request, any selected next model or requested preference, its previous model, and the routing reason. Queued changes, **Changing model**, **Waiting for capacity**, and blocked changes have distinct labels. A selected or requested route becomes **Last used** only when the host publishes a request using it; a child with no recorded request says **No request yet**.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -44,13 +48,14 @@ The panel shows the applied selection count, a notice when the pool is empty, an
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel and an additive `conversation.input.left` composer control. The composer reads the `orchestration` session projection and submits `/orchestration on|off` through the session-bound command service. Disposing the plugin withdraws the controls before the Remote mount. The panel derives its catalog and capability badges from `PADERBORN_CATALOG`.
+The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel, an additive `conversation.input.left` composer control, and the subagent-catalog footer. The composer reads the `orchestration` session projection and submits `/orchestration on|off` through the session-bound command service. The footer reads published child `orchestrationRouting` and `modelSelection` projections; the existing catalog owns child refresh, and the footer neither opens Sessions nor scans logs. Disposing the plugin withdraws the controls before the Remote mount. The panel derives its catalog and capability badges from `PADERBORN_CATALOG`.
 
 | File | Role |
 |---|---|
 | [`src/client/mount.ts`](src/client/mount.ts) | Locale, slot, and Remote orchestration registrations |
 | [`src/client/OrchestrationPanel.tsx`](src/client/OrchestrationPanel.tsx) | Provider catalog rows with capability badges and pool selection |
-| [`src/client/locales.ts`](src/client/locales.ts) | English and Chinese panel copy |
+| [`src/client/OrchestrationRouting.tsx`](src/client/OrchestrationRouting.tsx) | Last-used and future child models with routing progress |
+| [`src/client/locales.ts`](src/client/locales.ts) | Localized controls and model-progress labels |
 | [`src/index.ts`](src/index.ts) | Inert Host entry |
 
 </details>

@@ -2,6 +2,7 @@
 import type { CommandId } from '@deepseek-ai/dsh-commands/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
+import type { LlmQueueAvailability } from '@deepseek-ai/dsh-llm/types'
 import type { ModelCapability, TaskDomain } from './capabilities.ts'
 
 /** One exact registered LLM route eligible for orchestration. */
@@ -40,6 +41,34 @@ export interface OrchestrationConfig {
   readonly availabilityPollMs?: number
   /** Initial mode logged for a session with no recorded selection; defaults to false. */
   readonly defaultToOrchestrator?: boolean
+  /** Maximum model changes per recovery episode; defaults to 2. Explicit phases start a new episode. */
+  readonly maxAutomaticReassignments?: number
+  /** Consecutive output-limit responses without text or tools before recovery; defaults to 2. */
+  readonly maxEmptyOutputLimits?: number
+}
+
+/** Hard requirement or queue condition preventing a route from participating. */
+export type OrchestrationRouteExclusion =
+  | 'unauthorized' | 'missing-required-capability' | 'missing-required-modality'
+  | 'unknown-context' | 'context-capacity' | 'output-capacity' | 'rate-limit' | 'request-token-capacity'
+  | 'compaction-budget' | 'recovery-attempted'
+
+/** Capacity and eligibility facts for one other configured route at assignment time. */
+export interface OrchestrationRouteAlternative extends PoolRoute {
+  /** Active and reserved children, with each child counted once. */
+  readonly activeAssignments: number
+  /** Empty only when this route could participate in the selection. */
+  readonly exclusions: readonly OrchestrationRouteExclusion[]
+  /** Advisory provider queue state; omitted when hard eligibility failed. */
+  readonly availability?: LlmQueueAvailability
+  /** Verified specialties, when this authorized route was inspected. */
+  readonly capabilities?: readonly string[]
+  /** Verified input modalities, when known. */
+  readonly modalities?: readonly string[]
+  /** Known combined input/output capacity. */
+  readonly contextWindow?: number
+  /** Known provider response ceiling. */
+  readonly maxOutputTokens?: number
 }
 
 /** Logged evidence for one automatic child-model selection. */
@@ -50,8 +79,16 @@ export interface OrchestrationRouteDecision {
   readonly assessment: SubagentTaskAssessment
   /** Selected exact LLM route. */
   readonly selected: PoolRoute
-  /** Deterministic selection priority among ready capable routes. */
-  readonly reason: 'task-fit' | 'active-load' | 'diversity' | 'pool-order'
+  /** First priority separating the selected eligible route from its next competitor. */
+  readonly reason: 'active-load' | 'queue-readiness' | 'task-fit' | 'diversity' | 'pool-order'
+  /** Eligible ready-or-unknown routes; absent in retained records without diagnostic evidence. */
+  readonly eligibleCount?: number
+  /** Active and reserved children before selection; absent in retained records without diagnostic evidence. */
+  readonly selectedLoad?: number
+  /** Confirmed or unreported capacity; absent in retained records without diagnostic evidence. */
+  readonly selectedReadiness?: 'ready' | 'unknown'
+  /** Other configured routes and their evidence; absent in retained records without diagnostic evidence. */
+  readonly alternatives?: readonly OrchestrationRouteAlternative[]
   /** Estimated input including the configured instruction allowance. */
   readonly inputTokens: number
   /** Conservative response allowance used for context eligibility. */
@@ -62,6 +99,35 @@ export interface OrchestrationRouteDecision {
 export interface OrchestrationProjection {
   active: boolean
   pending: boolean
+}
+
+/** Explicitly assessed next phase, applied only at a model-request boundary. */
+export interface OrchestrationPhaseRequest {
+  /** Issuing routing-state revision, stable through unrelated progress records. */
+  readonly revision: number
+  readonly assessment: SubagentTaskAssessment
+  readonly reason: string
+  readonly checkpoint: string
+  readonly preferredRoute?: PoolRoute
+  readonly maxTokens?: number
+}
+
+/** Current and requested child routes with recovery counters that survive reload. */
+export interface OrchestrationRoutingState {
+  readonly revision: number
+  readonly assessment: SubagentTaskAssessment | null
+  readonly request: OrchestrationPhaseRequest | null
+  readonly route: PoolRoute | null
+  readonly previous: PoolRoute | null
+  readonly status: 'idle' | 'queued' | 'changing' | 'waiting' | 'blocked'
+  readonly reason: string
+  readonly checkpoint: string
+  readonly maxTokens: number | null
+  readonly automaticChanges: number
+  readonly tried: readonly PoolRoute[]
+  readonly emptyLimits: number
+  /** Largest reported current-surface input; cleared by a committed compaction. */
+  readonly observedInputTokens: number
 }
 
 /** Recoverable mode and legacy command lifecycle state. */
@@ -82,6 +148,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'plugin:orchestration/mode-request': { active: boolean }
     /** Informational routing evidence; never changes model history. */
     'plugin:orchestration/route': OrchestrationRouteDecision
+    /** Full bounded routing state; informational until the runtime admits its requested route. */
+    'plugin:orchestration/routing-state': OrchestrationRoutingState
   }
 }
 
@@ -89,5 +157,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Applied and pending orchestration mode. */
     orchestration: OrchestrationProjection
+    /** Phase request, applied route, and recovery disposition for one local child. */
+    orchestrationRouting: OrchestrationRoutingState
   }
 }

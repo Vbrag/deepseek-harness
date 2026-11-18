@@ -28,6 +28,7 @@ async function fixture() {
       model: unsupportedModel(),
       inbox: unsupportedInbox(), send() {}, followup() {}, inject() {}, cancel() {},
       steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),
+      interruptRequest: () => false,
       runMaintenance: task => task(new AbortController().signal),
       whenIdle: () => Promise.resolve(undefined),
     }

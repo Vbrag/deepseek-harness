@@ -1,0 +1,46 @@
+# Reassign one existing workflow child between assessed phases through the real SDK profile.
+- id: skill-filesystem
+  config:
+    includeDefaultRoots: false
+- id: llm-deepseek
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: time-context
+  disabled: true
+- id: sandbox-policy
+  config:
+    mode: danger-full-access
+    workspaceRoot: !!js process.cwd()
+- id: approval
+  config:
+    policy: never
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+- id: tool-subagent
+  config:
+    provider: spawn
+    maxDepth: 0
+    modelDiscovery: true
+- insert:
+    - id: orchestration
+      name: '../../../packages/experimental/dsh-orchestration/lib/index.js'
+      required: true
+      config:
+        pool:
+          - provider: snapshot-phases
+            model: visual
+          - provider: snapshot-phases
+            model: solver
+        routeCapabilities:
+          - provider: snapshot-phases
+            model: visual
+            capabilities: [coding, vision]
+          - provider: snapshot-phases
+            model: solver
+            capabilities: [coding, reasoning]
+    - id: orchestration-reassignment-fixture
+      name: './routing-fixture.ts'
+      required: true

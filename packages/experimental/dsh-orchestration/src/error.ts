@@ -10,6 +10,11 @@ export type OrchestrationErrorCode =
   | 'ORCHESTRATION_INVALID_ASSESSMENT'
   | 'ORCHESTRATION_NO_CAPABLE_ROUTE'
   | 'ORCHESTRATION_ROUTE_METADATA_FAILED'
+  | 'ORCHESTRATION_REASSIGNMENT_DISABLED'
+  | 'ORCHESTRATION_REASSIGNMENT_EXHAUSTED'
+  | 'ORCHESTRATION_REASSIGNMENT_STALE'
+  | 'ORCHESTRATION_DURABILITY_REQUIRED'
+  | 'ORCHESTRATION_CAPACITY_BUSY'
 
 /** Expected orchestration configuration, recovery, or routing failure. */
 export class OrchestrationError extends HarnessError {

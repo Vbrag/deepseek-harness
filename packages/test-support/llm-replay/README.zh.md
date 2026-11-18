@@ -31,6 +31,8 @@ kind: "package-reference"
 
 已准备调用要求使用路由适配器模式。将 `models[].reasoningEfforts` 按可选强度从低到高排列。配置函数在准备期间接收该顺序；`defaultReasoningEffort` 仍独立于首个条目。
 
+当目录未声明容量时，路由适配器使用每个精确路由已记录的 `request/context.contextWindow`。显式目录元数据优先；已记录容量互相冲突时，必须显式声明容量。没有容量记录时该值保持未知，因此测试容量检查的场景必须声明 `models[].contextWindow`。输入模态仍由目录显式声明。
+
 配置 `providers` 后，插件会注册仅用于回放的适配器，其模型目录可供测试模型发现功能的场景使用；未配置 `providers` 时，它安装无需模型发现功能的测试所用的 catch-all `llm/stream` waterfall（瀑布式事件）：
 
 ```yaml

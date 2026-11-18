@@ -36,6 +36,7 @@ export async function registerAgent(ctx: Context, rawId: string): Promise<Agent 
     steer: () => {},
     inject: () => {},
     cancel: () => {},
+    interruptRequest: () => false,
     runMaintenance: task => task(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
     disposeScope: () => scopeFiber.dispose(),

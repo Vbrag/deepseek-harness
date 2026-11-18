@@ -48,6 +48,7 @@ import {
   writesCurrentSessionFixtures,
   materializeProfilePatch,
   formatSystemPromptSnapshot,
+  parseSystemPromptSnapshot,
   formatToolSchemasSnapshot,
   latestPersistedSessionPaths,
   type HarvestedLog,
@@ -64,7 +65,7 @@ import {
   type SdkUserQuestionRequest,
   type SdkUserQuestionResult,
 } from '@deepseek-ai/dsh-sdk-client'
-import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { pluginRecordOf, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 
 const corpusRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -122,7 +123,7 @@ interface SdkAssertions {
   /** Final response required from a completed turn before updating goldens. */
   expectedFinalResponse?: string
   /** Exact child request configurations for scenarios that route children to other models. */
-  expectedChildConfigs?: Readonly<Record<number, Readonly<Record<string, unknown>>>>
+  expectedChildConfigs?: Readonly<Record<number, Readonly<Record<string, unknown>> | readonly Readonly<Record<string, unknown>>[]>>
   /** Environment overrides passed to the runtime subprocess. */
   environment?: Readonly<Record<string, string>>
   /** A separate DSH SDK child whose persisted session joins the evidence. */
@@ -143,6 +144,27 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'orchestration-reassignment': {
+    expectedFinalResponse: 'REASSIGNMENT_OK',
+    expectedChildConfigs: {
+      1: [
+        { provider: 'snapshot-phases', model: 'visual', maxTokens: 4096 },
+        { provider: 'snapshot-phases', model: 'solver', maxTokens: 8192 },
+      ],
+    },
+    environment: { DEEPSEEK_BASE_URL: 'http://127.0.0.1:9' },
+  },
+  'orchestration-workflows': {
+    expectedFinalResponse: 'WORKFLOW_ROUTING_OK',
+    expectedChildConfigs: {
+      1: { provider: 'uni-paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
+      2: { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash' },
+      3: { provider: 'uni-paderborn', model: 'hs-de.qwen3.8-27b' },
+      4: { provider: 'uni-paderborn', model: 'gwdg.deepseek-v4-flash-0731' },
+      5: { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash' },
+    },
+    environment: { DEEPSEEK_BASE_URL: 'http://127.0.0.1:9' },
+  },
   'project-context': {
     modelRequestsFile: 'project-context-requests.jsonl',
     environment: { DEEPSEEK_BASE_URL: 'http://127.0.0.1:9' },
@@ -249,6 +271,7 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
   },
   'subagent-spawn-in-process': {
     patches: [fileURLToPath(new URL('./subagent-spawn-in-process/runtime.cordis.yml', import.meta.url))],
+    expectedFinalResponse: 'child answer 42.',
   },
   'subagent-fork-in-process': {
     patches: [fileURLToPath(new URL('./subagent-spawn-in-process/runtime.cordis.yml', import.meta.url))],
@@ -258,7 +281,10 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
   },
   'subagent-continuable-inheritance': {
     patches: [fileURLToPath(new URL('./subagent-spawn-in-process/runtime.cordis.yml', import.meta.url))],
+    expectedFinalResponse: 'SUBAGENT_SETTLED_NOTED',
   },
+  'subagent-list-agents': { expectedFinalResponse: 'DONE' },
+  'subagent-send-message': { expectedFinalResponse: 'CHILD_MESSAGE_OK' },
   'subagent-continuable': {
     environment: { DSH_SNAPSHOT_HUMAN_STEER: '1' },
   },
@@ -1102,7 +1128,7 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   }
 }
 
-/** Order logs parent-first, children by creation time (fixture layout order). */
+/** Order direct children by the parent's complete catalog, otherwise by creation time. */
 function orderLogs(logs: PersistedLog[], expectedCount: number, separateDshSdkChild: boolean): PersistedLog[] {
   if (separateDshSdkChild) {
     expect(logs).toHaveLength(expectedCount)
@@ -1113,6 +1139,16 @@ function orderLogs(logs: PersistedLog[], expectedCount: number, separateDshSdkCh
     .sort((left, right) => Number(left.header.createdAt) - Number(right.header.createdAt))
   expect(parents).toHaveLength(1)
   expect(children).toHaveLength(expectedCount - 1)
+  const parent = parents[0]!
+  const catalogOrder = new Map<unknown, number>()
+  for (const event of parseSessionLog(parent.content)) {
+    if (event.type === 'subagent/catalog' && !catalogOrder.has(event.data.childId)) {
+      catalogOrder.set(event.data.childId, catalogOrder.size)
+    }
+  }
+  if (children.every(child => child.header.parentSession === parent.header.id && catalogOrder.has(child.header.id))) {
+    children.sort((left, right) => catalogOrder.get(left.header.id)! - catalogOrder.get(right.header.id)!)
+  }
   return [...parents, ...children]
 }
 
@@ -1164,7 +1200,7 @@ async function verifyHeaders(
   ordered: readonly PersistedLog[],
   ctx: NormalizeContext,
   dshSdkChildConfig?: Readonly<Record<string, unknown>>,
-  childConfigs?: Readonly<Record<number, Readonly<Record<string, unknown>>>>,
+  childConfigs?: Readonly<Record<number, Readonly<Record<string, unknown>> | readonly Readonly<Record<string, unknown>>[]>>,
 ): Promise<void> {
   const pin = headerPin(scenario)
   const [pinFixturePath] = await fixtureFiles(pin)
@@ -1197,22 +1233,28 @@ async function verifyHeaders(
 
   for (const [logIndex, log] of ordered.entries()) {
     const headers = normalizedHeaders(log.content, ctx)
+    const childConfig = childConfigs?.[logIndex] ?? (logIndex === 1 ? dshSdkChildConfig : undefined)
+    const childPrompt = childPrompts.get(logIndex)
+    if (Array.isArray(childConfig)) expect(headers).toHaveLength(childConfig.length)
     const prompts = normalizedSystemPrompts(log.content, ctx)
     if (headers.length > 0) {
       expect(systemPromptPrecedesRequests(log.content), `${scenario.name}: session ${logIndex} has a system/message before its first request/header`).toBe(true)
       expect(prompts.length, `${scenario.name}: session ${logIndex} system/message count`)
-        .toBe(1 + (logIndex === 0 ? pin.manifest.header.promptChanges ?? 0 : 0))
+        .toBe(1 + (logIndex === 0 ? pin.manifest.header.promptChanges ?? 0
+          : childPrompt === undefined ? 0 : parseSystemPromptSnapshot(childPrompt).changes.length))
     }
     for (const [index, header] of headers.entries()) {
       const selectedSchemas = childSchemas.get(logIndex)?.[index]
       const base = reconstructed[index] ?? reconstructed[0]
-      const childConfig = childConfigs?.[logIndex] ?? (logIndex === 1 ? dshSdkChildConfig : undefined)
-      const configured = childConfig !== undefined
-        ? { ...base as JsonObject, config: childConfig }
+      const requestConfig = Array.isArray(childConfig) ? childConfig[index] : childConfig
+      const configured = requestConfig !== undefined
+        ? { ...base as JsonObject, config: requestConfig }
         : base
-      const expected = selectedSchemas === undefined
-        ? configured
-        : { ...configured as JsonObject, tools: selectedSchemas }
+      const expected = { ...configured as JsonObject }
+      if (selectedSchemas !== undefined) {
+        if (selectedSchemas.length === 0) delete expected.tools
+        else expected.tools = selectedSchemas
+      }
       expect(header, `${scenario.name}: session ${logIndex} header ${index + 1}`).toEqual(expected)
     }
     if (prompts.length > 0) {
@@ -1223,6 +1265,22 @@ async function verifyHeaders(
 }
 
 describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
+  it.each([10, 9])('orders cataloged concurrent child logs when the later child timestamp is %s', async (createdAt) => {
+    const parent: PersistedLog = {
+      path: 'parent', header: { id: 'parent' },
+      content: await readFile(new URL('./orchestration-workflows/session.v4.jsonl', import.meta.url), 'utf8'),
+    }
+    const first: PersistedLog = {
+      path: 'first', content: '', header: { id: '{{session:2}}', parentSession: 'parent', createdAt: 10 },
+    }
+    const second: PersistedLog = {
+      path: 'second', content: '', header: { id: '{{session:3}}', parentSession: 'parent', createdAt },
+    }
+    expect(orderLogs([second, parent, first], 3, false).map(log => log.path)).toEqual(['parent', 'first', 'second'])
+    const nested = { ...second, header: { ...second.header, parentSession: '{{session:2}}' } }
+    expect(orderLogs([nested, parent, first], 3, false).map(log => log.path)).toEqual(['parent', 'second', 'first'])
+  })
+
   it.each(['/tmp/work', 'C:\\work\\quoted-directory'])('hydrates fixture JSON and tool arguments for %s', (cwd) => {
     const fixture = JSON.stringify({ cwd: '{{cwd}}', arguments: '{"path":"{{cwd}}/file"}', args: ['{"path":"{{cwd}}/file"}'] })
     const hydrated = JSON.parse(hydrateFixtureCwd(fixture, cwd)) as { cwd: string; arguments: string; args: string[] }
@@ -1290,6 +1348,73 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       )
       reconcileCatalogCreationTimes(ordered.map(log => log.content), 'validate')
       const actualContext = contextOf(ordered, cwd)
+      if (scenario.name === 'orchestration-reassignment') {
+        expect(ordered).toHaveLength(2)
+        const parent = parseSessionLog(ordered[0]!.content)
+        const child = parseSessionLog(ordered[1]!.content)
+        expect(parent.filter(event => event.type === 'tool/call').map(event => event.data.name)).toEqual(['workflow'])
+        expect(parent.filter(event => event.type === 'tool-workflow/agent-start')).toHaveLength(1)
+        expect(child.filter(event => event.type === 'subagent/descriptor')).toHaveLength(1)
+        expect(child.filter(event => event.type === 'subagent/running-model-policy').map(event => event.data.allowedModels))
+          .toEqual([[{ provider: 'snapshot-phases', model: 'visual' }, { provider: 'snapshot-phases', model: 'solver' }]])
+        expect(child.filter(event => event.type === 'request/header').map(event => event.data.header.config)).toEqual([
+          { provider: 'snapshot-phases', model: 'visual', maxTokens: 4096 },
+          { provider: 'snapshot-phases', model: 'solver', maxTokens: 8192 },
+        ])
+        expect(child.filter(event => event.type === 'model/selection').at(-1)?.data)
+          .toEqual({ provider: 'snapshot-phases', model: 'solver' })
+        expect(child.filter(event => event.type === 'tool/call').map(event => event.data.name)).toEqual(['reassign_subagent'])
+        const phases = child.flatMap((event) => {
+          const record = pluginRecordOf(event)
+          return record?.type === 'plugin:orchestration/routing-state' ? [record.data] : []
+        })
+        expect(phases.some(state => state.status === 'queued' && state.request?.maxTokens === 8192)).toBe(true)
+        expect(phases.find(state => state.status === 'changing')?.previous).toBeNull()
+        expect(phases.at(-1)).toMatchObject({ status: 'idle', route: { provider: 'snapshot-phases', model: 'solver' },
+          previous: { provider: 'snapshot-phases', model: 'visual' }, maxTokens: 8192 })
+        expect(phases.at(-1)?.checkpoint).toContain('VISUAL_CHECKPOINT:')
+        const context = child.filter(event => event.type === 'user/message' && event.data.source.kind === 'runtime-context')
+          .flatMap(event => event.data.content).filter(block => block.type === 'text').map(block => block.text).join('\n')
+        expect(context).toContain('VISUAL_CHECKPOINT:')
+        for (const events of [parent, child]) {
+          expect(events.filter(event => event.type === 'turn/start')).toHaveLength(1)
+          expect(events.filter(event => event.type === 'turn/end').map(event => event.data.reason.kind)).toEqual(['completed'])
+          expect(events.filter(event => event.type === 'assistant/attempt')).toHaveLength(0)
+          expect(events.filter(event => event.type === 'tool/result').every(event => event.data.message.isError === false)).toBe(true)
+        }
+      }
+      if (scenario.name === 'orchestration-workflows') {
+        expect(ordered).toHaveLength(6)
+        const events = parseSessionLog(ordered[0]!.content)
+        const decisions = events.flatMap(event => {
+          const record = pluginRecordOf(event)
+          return record?.type === 'plugin:orchestration/route' ? [record.data] : []
+        })
+        expect(decisions).toHaveLength(5)
+        expect(new Set(decisions.slice(0, 3).map(decision => decision.selected.model)))
+          .toEqual(new Set(['gwdg.deepseek-v4-flash-0731', 'gwdg.glm-5.3-flash', 'hs-de.qwen3.8-27b']))
+        expect(decisions[2]).toMatchObject({ reason: 'active-load', eligibleCount: 3, selectedLoad: 0,
+          selectedReadiness: 'unknown' })
+        expect(decisions[2]?.alternatives).toEqual(expect.arrayContaining([
+          expect.objectContaining({ model: 'gwdg.deepseek-v4-flash-0731', activeAssignments: 1, exclusions: [] }),
+          expect.objectContaining({ model: 'gwdg.glm-5.3-flash', activeAssignments: 1, exclusions: [] }),
+          expect.objectContaining({ model: 'gwdg.gemma-4-31b-it', exclusions: ['missing-required-capability'] }),
+          expect.objectContaining({ model: 'hs-de.openai-gpt-oss-120b', exclusions: ['missing-required-capability'] }),
+        ]))
+        for (const decision of decisions) {
+          expect(decision).toMatchObject({
+            assessment: { requiredCapabilities: ['coding', 'reasoning'], contextTokens: 90_000, outputTokens: 8000 },
+            selected: { provider: 'uni-paderborn' },
+          })
+        }
+        expect(events.filter(event => event.type === 'tool/call').map(event => event.data.name)).toEqual(['workflow', 'ralph'])
+        expect(events.filter(event => event.type === 'tool/result').every(event => event.data.message.isError === false)).toBe(true)
+        expect(events.filter(event => event.type === 'tool-workflow/agent-start')).toHaveLength(3)
+        expect(events.filter(event => event.type === 'turn/start')).toHaveLength(1)
+        for (const child of ordered.slice(1)) {
+          expect(records(child.content).find(event => event.type === 'orchestration/mode')?.data).toEqual({ active: true })
+        }
+      }
       if (scenario.name === 'project-context') {
         const parent = ordered[0]
         if (parent === undefined) throw new Error('project context has no persisted Session')
@@ -1354,6 +1479,22 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           .toEqual({ active: true })
         expect(records(ordered[2]!.content).find(event => event.type === 'orchestration/mode')?.data)
           .toEqual({ active: false })
+        const parentContexts = assembledRuntimeContexts(parent)
+        expect(parentContexts.map(context => context.includes('Orchestration mode is active.'))).toEqual([true, false])
+        const activeContext = parentContexts[0]!
+        expect(activeContext).toContain('Proactively identify independent work that can make useful progress in parallel.')
+        expect(activeContext).toContain('When the available subagent tools and delegation limits allow it, prefer delegating bounded tasks')
+        expect(activeContext).toContain('without waiting for the user to request delegation.')
+        expect(activeContext).toContain('Start independent delegations early and continue useful work yourself when possible.')
+        expect(activeContext).toContain('Handle work directly when it is small, sequential, or delegation would add overhead')
+        const childContexts = assembledRuntimeContexts(ordered[1]!)
+        expect(childContexts).toHaveLength(1)
+        expect(childContexts[0]).toContain('Proactively identify independent work that can make useful progress in parallel.')
+        expect(childContexts[0]).toContain('When the available subagent tools and delegation limits allow it, prefer delegating bounded tasks')
+        expect(childContexts[0]).toContain('Do not call `subagent` at this depth; carry out the work directly.')
+        const ordinaryChildContexts = assembledRuntimeContexts(ordered[2]!)
+        expect(ordinaryChildContexts).toHaveLength(1)
+        expect(ordinaryChildContexts[0]).not.toContain('Orchestration mode is active.')
         expect(assembledTools(parent).map(tool => tool.name)).toContain('subagent')
         expect(assembledTools(parent).map(tool => tool.name)).not.toContain('run_orchestration')
         expect(notifications.some(notification => notification.method === 'session.event'

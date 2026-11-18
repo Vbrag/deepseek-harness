@@ -2388,7 +2388,7 @@ export type PiAiThinkingTokenBudgetField = NonNullable<OpenAICompletionsCompat['
 
 - `inject`: `llm`
 - `refs`: [`LlmModelBadge`](../packages/llm/llm/src/index.ts) · [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts) · [`ToolUpdate`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/test-support/llm-replay/src/index.ts:1116`](../packages/test-support/llm-replay/src/index.ts)
+- `source`: [`packages/test-support/llm-replay/src/index.ts:1145`](../packages/test-support/llm-replay/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the {@link ReplayConfig} inputs, each defaulting to its `DSH_SNAPSHOT_*` env var in `apply`. */
@@ -2742,8 +2742,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-orchestration`
 
-- `inject`: `llm` · `subagents` · `sessionProjections` · `agents` · `systemPrompt`
-- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:30`](../packages/experimental/dsh-orchestration/src/types.ts)
+- `inject`: `llm` · `subagents` · `sessionProjections` · `agents` · `systemPrompt` · `sessions`
+- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:31`](../packages/experimental/dsh-orchestration/src/types.ts)
 
 ```ts config-catalog
 /** Validated deployment policy; session selections take precedence over defaults. */
@@ -2760,6 +2760,10 @@ export interface OrchestrationConfig {
   readonly availabilityPollMs?: number
   /** Initial mode logged for a session with no recorded selection; defaults to false. */
   readonly defaultToOrchestrator?: boolean
+  /** Maximum model changes per recovery episode; defaults to 2. Explicit phases start a new episode. */
+  readonly maxAutomaticReassignments?: number
+  /** Consecutive output-limit responses without text or tools before recovery; defaults to 2. */
+  readonly maxEmptyOutputLimits?: number
 }
 
 /** One exact registered LLM route eligible for orchestration. */
@@ -2780,6 +2784,23 @@ export interface RouteCapabilities extends PoolRoute {
 export type TaskDomain = 'coding' | 'reasoning' | 'vision' | 'allrounder' | 'european'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-orchestration -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-orchestration-profile -->
+<a id="deepseek-aidsh-orchestration-profile"></a>
+
+## `@deepseek-ai/dsh-orchestration-profile`
+
+- `refs`: [`ModelCompactPolicyConfig`](../packages/compaction/compaction-basic/src/index.ts)
+- `source`: [`packages/experimental/orchestration-profile/src/index.ts:16`](../packages/experimental/orchestration-profile/src/index.ts)
+
+```ts config-catalog
+/** Default exact-route budgets applied to scoped basic-compaction providers. */
+export interface Config {
+  /** Missing per-route fields inherit these values; explicit route and top-level fields take priority. */
+  modelPolicies?: Pick<ModelCompactPolicyConfig, 'provider' | 'model' | 'headroomTokens' | 'maxTokens'>[]
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-orchestration-profile -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-permission-presets -->
 <a id="deepseek-aidsh-permission-presets"></a>
@@ -3931,7 +3952,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 - `inject`: `workingDirectory` · `sessionProjections`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:198`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:209`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */
@@ -4873,7 +4894,7 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt` · `sessionProjections`
 - `refs`: [`AgentOptions`](subsystems/core.md)
-- `source`: [`packages/subagent/tool-subagent/src/index.ts:43`](../packages/subagent/tool-subagent/src/index.ts)
+- `source`: [`packages/subagent/tool-subagent/src/index.ts:45`](../packages/subagent/tool-subagent/src/index.ts)
 
 ```ts config-catalog
 /** Config: which registered provider this tool delegates to, plus child defaults. */
@@ -4892,7 +4913,7 @@ export interface Config extends PresetSelectionConfig {
    */
   modelSelection?: boolean
   /**
-   * Register the shared `list_subagent_models` tool for this scope.
+   * Register shared `list_subagent_models` and `reassign_subagent` tools for this scope.
    * Enable on only one instance per scope; defaults to false and does not
    * enable model selection. Discovery is removed when this instance unloads.
    */
@@ -5610,7 +5631,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-loader-smoke` | — | [`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts) |
 | `@deepseek-ai/dsh-native-command` | — | [`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts) |
 | `@deepseek-ai/dsh-official-bundles` | — | [`packages/util/official-bundles/src/index.ts`](../packages/util/official-bundles/src/index.ts) |
-| `@deepseek-ai/dsh-orchestration-profile` | — | [`packages/experimental/orchestration-profile/src/index.ts`](../packages/experimental/orchestration-profile/src/index.ts) |
 | `@deepseek-ai/dsh-output-retention` | — | [`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts) |
 | `@deepseek-ai/dsh-package-manifest` | — | [`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts) |
 | `@deepseek-ai/dsh-personalized-recommendations` | — | [`packages/experimental/personalized-recommendations/src/index.ts`](../packages/experimental/personalized-recommendations/src/index.ts) |

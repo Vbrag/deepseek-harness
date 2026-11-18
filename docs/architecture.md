@@ -85,6 +85,7 @@ A **step** is one model request plus the tools it calls. A **turn** is zero or m
 ```text
 turn/start
   claim next-step input plus one queued message
+  -> agent/step-preparing (serial)
   snapshot Session model selection; assemble prompt sections + step-admitted tool schemas
   -> agent/pre-step; project runtime context at fallback
                                      reject | enter(messages, startsRequestSeries?)
@@ -97,7 +98,8 @@ turn/start
      derive and freeze model history from the log
      stream the bound prepared call -> llm/stream -> agent/assistant-stream start
        agent/assistant-stream chunk*
-       assistant/message | assistant/attempt -> agent/assistant-stream end
+       agent/request-finished -> assistant/message | assistant/attempt -> agent/assistant-stream end
+       recovery: retry request | reprepare from step-preparing
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
      step/end
      tools owe another request, or next-step input arrived -> claim -> next step
@@ -113,7 +115,7 @@ Factory setup follows SessionStore entry and `session/created`, preceding `agent
 
 One inbox feeds the driver; injected context waits for a waking message. AgentLoop’s durable `inbox` projection exposes pending input without live Agents.
 
-Before assembly, the loop snapshots Session model selection in `AssembleContext.modelSelection` and `agent/pre-step.modelSelection`; retries retain it; omitted reasoning effort uses adapter defaults. `agent/pre-step` listeners accept, rewrite, or reject claimed messages; a rejected or empty first claim closes a durable turn without a step. An enter decision may set `startsRequestSeries`: the loop logs a fresh `request/header` (reason `series`, or `change` with `startsSeries: true` when the envelope also changed). Wrapping listeners preserve that declaration with `{ ...decision, messages }`. After assembly and `step/start`, the deprecated `agent/request` hook adjusts controls without changing the provider, model, or effort selection, and `prepareCall()` binds the adapter before the system prompt and accepted users are committed; cancellation during either async phase commits neither. Prepared call capabilities govern prompt admission, not preceding `request/context`. Each attempt refreshes registered runtime facts, reconciles the bound prompt, admits users once, reconciles runtime reminders by recorded sections, logs header/context as needed, and freezes the request before streaming the bound call. Retries do not repeat assembly or `agent/pre-step`. Surface replacements and image-offload decisions after attachment start a new request series, including during the first resumed pre-step; unchanged resume continues the series. The system prompt travels as `system/message` history: empty text clears it, capable routes append updates, and other routes consolidate it at the first system node. [Agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) owns prompt admission and replacement details.
+Serial `agent/step-preparing` listeners may select a route before the loop captures Session model selection for tools, prompt assembly, and `agent/pre-step`. Pre-step accepts, rewrites, or rejects claimed messages; a rejected or empty initial claim closes the turn without a step. Its `startsRequestSeries` declaration starts a logged message series. After `step/start`, `agent/request` adjusts controls within the captured route; `prepareCall()` binds the adapter before committing system or user messages. Earlier cancellation commits neither. Each attempt refreshes runtime facts, reconciles the prompt, admits users once, logs header/context, and freezes the request. `retry` retains assembly; `reprepare` repeats route capture and assembly within the same step without repeating committed input or tools. `agent/request-finished` precedes response commitment and tool execution. `interruptRequest()` stops only active model preparation or streaming, preserving the turn and inbox. Surface replacement or image offload starts a message series; unchanged resume continues one. Prepared capabilities decide prompt appending or consolidation; empty text clears it. [Agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) owns admission and replacement details.
 
 The loop sends immutable requests with live cancellation and reuses freeze evidence for frozen identities; [agent-loop](../packages/core/agent-loop/README.md) owns construction and cancellation causes.
 

@@ -757,13 +757,13 @@ describe('provider-routed retry policy', () => {
     )).toBe(true)
   })
 
-  it('lets downstream specialized recovery run before always fallback', async () => {
+  it.each(['retry', 'reprepare'] as const)('lets downstream %s recovery run before always fallback', async (kind) => {
     const adapter = new ScriptedAdapter([
       new LlmError('requires specialized recovery', 'AUTH'),
       textResponse('specialized recovery won'),
     ])
     ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig() }))
-    context.on('agent/request-error', async () => ({ kind: 'retry' }))
+    context.on('agent/request-error', async () => ({ kind }))
     const agent = await context.agentLoop.create(brandString<SessionId>('retry-always-composition'), {
       provider: 'mock',
       model: 'mock',

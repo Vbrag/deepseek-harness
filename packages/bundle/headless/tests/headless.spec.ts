@@ -176,6 +176,7 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
       get status() { return running ? 'running' : 'idle' },
       ctx: ownerCtx,
       cancel: () => {},
+      interruptRequest: () => false,
       runMaintenance: () => Promise.reject(new Error('not used')),
       send: () => {},
       followup: (message: UserMessage) => {

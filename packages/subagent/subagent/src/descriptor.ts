@@ -16,7 +16,8 @@
  * `outputSchema`: they budget one activation. Cold resume requires the exact
  * live subagent tree root for authorization but reconstructs child options only from the
  * durable descriptor, so it neither restores the prior budget nor inherits
- * the parent's current one; the resumed route's defaults apply instead.
+ * the parent's current one; the resumed route's defaults apply unless the
+ * active model policy records a generation limit for the current task phase.
  *
  * @module @deepseek-ai/dsh-subagent/descriptor
  */

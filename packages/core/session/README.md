@@ -35,6 +35,8 @@ Mount `dsh-session` wherever a session must exist. It creates and holds event-so
 
 Independent `Session.create()` and `Session.fromRestore()` instances accept events and plugin records without sending `session/event`. A `SessionStore` takes ownership through `prepare()` or `enter()`; writes then require store membership and a completed synchronous `session/created` announcement. Creation listeners are read-only and see all existing history; entering an independent instance does not replay that history as `session/event`. Failed announcement or removal leaves writes disabled. Removal emits `session/disposed` only if `session/created` began, including a failed announcement; an entered but never announced instance emits neither notification.
 
+Detached persistence owners can pass an `appended` collection to `Session.fromRestore()`. It captures new immutable events, including the constructor's resume marker, without replayed seed events or live announcements. The owner persists and drains the collection; rejected writes add nothing.
+
 ```text
 const session = ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })
 ctx.sessions.get(sessionId)      // the live session

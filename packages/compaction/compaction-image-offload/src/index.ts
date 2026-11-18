@@ -15,6 +15,8 @@ import { IMAGE_OFFLOAD_REQUIRED_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import { offloadOldestImages } from './image-offload.ts'
 import { imageOffloadProjection } from './projection.ts'
 
+export { offloadOldestImages } from './image-offload.ts'
+
 export const name = 'compaction-image-offload'
 export const inject = ['agents', 'sessions']
 

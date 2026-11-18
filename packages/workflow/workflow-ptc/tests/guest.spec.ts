@@ -36,10 +36,16 @@ describe('workflow guest callbacks', () => {
     const test = fixture(`
       phase('Read')
       log('starting')
-      return await agent(args.prompt, { label: 'Answer', provider: 'openai', model: 'small', schema: { type: 'object' } })
+      return await agent(args.prompt, {
+        label: 'Answer', provider: 'openai', model: 'small', maxTokens: 64, schema: { type: 'object' },
+        task_assessment: { requiredCapabilities: ['custom'], preferredCapabilities: [], requiredModalities: ['text'], contextTokens: 0, outputTokens: 1 },
+      })
     `, { childResult: async () => ({ output: [], structured: { answer: 42 }, stopReason: 'completed' }) })
     await expect(runWorkflowGuest(test.host)).resolves.toEqual({ value: { answer: 42 }, stopReason: 'completed', agentsStarted: 1 })
-    expect(test.requests).toEqual([{ prompt: 'answer this', provider: 'openai', model: 'small', schema: { type: 'object' } }])
+    expect(test.requests).toEqual([{
+      prompt: 'answer this', provider: 'openai', model: 'small', maxTokens: 64, schema: { type: 'object' },
+      taskAssessment: { requiredCapabilities: ['custom'], preferredCapabilities: [], requiredModalities: ['text'], contextTokens: 0, outputTokens: 1 },
+    }])
     expect(test.events).toEqual([
       { type: 'phase', title: 'Read' },
       { type: 'log', message: 'starting' },
@@ -318,6 +324,40 @@ describe('workflow child results', () => {
 })
 
 describe('workflow script validation', () => {
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '1'])('rejects an invalid explicit generation cap: %j', async (maxTokens) => {
+    const test = fixture(`return await agent('work', { maxTokens: ${JSON.stringify(maxTokens)} })`)
+    const result = await runWorkflowGuest(test.host)
+    expect(result).toMatchObject({ stopReason: 'error', errorCode: 'INVALID_ARGUMENT' })
+    expect(result.error).toContain('maxTokens must be a positive safe integer')
+    expect(test.requests).toEqual([])
+  })
+
+  it.each([
+    [null, 'must be an object'],
+    [[], 'must be an object'],
+    [{ contextTokens: 1 }, 'requiredCapabilities must be an array of strings'],
+    [{ requiredCapabilities: ['coding'] }, 'contextTokens must be a non-negative safe integer'],
+    [{ requiredCapabilities: [1], contextTokens: 1 }, 'requiredCapabilities must be an array of strings'],
+    [{ requiredCapabilities: [], preferredCapabilities: 'coding', contextTokens: 1 }, 'preferredCapabilities must be an array of strings'],
+    [{ requiredCapabilities: [], requiredModalities: [1], contextTokens: 1 }, 'requiredModalities must be an array of strings'],
+    [{ requiredCapabilities: [], contextTokens: -1 }, 'contextTokens must be a non-negative safe integer'],
+    [{ requiredCapabilities: [], contextTokens: 1.5 }, 'contextTokens must be a non-negative safe integer'],
+    [{ requiredCapabilities: [], contextTokens: Number.MAX_SAFE_INTEGER + 1 }, 'contextTokens must be a non-negative safe integer'],
+    [{ requiredCapabilities: [], contextTokens: 1, outputTokens: 0 }, 'outputTokens must be a positive safe integer'],
+    [{ requiredCapabilities: [], contextTokens: 1, outputTokens: '1' }, 'outputTokens must be a positive safe integer'],
+    [{ requiredCapabilities: [], contextTokens: 1, outputTokens: 1.5 }, 'outputTokens must be a positive safe integer'],
+    [{ requiredCapabilities: [], contextTokens: 1, outputTokens: Number.MAX_SAFE_INTEGER + 1 }, 'outputTokens must be a positive safe integer'],
+    [{ requiredCapabilities: [], contextTokens: 1, extra: true }, 'extra is not recognized'],
+  ])('rejects malformed task assessment before starting a child: %j', async (assessment, message) => {
+    const test = fixture(`return await parallel([() => agent('work', { task_assessment: ${JSON.stringify(assessment)} })])`)
+    const result = await runWorkflowGuest(test.host)
+    expect(result).toMatchObject({
+      stopReason: 'error', errorCode: 'INVALID_ARGUMENT', agentsStarted: 0,
+    })
+    expect(result.error).toContain(message)
+    expect(test.requests).toEqual([])
+  })
+
   it.each([
     ['return await agent(1)', 'non-empty prompt'],
     ['return await agent("x", new Date())', 'options must be plain JSON'],

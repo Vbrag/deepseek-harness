@@ -31,6 +31,8 @@ kind: "package-reference"
 
 模型提交三个参数外加一个开关：`meta`（必需的身份数据：`name`、`description`，以及可选的 `whenToUse` 与 `phases`）、`script`（必需的纯 JavaScript 脚本体——不含 `export const meta` 语句；其参数描述携带脚本体规则，工具描述携带钩子约定）、`args`（可选 JSON 对象，作为全局变量 `args` 向脚本公开；裸列表应包装到字段中，使协议 schema 如实表达形态），以及 `run_in_background`（可选；仅在 `enableRunInBackground` 生效时存在）。
 
+在脚本内通过 `agent(prompt, { task_assessment })` 传入每个子级的[路由评估](../workflow/README.zh.md#running-a-workflow-script)。Orchestration 模式要求每个全新本地子级都提供评估；普通委派在省略评估时保留原有行为。 可选的 `maxTokens` 显式设置生成上限，与评估中的响应 token 估计独立。
+
 前台成功返回包络 `{ kind: 'foreground', runId, agentsStarted, result }`，向模型渲染为 `workflow "<name>" completed (<count> agent<optional-s>).`，后接 `Return value:` 与美化打印的 JSON。无法启动的工作流——脚本解析或 meta 校验失败——返回模型可以修正的错误。取消调用方步骤时返回工具运行时的 `AbortError` `ABORTED` 结果；其他取消与执行失败返回 `Error: workflow run was cancelled`（`WorkflowError` `CANCELLED`）或 `Error: workflow run failed: <error>`（`WorkflowError`，code 为结束运行的致命 code，如 `AGENT_CAP`，没有时为 `RUN_FAILED`）；部分输出绝不会被报告为成功。
 
 ### 运行期间的预期

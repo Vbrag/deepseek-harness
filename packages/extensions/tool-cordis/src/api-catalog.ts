@@ -684,6 +684,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract compaction service. Implementations own trigger policy, retention, and summarization, and may consume a separate measurement service. A successful run replaces the selected surface span with one summary node and prevents concurrent compaction of the same session. The replacement user message uses compactCheckpointSource with the transaction identity so consumers recognize and correlate it independently of the backend. Load one implementation per context as `ctx.compaction`.',
     methods: [
       {
+        signature: 'pressureBudget( _agent: CompactionAgentContext, _header: EpochHeader, _signal: AbortSignal, ): Promise<CompactionPressureBudget | undefined>',
+        description: 'Inspect a proposed route\'s pressure policy without modifying the session or summarizing.',
+        parameters: [{ name: '_agent', description: 'owner of the conversation being admitted.' }, { name: '_header', description: 'proposed request fields, including its effective output limit.' }, { name: '_signal', description: 'cancellation for provider metadata resolution.' }],
+        returns: 'pressure limits, or `undefined` without a policy or known model capacity; an invalid configured budget rejects with a structured provider failure.',
+      },
+      {
         signature: 'abstract compactIfNeeded( agent: CompactionAgentContext, trigger: CompactionTrigger, signal: AbortSignal, ): Promise<CompactionResult | null>',
         description: 'Consider automatic compaction for one explicit trigger. Pressure policy uses the latest durable routed request, while context-overflow policy may force a useful balanced reduction even below the normal threshold. Return `null` when no safe range can be compacted. A single oversized retained unit or request envelope cannot be repaired through surface compaction.',
         parameters: [{ name: 'agent', description: 'agent context owning the session surface and routing options.' }, { name: 'trigger', description: 'normal pressure or provider-confirmed context overflow.' }, { name: 'signal', description: 'cancellation signal; model-backed implementations must forward it.' }],
@@ -4099,6 +4105,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'detached permitted routes, or undefined to permit only the parent route.',
       },
       {
+        signature: 'runningModelPolicyOf(session: Session): readonly SubagentModelRoute[]',
+        description: 'Read the child\'s immutable running-model grant or its original route for a legacy Session.',
+        parameters: [{ name: 'session', description: 'Child Session; fork-inherited grants never authorize this child.' }],
+        returns: 'Detached authorized routes, or an empty list when the original route is unknown.',
+      },
+      {
+        signature: 'requestModelChange(request: SubagentModelChangeRequest): Promise<SubagentModelChangeResult>',
+        description: 'Request a policy-owned model change for an existing local child without changing its lineage or inbox.',
+        parameters: [{ name: 'request', description: 'Exact live self or ancestor, explicit checkpoint, requirements, and caller cancellation.' }],
+        returns: 'Queued or applied admission; the router owns boundary timing, routing, and subsequent phase cleanup.',
+        throws: ['UNAUTHORIZED for a non-owner, UNSUPPORTED_CAPABILITY for an external backend, or MODEL_CHANGE_UNAVAILABLE without a handler.'],
+      },
+      {
         signature: 'modelRoutingDefaults(): SubagentModelRoute[] | undefined',
         description: 'Read router defaults for the existing fresh-root policy writer.',
         parameters: [],
@@ -5366,10 +5385,18 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'agent/request-error',
     mode: 'waterfall',
-    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
+    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: \'step-preparation\' | \'request-preparation\' | \'stream\'; requestInterrupted?: true }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
     description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
-    parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.requestInterrupted - true for an explicit request-only interruption. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
+    name: 'agent/request-finished',
+    mode: 'waterfall',
+    signature: '\'agent/request-finished\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; finish: FinishReason; content: readonly ContentBlock[]; usage?: TokenUsage; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
+    summary: 'Inspect a settled successful generation before accepting its message or executing tools.',
+    description: 'Inspect a settled successful generation before accepting its message or executing tools. Returning retry or reprepare retains its stream as an attempt and executes no tool blocks. Undefined accepts the normal result unchanged.',
+    parameters: [{ name: 'payload', description: '.signal - owning turn signal; whole-turn cancellation takes precedence.' }],
   },
   {
     name: 'agent/status',
@@ -5378,6 +5405,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Agent status changed (`idle` ⇄ `running`).',
     description: 'Agent status changed (`idle` ⇄ `running`). A waking delivery enters `running` synchronously after reserving cancellation; `idle` means no driver remains scheduled or active.',
     parameters: [{ name: 'payload', description: '.status - the status just entered (the transition\'s destination). Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
+    name: 'agent/step-preparing',
+    mode: 'serial',
+    signature: '\'agent/step-preparing\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; messages: readonly UserMessage[]; signal: AbortSignal }): Promise<void> | void',
+    summary: 'Await policy before capturing the proposed step\'s model, tools, and prompt.',
+    description: 'Await policy before capturing the proposed step\'s model, tools, and prompt. Repreparation repeats this event without readmitting already logged input.',
+    parameters: [{ name: 'payload', description: '.signal - current turn cancellation signal.' }],
   },
   {
     name: 'agent/turn-stopping',
@@ -6630,6 +6665,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CompactionId',
     declaration: 'export type CompactionId = Branded<\'CompactionId\'>;',
+  },
+  {
+    name: 'CompactionPressureBudget',
+    declaration: 'export interface CompactionPressureBudget {\n    readonly thresholdTokens: number;\n    readonly retainTokens: number;\n}',
   },
   {
     name: 'CompactionResult',
@@ -8961,7 +9000,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RequestErrorAction',
-    declaration: 'export type RequestErrorAction = {\n    kind: \'retry\';\n} | undefined;',
+    declaration: 'export type RequestErrorAction = {\n    kind: \'retry\';\n} | {\n    kind: \'reprepare\';\n} | undefined;',
   },
   {
     name: 'RequestHeaderReason',
@@ -9241,7 +9280,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Session',
-    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    get id(): SessionId;\n    readonly firstLiveSeq: SessionLogOffset;\n    readonly firstLifecycleSeq: SessionLogOffset;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, inheritedEventCount?: SessionLogOffset, projections?: readonly SessionMessageProjection[]): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader, inheritedEventCount: SessionLogOffset, eventState: SessionSeedEventState, projections?: readonly SessionMessageProjection[]): Session;\n    eventAt(seq: SessionSeq): SessionEvent | undefined;\n    snapshotEvents(fromSeq: SessionLogOffset = SessionLogOffset(0), toSeqExclusive: SessionLogOffset = this.seq): readonly SessionEvent[];\n    ownEvents(): readonly SessionEvent[];\n    isOwnSeq(seq: SessionSeq): boolean;\n    get seq(): SessionLogOffset;\n    get currentBatchPublication(): SessionEvent | undefined;\n    append(inputs: readonly SessionEventInput[]): readonly SessionEvent[];\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent<T>\n    ] : [\n    ]): SessionEvent<T>;\n    appendPluginRecord<K extends Extract<keyof PluginRecordMap, PluginRecordType>>(type: K, data: NoInfer<PluginRecordMap[K]>): SessionSeq;\n    requestHeader(): EpochHeader | undefined;\n    r /* …truncated — full shape in source */',
+    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    get id(): SessionId;\n    readonly firstLiveSeq: SessionLogOffset;\n    readonly firstLifecycleSeq: SessionLogOffset;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, inheritedEventCount?: SessionLogOffset, projections?: readonly SessionMessageProjection[]): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader, inheritedEventCount: SessionLogOffset, eventState: SessionSeedEventState, projections?: readonly SessionMessageProjection[], appended?: SessionEvent[]): Session;\n    eventAt(seq: SessionSeq): SessionEvent | undefined;\n    snapshotEvents(fromSeq: SessionLogOffset = SessionLogOffset(0), toSeqExclusive: SessionLogOffset = this.seq): readonly SessionEvent[];\n    ownEvents(): readonly SessionEvent[];\n    isOwnSeq(seq: SessionSeq): boolean;\n    get seq(): SessionLogOffset;\n    get currentBatchPublication(): SessionEvent | undefined;\n    append(inputs: readonly SessionEventInput[]): readonly SessionEvent[];\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent<T>\n    ] : [\n    ]): SessionEvent<T>;\n    appendPluginRecord<K extends Extract<keyof PluginRecordMap, PluginRecordType>>(type: K, data: NoInfer<PluginRecordMap[K]>): SessionSeq;\n    requestHeader(): Epo /* …truncated — full shape in source */',
   },
   {
     name: 'SessionAccess',
@@ -10228,6 +10267,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SubagentCatalogRow = {\n    readonly id: SessionId;\n    readonly activity: \'running\' | \'inactive\';\n} & KnownSubagentCatalogFields;',
   },
   {
+    name: 'SubagentColdModelChangeContext',
+    declaration: 'export interface SubagentColdModelChangeContext {\n    readonly request: SubagentModelChangeRequest;\n    readonly session: Session;\n    readonly allowedRoutes: readonly SubagentModelRoute[];\n    readonly flush: () => Promise<void>;\n}',
+  },
+  {
     name: 'SubagentDelivery',
     declaration: 'export type SubagentDelivery = \'queue\' | \'steer\';',
   },
@@ -10252,12 +10295,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SubagentMemberNames {\n    readonly self: string;\n    readonly parent?: string;\n}',
   },
   {
+    name: 'SubagentModelChangeContext',
+    declaration: 'export interface SubagentModelChangeContext extends SubagentModelChangeRequest {\n    readonly child: Agent;\n    readonly allowedRoutes: readonly SubagentModelRoute[];\n}',
+  },
+  {
+    name: 'SubagentModelChangeRequest',
+    declaration: 'export interface SubagentModelChangeRequest {\n    readonly caller: Agent;\n    readonly target: SessionId;\n    readonly taskAssessment: SubagentTaskAssessment;\n    readonly reason: string;\n    readonly checkpoint: string;\n    readonly preferredRoute?: SubagentModelRoute;\n    readonly maxTokens?: number;\n    readonly interruptCurrentRequest?: boolean;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'SubagentModelChangeResult',
+    declaration: 'export interface SubagentModelChangeResult {\n    readonly status: \'queued\' | \'applied\';\n    readonly target: SessionId;\n    readonly route?: SubagentModelRoute;\n}',
+  },
+  {
     name: 'SubagentModelRoute',
     declaration: 'export interface SubagentModelRoute {\n    readonly provider: string;\n    readonly model: string;\n}',
   },
   {
     name: 'SubagentModelRouter',
-    declaration: 'export interface SubagentModelRouter {\n    resolve(context: SubagentModelRoutingContext): Promise<SubagentModelRouting | undefined>;\n    newRootPolicyDefaults?(): readonly SubagentModelRoute[] | undefined;\n}',
+    declaration: 'export interface SubagentModelRouter {\n    resolve(context: SubagentModelRoutingContext): Promise<SubagentModelRouting | undefined>;\n    newRootPolicyDefaults?(): readonly SubagentModelRoute[] | undefined;\n    requestChange?(context: SubagentModelChangeContext): Promise<SubagentModelChangeResult>;\n    requestColdChange?(context: SubagentColdModelChangeContext): Promise<SubagentModelChangeResult>;\n}',
   },
   {
     name: 'SubagentModelRouting',
@@ -10305,7 +10360,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    static Config;\n    static inject;\n    constructor(ctx: Context, private config: Config);\n    resolveMaxDepth(configured?: number | \'provider-managed\'): number | undefined;\n    startActivation(spec: SubagentActivationSpec & {\n        readonly childId: SessionId;\n    }): Promise<SubagentActivation & {\n        readonly messageId: MessageId;\n    }>;\n    startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation>;\n    registerModelRouter(router: SubagentModelRouter): () => void;\n    routesModelsFor(providerName: string): boolean;\n    modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined;\n    modelRoutingDefaults(): SubagentModelRoute[] | undefined;\n    contextImagesOf(session: Session): readonly ImageAttachmentRef[];\n    rootOf(caller: Agent): Agent;\n    namesOf(agent: Agent): SubagentMemberNames;\n    async resolveName(caller: Agent, name: string, signal: AbortSignal): Promise<SessionId>;\n    async waitForTreeWork(root: Agent): Promise<boolean>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainDescendants(parents: readonly Agent[]): Promise<void>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote({ name: \'prompt\', /* …truncated — full shape in source */',
+    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    static Config;\n    static inject;\n    constructor(ctx: Context, private config: Config);\n    resolveMaxDepth(configured?: number | \'provider-managed\'): number | undefined;\n    startActivation(spec: SubagentActivationSpec & {\n        readonly childId: SessionId;\n    }): Promise<SubagentActivation & {\n        readonly messageId: MessageId;\n    }>;\n    startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation>;\n    registerModelRouter(router: SubagentModelRouter): () => void;\n    routesModelsFor(providerName: string): boolean;\n    modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined;\n    runningModelPolicyOf(session: Session): readonly SubagentModelRoute[];\n    requestModelChange(request: SubagentModelChangeRequest): Promise<SubagentModelChangeResult>;\n    modelRoutingDefaults(): SubagentModelRoute[] | undefined;\n    contextImagesOf(session: Session): readonly ImageAttachmentRef[];\n    rootOf(caller: Agent): Agent;\n    namesOf(agent: Agent): SubagentMemberNames;\n    async resolveName(caller: Agent, name: string, signal: AbortSignal): Promise<SessionId>;\n    async waitForTreeWork(root: Agent): Promise<boolean>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainDescendants(parents:  /* …truncated — full shape in source */',
   },
   {
     name: 'SubagentSendMessageOptions',

@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-rc.3/orchestration-subagent-routing/guide.md
 /:
-  en: 78a6399c048a8bee
-  zh: 4e3f26febcfe3328
-/orchestration-routes-normal-subagents:
-  en: 65d3dd392281bf72
-  zh: c6277a9ca6ba19ae
-/orchestration-routes-normal-subagents/change:
-  en: 5b3b148b84027fa0
-  zh: ca6d0c998a07c0b7
-/orchestration-routes-normal-subagents/migration:
-  en: daae67e22e39cb93
-  zh: 30aa77d3d5edcdcf
+  en: 713a195c906c58e5
+  zh: 2d7428db770fb5bb
+/orchestration-uses-normal-subagents-and-adaptive-routing:
+  en: 34f3b93191b9beab
+  zh: 8da3b0cf222c16e9
+/orchestration-uses-normal-subagents-and-adaptive-routing/change:
+  en: dbc1869e819658dc
+  zh: 6f1b9a8a40342f5a
+/orchestration-uses-normal-subagents-and-adaptive-routing/migration:
+  en: 2825f1b8be57bda5
+  zh: e5ef8926d46104ef

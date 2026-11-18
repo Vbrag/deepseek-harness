@@ -29,7 +29,9 @@ The `ralph` tool runs a fixed foreground loop: one fresh child per round works o
 
 ### Calling the tool
 
-The model submits `{ objective, maxRounds? }` and the call blocks until the whole run settles. The deployment config's `maxRounds` is both the default and a ceiling on a call override. The terminal result is `complete`, `blocked`, or `budget-limited`, carrying the last bounded report and the number of rounds started; an ordinary child failure returns an error naming the failed round and retaining the last successful handoff when one exists. Failures carry `RalphError` with a closed code: `RALPH_ROUND_FAILED` for a child round that ends without a structured report, `RALPH_WORKFLOW_FAILED` for a workflow that errors or is cancelled by something other than the caller, including a child report that fails validation inside the workflow because the workflow returns its errors only as text, `RALPH_INVALID_RESULT` for a malformed workflow value, and `RALPH_PROVIDER_UNAVAILABLE` or `RALPH_PROVIDER_UNSUPPORTED` for a provider route violation. An empty objective or an out-of-range `maxRounds` is a `ToolArgsError`, and caller cancellation is an `AbortError`.
+The model submits `{ objective, maxRounds?, task_assessment?, maxTokens? }` and the call blocks until the whole run settles. `task_assessment` uses the [subagent task requirements](../../subagent/subagent/README.md): required capabilities, optional preferred capabilities and input modalities, expected input tokens, and optional response tokens. Supply it when Orchestration mode is on; the same assessment accompanies every fresh round. Default mode permits omission and retains normal inheritance. Input tokens must be a non-negative safe integer; response tokens must be a positive safe integer when supplied. The tool does not infer requirements or start an extra classifier request. Optional positive safe-integer `maxTokens` sets every round's generation cap independently of `task_assessment.outputTokens`; omission preserves inherited model options.
+
+The deployment config's `maxRounds` is both the default and a ceiling on a call override. The terminal result is `complete`, `blocked`, or `budget-limited`, carrying the last bounded report and the number of rounds started; an ordinary child failure returns an error naming the failed round and retaining the last successful handoff when one exists. Failures carry `RalphError` with a closed code: `RALPH_ROUND_FAILED` for a child round that ends without a structured report, `RALPH_WORKFLOW_FAILED` for a workflow that errors or is cancelled by something other than the caller, including a child report that fails validation inside the workflow because the workflow returns its errors only as text, `RALPH_INVALID_RESULT` for a malformed workflow value, and `RALPH_PROVIDER_UNAVAILABLE` or `RALPH_PROVIDER_UNSUPPORTED` for a provider route violation. An empty objective, invalid task-assessment token count, or out-of-range `maxRounds` is a `ToolArgsError`, and caller cancellation is an `AbortError`.
 
 ### What each round sees
 
@@ -62,7 +64,7 @@ The loop is a deployment-owned fixed script: the model supplies data only and ca
 
 ### Fixed script and routing
 
-The configured provider is carried as `WorkflowStartRequest.subagentProvider`, so the fixed script cannot inspect or change routing and the ordinary model-written `workflow` tool gains no provider selector. The resolved round cap is carried as `WorkflowStartRequest.maxTotalAgents`, coordinating the fixed loop with the engine's total-child backstop; the engine rejects a cap above its deployment ceiling before publishing a run.
+The configured provider is carried as `WorkflowStartRequest.subagentProvider`; the ordinary model-written `workflow` tool has no provider selector. An explicit task assessment enters the fixed script as data and is forwarded through each `agent()` call's `task_assessment` option to normal child routing. Orchestration can select a different eligible model for each fresh round without expanding recorded permissions. The resolved round cap is carried as `WorkflowStartRequest.maxTotalAgents`, coordinating the fixed loop with the engine's total-child backstop; the engine rejects a cap above its deployment ceiling before publishing a run.
 
 ### Report validation
 
@@ -127,7 +129,7 @@ Prefix-stable while the plugin scope and guidance text are unchanged. Activation
 
 #### What the model sees
 
-The generated [`ralph` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ralph) exposes one required `objective` string and one optional `maxRounds` number. Provider choice, handoff size, report schema, workflow script, and orchestration behavior are deployment-owned and absent from the call schema.
+The generated [`ralph` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ralph) exposes one required `objective` string, an optional `maxRounds` number, and an optional structured `task_assessment`. Provider choice, handoff size, report schema, workflow script, and routing policy remain deployment-owned.
 
 #### Token effect
 
@@ -161,7 +163,7 @@ These limits define what the tool does not yet support. They are current constra
 - **Completion is worker self-declaration** — there is no independent evaluator or verifier deciding whether the objective is complete; evaluator policy and evaluator-driven continuation are deferred. An evaluator needs separately defined inputs, tool access, deterministic checks, provider choice, isolation, and authority before it can certify completion or drive continuation.
 - **Foreground only** — there is no job id, background collection, process-resume checkpoint, scheduler, or wall-clock start policy.
 - **The workspace is the only cross-round long-term memory** — one bounded report is the explicit handoff, and uncommitted conversational reasoning disappears with each child.
-- **One round is one fresh child** — there is no within-round fan-out, model or provider switching, fork context, or model-call-selected provider.
+- **One round is one fresh child** — there is no within-round fan-out, route switching, fork context, or model-call-selected provider; Orchestration may select another eligible model for a later fresh round.
 - **No enforced recursive-Ralph denial** — structural denial is not implemented; prompt guidance does not enforce a recursion ban.
 - **Ordinary child failure is terminal for the run** — the fixed script reports the failed round and last successful handoff but does not retry; fatal workflow infrastructure failures can end before that state is returned.
 - **Only round count bounds aggregate effort** — token, price, and elapsed-time budgets are deferred.

@@ -1,21 +1,24 @@
-/** SDK event collection retains todo continuation state and saved handoffs without rewriting the response. */
+/** SDK event collection retains task checkpoints and child routing state without rewriting the response. */
 
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
-import SessionStore, { SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { appendPluginRecord, SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { WorkHandoffId, WorkHandoffView } from '@deepseek-ai/dsh-work-handoff'
 import type {} from '@deepseek-ai/dsh-tool-todo/types'
 import type {} from '@deepseek-ai/dsh-project-context/types'
+import type {} from '@deepseek-ai/dsh-subagent'
+import type {} from '@deepseek-ai/dsh-orchestration/types'
 import { createProcessDeepSeekHarness } from '../src/api.ts'
 
 const expectedPath = fileURLToPath(new URL('./expected/todo-handoff-projection.json', import.meta.url))
 const fakeRuntime = fileURLToPath(new URL('./fake-runtime.ts', import.meta.url))
 const auditTypes = new Set(['todo/policy', 'work-handoff/checkpoint', 'work-handoff/captured', 'work-handoff/saved',
-  'project-context/status', 'project-context/document-observed'])
+  'project-context/status', 'project-context/document-observed', 'subagent/running-model-policy',
+  'plugin:orchestration/routing-state'])
 
 function isAudit(event: unknown): event is { readonly type: string } {
   return typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string'
@@ -56,6 +59,16 @@ it('preserves saved unfinished-work state in both event collections and the orig
         document: { path: 'PROJECT_CONTEXT.md', version: null, content: '' } })
       session.append('project-context/status', { sourceTurn: 1, knowledgeWatermark: SessionSeq(2),
         status: 'updated', contextPath: '/project/PROJECT_CONTEXT.md', summary: 'Project documentation recorded.' })
+      session.append('subagent/running-model-policy', { allowedModels: [
+        { provider: 'snapshot-workers', model: 'visual' }, { provider: 'snapshot-workers', model: 'solver' },
+      ] })
+      appendPluginRecord(session, 'plugin:orchestration/routing-state', {
+        revision: 2, assessment: { requiredCapabilities: ['reasoning'], contextTokens: 4096, outputTokens: 8192 },
+        request: null, route: { provider: 'snapshot-workers', model: 'solver' },
+        previous: { provider: 'snapshot-workers', model: 'visual' }, status: 'idle',
+        reason: 'Visual review is complete; implement the algorithm.', checkpoint: 'Keep the verified layout findings.',
+        maxTokens: 8192, automaticChanges: 0, tried: [], emptyLimits: 0, observedInputTokens: 0,
+      })
     } finally {
       clock.mockRestore()
     }
@@ -82,7 +95,7 @@ it('preserves saved unfinished-work state in both event collections and the orig
         .flatMap(event => event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : [])),
     }
     expect(projection).toEqual(JSON.parse(await readFile(expectedPath, 'utf8')))
-    expect(projection.auditEvents).toHaveLength(6)
+    expect(projection.auditEvents).toHaveLength(8)
   } finally {
     await harness.close()
   }

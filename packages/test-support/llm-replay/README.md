@@ -31,6 +31,8 @@ This package gives a keyless test a real agent with a fixed model transcript: mo
 
 Prepared callers require the routed adapter mode. Configure `models[].reasoningEfforts` from least to greatest selectable effort. Configuration functions receive that order during preparation; `defaultReasoningEffort` remains independent of the first entry.
 
+The routed adapter uses each exact route's recorded `request/context.contextWindow` when its catalog omits a capacity. Explicit catalog metadata takes precedence; conflicting recorded capacities require an explicit capacity. A recording without a capacity leaves it unknown, so scenarios that exercise capacity checks must declare `models[].contextWindow`. Input modalities remain explicit catalog facts.
+
 With `providers` configured, the plugin registers a replay-only adapter whose catalog is available to scenarios that exercise model discovery; without `providers`, it installs the catch-all `llm/stream` waterfall used by tests that do not need discovery:
 
 ```yaml

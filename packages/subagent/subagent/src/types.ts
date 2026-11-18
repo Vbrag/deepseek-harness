@@ -10,7 +10,7 @@
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 
 /** Identifies one subagent residency epoch across its lifecycle event pair. */
@@ -218,6 +218,43 @@ export interface SubagentModelRoute {
   readonly model: string
 }
 
+/** Explicit request by a running local child or its exact live ancestor to change that child's model. */
+export interface SubagentModelChangeRequest {
+  readonly caller: Agent
+  readonly target: SessionId
+  readonly taskAssessment: SubagentTaskAssessment
+  readonly reason: string
+  readonly checkpoint: string
+  readonly preferredRoute?: SubagentModelRoute
+  readonly maxTokens?: number
+  readonly interruptCurrentRequest?: boolean
+  readonly signal: AbortSignal
+}
+
+/** Authorized local target and its immutable running-model grant passed to the policy owner. */
+export interface SubagentModelChangeContext extends SubagentModelChangeRequest {
+  readonly child: Agent
+  readonly allowedRoutes: readonly SubagentModelRoute[]
+}
+
+/** Authorized phase admission for a persisted child without creating or waking an Agent. */
+export interface SubagentColdModelChangeContext {
+  readonly request: SubagentModelChangeRequest
+  readonly session: Session
+  readonly allowedRoutes: readonly SubagentModelRoute[]
+  /** Persist newly appended control records through the exclusively owned writer.
+   * @returns A durable checkpoint, or a structured storage failure.
+   */
+  readonly flush: () => Promise<void>
+}
+
+/** Policy admission of a running-child route change; queued work remains policy-owned. */
+export interface SubagentModelChangeResult {
+  readonly status: 'queued' | 'applied'
+  readonly target: SessionId
+  readonly route?: SubagentModelRoute
+}
+
 /** Captured inputs for selecting a fresh local child's model. */
 export interface SubagentModelRoutingContext {
   readonly parent: Agent
@@ -253,6 +290,16 @@ export interface SubagentModelRouter {
    * @returns permitted routes for future roots, or undefined to supply no default.
    */
   newRootPolicyDefaults?(): readonly SubagentModelRoute[] | undefined
+  /** Request a policy-owned running-child reassignment without creating another child.
+   * @param context - Exact authorized local child, immutable allowed routes, and explicit checkpoint.
+   * @returns Admission status; policy work and safe request-boundary timing remain with the router.
+   */
+  requestChange?(context: SubagentModelChangeContext): Promise<SubagentModelChangeResult>
+  /** Queue an assessed phase for a cold local child without starting its task.
+   * @param context - Exclusive persisted Session, exact caller, immutable grant, and durability operation.
+   * @returns Durable phase admission; future authorized resume applies the route.
+   */
+  requestColdChange?(context: SubagentColdModelChangeContext): Promise<SubagentModelChangeResult>
 }
 
 /**

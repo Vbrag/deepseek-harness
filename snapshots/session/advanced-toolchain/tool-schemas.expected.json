@@ -515,10 +515,31 @@
     },
     {
       "name": "todo_write",
-      "description": "Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done.",
+      "description": "Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. Classify a new list as current-task for authorized execution or proposal for planning only. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done. Set disposition paused or waiting with a reason when the user requests a pause or further input is required.",
       "parameters": {
         "type": "object",
         "properties": {
+          "purpose": {
+            "type": "string",
+            "description": "Required for a new nonempty list: current-task executes authorized work; proposal only records a plan.",
+            "enum": [
+              "current-task",
+              "proposal"
+            ]
+          },
+          "disposition": {
+            "type": "string",
+            "description": "Pause or wait when instructed by the user or awaiting required input.",
+            "enum": [
+              "active",
+              "paused",
+              "waiting"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required explanation when disposition is paused or waiting."
+          },
           "todos": {
             "type": "array",
             "description": "The COMPLETE task list, replacing any previous list.",
@@ -568,7 +589,7 @@
           },
           "action": {
             "type": "string",
-            "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count.",
+            "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count. A goal that used every round is paused (not blocked): resume on it is rejected until you first raise max_goal_rounds with edit. A complete or blocked goal is terminal and cannot be resumed.",
             "enum": [
               "edit",
               "pause",
@@ -646,8 +667,99 @@
       }
     },
     {
+      "name": "work_checkpoint",
+      "description": "Save a concise structured handoff before a stopping limit. Distinguish verified evidence from unverified claims; the complete checkpoint must fit 16384 characters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remaining": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "task": {
+                  "type": "string"
+                },
+                "nextActions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "references": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "task",
+                "nextActions",
+                "references"
+              ]
+            }
+          },
+          "validation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "passed",
+                    "failed",
+                    "unknown"
+                  ]
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "command",
+                "result",
+                "evidence"
+              ]
+            }
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "completed",
+          "remaining",
+          "validation",
+          "blockers"
+        ]
+      }
+    },
+    {
       "name": "workflow",
-      "description": "Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn.\n\nScript-body hooks:\n- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), and independent `provider`/`model` LLM target overrides.\n- `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. A stage throw drops that ITEM to `null` and skips its remaining stages.\n- `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`.\n- `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim.\n\nMisused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) end the whole script instead of producing `null`. The script has no filesystem, network, timer, or Node.js APIs; the agents do the work.",
+      "description": "Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn.\n\nScript-body hooks:\n- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), independent `provider`/`model` LLM target overrides, and `task_assessment` for automatic model routing.\n- `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. A stage throw drops that ITEM to `null` and skips its remaining stages.\n- `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`.\n- `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim.\n\n`opts.task_assessment` is required when Orchestration mode is on. Pass `{ requiredCapabilities: string[], contextTokens: number, preferredCapabilities?: string[], requiredModalities?: string[], outputTokens?: number }`. Capability labels belong to the routing policy. Include all required capabilities, expected input tokens including files the child will read, and modalities needed throughout the task, including images captured later. `contextTokens` must be a non-negative safe integer; optional `outputTokens` must be a positive safe integer and otherwise uses the router's allowance. Omission preserves ordinary delegation when assessment is not required.\n\n`opts.maxTokens` sets the child's explicit generation cap as a positive safe integer. It is independent of the routing estimate `task_assessment.outputTokens`; omission preserves inherited model options.\n\nMisused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) end the whole script instead of producing `null`. The script has no filesystem, network, timer, or Node.js APIs; the agents do the work.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1326,10 +1438,31 @@
       },
       {
         "name": "todo_write",
-        "description": "Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done.",
+        "description": "Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. Classify a new list as current-task for authorized execution or proposal for planning only. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done. Set disposition paused or waiting with a reason when the user requests a pause or further input is required.",
         "parameters": {
           "type": "object",
           "properties": {
+            "purpose": {
+              "type": "string",
+              "description": "Required for a new nonempty list: current-task executes authorized work; proposal only records a plan.",
+              "enum": [
+                "current-task",
+                "proposal"
+              ]
+            },
+            "disposition": {
+              "type": "string",
+              "description": "Pause or wait when instructed by the user or awaiting required input.",
+              "enum": [
+                "active",
+                "paused",
+                "waiting"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "description": "Required explanation when disposition is paused or waiting."
+            },
             "todos": {
               "type": "array",
               "description": "The COMPLETE task list, replacing any previous list.",
@@ -1379,7 +1512,7 @@
             },
             "action": {
               "type": "string",
-              "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count.",
+              "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count. A goal that used every round is paused (not blocked): resume on it is rejected until you first raise max_goal_rounds with edit. A complete or blocked goal is terminal and cannot be resumed.",
               "enum": [
                 "edit",
                 "pause",
@@ -1457,8 +1590,99 @@
         }
       },
       {
+        "name": "work_checkpoint",
+        "description": "Save a concise structured handoff before a stopping limit. Distinguish verified evidence from unverified claims; the complete checkpoint must fit 16384 characters.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            },
+            "completed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "remaining": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "task": {
+                    "type": "string"
+                  },
+                  "nextActions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "references": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "task",
+                  "nextActions",
+                  "references"
+                ]
+              }
+            },
+            "validation": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "passed",
+                      "failed",
+                      "unknown"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "command",
+                  "result",
+                  "evidence"
+                ]
+              }
+            },
+            "blockers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "summary",
+            "completed",
+            "remaining",
+            "validation",
+            "blockers"
+          ]
+        }
+      },
+      {
         "name": "workflow",
-        "description": "Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn.\n\nScript-body hooks:\n- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), and independent `provider`/`model` LLM target overrides.\n- `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. A stage throw drops that ITEM to `null` and skips its remaining stages.\n- `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`.\n- `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim.\n\nMisused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) end the whole script instead of producing `null`. The script has no filesystem, network, timer, or Node.js APIs; the agents do the work.",
+        "description": "Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn.\n\nScript-body hooks:\n- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), independent `provider`/`model` LLM target overrides, and `task_assessment` for automatic model routing.\n- `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. A stage throw drops that ITEM to `null` and skips its remaining stages.\n- `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`.\n- `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim.\n\n`opts.task_assessment` is required when Orchestration mode is on. Pass `{ requiredCapabilities: string[], contextTokens: number, preferredCapabilities?: string[], requiredModalities?: string[], outputTokens?: number }`. Capability labels belong to the routing policy. Include all required capabilities, expected input tokens including files the child will read, and modalities needed throughout the task, including images captured later. `contextTokens` must be a non-negative safe integer; optional `outputTokens` must be a positive safe integer and otherwise uses the router's allowance. Omission preserves ordinary delegation when assessment is not required.\n\n`opts.maxTokens` sets the child's explicit generation cap as a positive safe integer. It is independent of the routing estimate `task_assessment.outputTokens`; omission preserves inherited model options.\n\nMisused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) end the whole script instead of producing `null`. The script has no filesystem, network, timer, or Node.js APIs; the agents do the work.",
         "parameters": {
           "type": "object",
           "properties": {

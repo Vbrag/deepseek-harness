@@ -477,6 +477,51 @@ interface SubagentModelRouting {
 ```
 
 ```ts type-equiv
+/** Explicit request by a running local child or its exact live ancestor to change that child's model. */
+interface SubagentModelChangeRequest {
+  readonly caller: Agent
+  readonly target: SessionId
+  readonly taskAssessment: SubagentTaskAssessment
+  readonly reason: string
+  readonly checkpoint: string
+  readonly preferredRoute?: SubagentModelRoute
+  readonly maxTokens?: number
+  readonly interruptCurrentRequest?: boolean
+  readonly signal: AbortSignal
+}
+```
+
+```ts type-equiv
+/** Authorized local target and its immutable running-model grant passed to the policy owner. */
+interface SubagentModelChangeContext extends SubagentModelChangeRequest {
+  readonly child: Agent
+  readonly allowedRoutes: readonly SubagentModelRoute[]
+}
+```
+
+```ts type-equiv
+/** Authorized phase admission for a persisted child without creating or waking an Agent. */
+interface SubagentColdModelChangeContext {
+  readonly request: SubagentModelChangeRequest
+  readonly session: Session
+  readonly allowedRoutes: readonly SubagentModelRoute[]
+  /** Persist newly appended control records through the exclusively owned writer.
+   * @returns A durable checkpoint, or a structured storage failure.
+   */
+  readonly flush: () => Promise<void>
+}
+```
+
+```ts type-equiv
+/** Policy admission of a running-child route change; queued work remains policy-owned. */
+interface SubagentModelChangeResult {
+  readonly status: 'queued' | 'applied'
+  readonly target: SessionId
+  readonly route?: SubagentModelRoute
+}
+```
+
+```ts type-equiv
 /** Optional policy for selecting models of fresh local, history-independent children. */
 interface SubagentModelRouter {
   /**
@@ -490,6 +535,84 @@ interface SubagentModelRouter {
    * @returns permitted routes for future roots, or undefined to supply no default.
    */
   newRootPolicyDefaults?(): readonly SubagentModelRoute[] | undefined
+  /** Request a policy-owned running-child reassignment without creating another child.
+   * @param context - Exact authorized local child, immutable allowed routes, and explicit checkpoint.
+   * @returns Admission status; policy work and safe request-boundary timing remain with the router.
+   */
+  requestChange?(context: SubagentModelChangeContext): Promise<SubagentModelChangeResult>
+  /** Queue an assessed phase for a cold local child without starting its task.
+   * @param context - Exclusive persisted Session, exact caller, immutable grant, and durability operation.
+   * @returns Durable phase admission; future authorized resume applies the route.
+   */
+  requestColdChange?(context: SubagentColdModelChangeContext): Promise<SubagentModelChangeResult>
+}
+```
+
+### 编排路由记录
+
+[编排插件](../../packages/experimental/dsh-orchestration/README.zh.md)记录候选资格、分配负载和队列状态。较早保留的记录可以没有可选诊断字段；这些诊断记录不授予模型权限。独立的路由状态记录恢复已评估阶段请求及其处置；运行时仅在子级自身的运行模型授权内准入模型切换。
+
+```ts type-equiv
+/** One exact registered LLM route eligible for orchestration. */
+interface PoolRoute {
+  /** Registered LLM provider. */
+  readonly provider: string
+  /** Exact model id accepted by the provider. */
+  readonly model: string
+}
+```
+
+```ts type-equiv
+/** Hard requirement or queue condition preventing a route from participating. */
+type OrchestrationRouteExclusion =
+  | 'unauthorized' | 'missing-required-capability' | 'missing-required-modality'
+  | 'unknown-context' | 'context-capacity' | 'output-capacity' | 'rate-limit' | 'request-token-capacity'
+  | 'compaction-budget' | 'recovery-attempted'
+```
+
+```ts type-equiv
+/** Capacity and eligibility facts for one other configured route at assignment time. */
+interface OrchestrationRouteAlternative extends PoolRoute {
+  /** Active and reserved children, with each child counted once. */
+  readonly activeAssignments: number
+  /** Empty only when this route could participate in the selection. */
+  readonly exclusions: readonly OrchestrationRouteExclusion[]
+  /** Advisory provider queue state; omitted when hard eligibility failed. */
+  readonly availability?: LlmQueueAvailability
+  /** Verified specialties, when this authorized route was inspected. */
+  readonly capabilities?: readonly string[]
+  /** Verified input modalities, when known. */
+  readonly modalities?: readonly string[]
+  /** Known combined input/output capacity. */
+  readonly contextWindow?: number
+  /** Known provider response ceiling. */
+  readonly maxOutputTokens?: number
+}
+```
+
+```ts type-equiv
+/** Logged evidence for one automatic child-model selection. */
+interface OrchestrationRouteDecision {
+  /** Fresh child that receives the selected route. */
+  readonly childId: SessionId
+  /** Parent's declared task needs, including anticipated tool-produced images. */
+  readonly assessment: SubagentTaskAssessment
+  /** Selected exact LLM route. */
+  readonly selected: PoolRoute
+  /** First priority separating the selected eligible route from its next competitor. */
+  readonly reason: 'active-load' | 'queue-readiness' | 'task-fit' | 'diversity' | 'pool-order'
+  /** Eligible ready-or-unknown routes; absent in retained records without diagnostic evidence. */
+  readonly eligibleCount?: number
+  /** Active and reserved children before selection; absent in retained records without diagnostic evidence. */
+  readonly selectedLoad?: number
+  /** Confirmed or unreported capacity; absent in retained records without diagnostic evidence. */
+  readonly selectedReadiness?: 'ready' | 'unknown'
+  /** Other configured routes and their evidence; absent in retained records without diagnostic evidence. */
+  readonly alternatives?: readonly OrchestrationRouteAlternative[]
+  /** Estimated input including the configured instruction allowance. */
+  readonly inputTokens: number
+  /** Conservative response allowance used for context eligibility. */
+  readonly outputTokens: number
 }
 ```
 
@@ -557,6 +680,19 @@ routesModelsFor(providerName: string): boolean
  * @returns detached permitted routes, or undefined to permit only the parent route.
  */
 modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined
+
+/** Read the child's immutable running-model grant or its original route for a legacy Session.
+ * @param session - Child Session; fork-inherited grants never authorize this child.
+ * @returns Detached authorized routes, or an empty list when the original route is unknown.
+ */
+runningModelPolicyOf(session: Session): readonly SubagentModelRoute[]
+
+/** Request a policy-owned model change for an existing local child without changing its lineage or inbox.
+ * @param request - Exact live self or ancestor, explicit checkpoint, requirements, and caller cancellation.
+ * @returns Queued or applied admission; the router owns boundary timing, routing, and subsequent phase cleanup.
+ * @throws UNAUTHORIZED for a non-owner, UNSUPPORTED_CAPABILITY for an external backend, or MODEL_CHANGE_UNAVAILABLE without a handler.
+ */
+requestModelChange(request: SubagentModelChangeRequest): Promise<SubagentModelChangeResult>
 
 /**
  * Read router defaults for the existing fresh-root policy writer.

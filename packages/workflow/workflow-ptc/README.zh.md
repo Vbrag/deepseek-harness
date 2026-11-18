@@ -52,6 +52,10 @@ Node PTC 提供方的 `maxPendingCalls` 也限制工作流并发：子 agent 启
 
 脚本支持顶层 `await`；`meta` 和 `args` 作为 JSON 数据传入。每次 `agent()` 调用都会在本次运行的固定父 agent 下启动受管理的 subagent Activation，并等待其文本或结构化结果。工作流记录自己的成员并收集其结果，不向父级子代理目录添加条目，也不向父模型发送子 agent 结算通知。最终的无损 JSON 返回值成为运行结果；普通子 agent 失败使 `agent()` 以 `null` 兑现。
 
+Guest 与 Host 将可选的 `agent()` `maxTokens` 校验为正安全整数，并作为子级的显式生成上限转发。任务评估中的响应 token 数仍是路由估计，绝不替换此上限。
+
+`agent(prompt, { task_assessment })` 把调用方的[任务需求](../workflow/README.zh.md#running-a-workflow-script)转发给 subagent 模型路由。Guest 与 Host 均校验 JSON 字段；能力标签仍由路由器定义。省略时保留普通委派行为，除非路由策略要求评估。无效评估数据在子级启动前以 `INVALID_ARGUMENT` 失败；路由器拒绝时，子级启动以 `AGENT_START` 失败。
+
 无效元数据、无法解析的正文、不可用的提供方路由或高于上限的单次运行上限，在运行发布前被拒绝。执行期间，钩子误用与超出协作式上限会使工作流失败。进程失败、所需约束不可用，以及超出 PTC 输出或控制限制也会使运行失败。
 
 ### 文件策略与取消
@@ -121,7 +125,7 @@ Host 分别跟踪待完成的启动与已接受的 Activation。取消会中止�
 
 #### 模型看到什么
 
-脚本每次调用 `agent()`，都会把提示词原样发送给 subagent 提供方，并附带可选模型或结构化输出 schema。每个子 agent 看到该提供方自己的上下文；phase 与 log 叙述只留在观察器事件中。
+脚本每次调用 `agent()`，都会把提示词原样发送给 subagent 提供方，并附带可选模型、任务评估或结构化输出 schema。每个子 agent 看到该提供方自己的上下文；phase 与 log 叙述只留在观察器事件中。
 
 #### Token 影响
 

@@ -24,6 +24,9 @@ it('boots the profile and routes ordinary coding, vision, and mixed subagents on
     mixedOutput: string
     persistAccepted: boolean
     persistedPool: { provider: string; model: string }[]
+    compactionConfig: { modelPolicies: { provider: string; model: string; headroomTokens: number; maxTokens: number }[] }
+    parentId: string
+    requests: { sessionId: string; model: string; context: string }[]
   }
   expect(report.rootOutput).toBe('ran:lead')
   expect(report.orchestrationsLoaded).toBe(true)
@@ -34,6 +37,19 @@ it('boots the profile and routes ordinary coding, vision, and mixed subagents on
   expect(report.mixedOutput).toBe('ran:gwdg.qwen3.5-397b-a17b')
   expect(report.persistAccepted).toBe(true)
   expect(report.persistedPool).toEqual([{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }])
+  expect(report.compactionConfig.modelPolicies).toEqual([
+    { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash', headroomTokens: 8192, maxTokens: 8192 },
+    { provider: 'uni-paderborn', model: 'hs-de.qwen3.8-27b', headroomTokens: 8192, maxTokens: 8192 },
+  ])
+  const policy = 'Proactively identify independent work that can make useful progress in parallel.'
+  const rootRequests = report.requests.filter(request => request.sessionId === report.parentId)
+  expect(rootRequests.map(request => request.context.includes(policy))).toEqual([false, true, false])
+  const childRequests = report.requests.filter(request => request.sessionId !== report.parentId)
+  expect(childRequests.map(request => request.context.includes(policy))).toEqual([false, true, true, true])
+  for (const request of childRequests.slice(1)) {
+    expect(request.context).toContain('remaining levels 0')
+    expect(request.context).toContain('carry out the work directly')
+  }
 })
 
 it('creates and runs a normal session when the optional orchestration plugin fails to activate', { timeout: 90_000 }, async () => {

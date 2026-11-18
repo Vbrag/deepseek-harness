@@ -31,15 +31,21 @@ kind: "package-reference"
 
 模型通过 `dsh-tool-workflow` 的 `workflow` 工具触达该能力；该工具拥有调用 schema 与结果包络，引擎提供其下的执行。一次工具调用提交 `meta`、`script` 与可选 `args`，运行完成时返回 `{ runId, agentsStarted, result }`。工具会阻塞父级轮次直到整个工作流结算，因此模型只看到最终结果，永远不会看到中间子 agent 消息。
 
+<a id="running-a-workflow-script"></a>
 ### 运行工作流脚本
 
 编排脚本是纯 JavaScript 脚本体（不是 TypeScript），以顶层 `await` 运行并以 `return <json-value>` 结尾。`meta` 身份块与任何 `args` 都以普通 JSON 数据到达——绝不作为代码求值。执行期间脚本调用提供的钩子：`agent(prompt, opts)` 启动一个 subagent，并以其最终文本、或在提供 schema 时以经过校验的结构化值兑现；`parallel()` 与 `pipeline()` 组合独立工作；`phase()` 与 `log()` 为观察者叙述进度。
 
+`agent(prompt, { maxTokens })` 设置正安全整数生成上限，与路由估计 `task_assessment.outputTokens` 独立。省略时保留继承的模型选项。无效上限会在子级启动前以 `INVALID_ARGUMENT` 使工作流失败。
+
+通过 `opts.task_assessment` 传入每个子级的路由需求：必填 `requiredCapabilities`（字符串数组）与 `contextTokens`（非负安全整数），可选 `preferredCapabilities`、`requiredModalities` 字符串数组以及正安全整数 `outputTokens`。标签由已组合的模型路由器定义；输入估计包含子级将读取的文件等材料，模态包含它之后可能捕获的图像。省略时保留普通委派行为，除非路由策略要求评估（例如 Orchestration 模式）。工作流原样转发这些需求，不发起分类模型请求；格式错误的评估数据会在该子级启动前以 `INVALID_ARGUMENT` 使工作流失败。
+
 ```text
 // Script body — runs with top-level await, ends with a JSON return value:
+const taskAssessment = { requiredCapabilities: ['coding'], contextTokens: 8000 }
 const reviews = await parallel([
-  () => agent('Review src/a.ts for correctness'),
-  () => agent('Review src/b.ts for correctness'),
+  () => agent('Review src/a.ts for correctness', { task_assessment: taskAssessment }),
+  () => agent('Review src/b.ts for correctness', { task_assessment: taskAssessment }),
 ])
 return { reviewed: reviews.length }
 ```

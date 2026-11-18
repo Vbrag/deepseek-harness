@@ -225,6 +225,7 @@ describe('owned background output (pwsh)', () => {
       steer: () => {},
       inject: () => {},
       cancel: () => {},
+      interruptRequest: () => false,
       runMaintenance: task => task(new AbortController().signal),
       whenIdle: () => Promise.resolve(),
     }
@@ -476,6 +477,7 @@ describe('foreground commands as jobs (pwsh)', () => {
       steer: () => {},
       inject: () => {},
       cancel: () => {},
+      interruptRequest: () => false,
       runMaintenance: task => task(new AbortController().signal),
       whenIdle: () => Promise.resolve(),
     }

@@ -121,6 +121,7 @@ describe('CompactionEngine seam', () => {
     const session = Session.create(brandString<SessionId>('s'))
     expect(await svc.compactIfNeeded(stubAgent(session), 'pressure', new AbortController().signal)).toBeNull()
     const signal = new AbortController().signal
+    expect(await svc.pressureBudget(stubAgent(session), { config: { provider: 'stub', model: 'm' } }, signal)).toBeUndefined()
     expect(await svc.compactNow({
       ...stubAgent(session),
       runMaintenance: task => task(new AbortController().signal),

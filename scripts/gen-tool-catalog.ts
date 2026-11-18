@@ -579,7 +579,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolRalph, { subagentProvider: 'mock' })
     },
     note:
-      'A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap.',
+      'A fixed foreground workflow starts one fresh structured child per round; the model supplies the objective, optional round cap, and optional task assessment.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-skill',
@@ -631,6 +631,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tool-subagent',
     source: {
       list_subagent_models: 'packages/subagent/tool-subagent/src/list-models.ts',
+      reassign_subagent: 'packages/subagent/tool-subagent/src/reassign-model.ts',
       subagent: 'packages/subagent/tool-subagent/src/index.ts',
     },
     requires: ['ctx.tools', 'ctx.subagents', 'ctx.systemPrompt', 'ctx.sessionProjections', 'ctx.llm for model discovery and selected-route validation'],

@@ -8,6 +8,18 @@ export const zh = {
   modeOrchestration: '编排',
   modePending: '从下一步生效',
   modeFailed: '无法切换模式，请重试',
+  routingTitle: '子代理模型',
+  routingCurrent: '上次使用',
+  routingSelected: '已选下一模型',
+  routingRequested: '请求的模型',
+  routingPrevious: '先前模型',
+  routingNoRequest: '尚无模型请求',
+  routingIdle: '模型已分配',
+  routingQueued: '模型切换已排队',
+  routingChanging: '正在切换模型',
+  routingWaiting: '等待可用容量',
+  routingBlocked: '模型切换受阻',
+  routingReason: '原因',
   title: '编排模型池',
   subtitle: '从提供商目录中勾选用于多模型编排的模型池。',
   noneSelected: '未选择模型',
@@ -41,6 +53,18 @@ export const en = {
   modeOrchestration: 'Orchestration',
   modePending: 'Applies from the next step',
   modeFailed: 'Could not switch mode. Please try again.',
+  routingTitle: 'Subagent models',
+  routingCurrent: 'Last used',
+  routingSelected: 'Selected next',
+  routingRequested: 'Requested model',
+  routingPrevious: 'Previous model',
+  routingNoRequest: 'No request yet',
+  routingIdle: 'Model assigned',
+  routingQueued: 'Model change queued',
+  routingChanging: 'Changing model',
+  routingWaiting: 'Waiting for capacity',
+  routingBlocked: 'Model change blocked',
+  routingReason: 'Reason',
   title: 'Orchestration model pool',
   subtitle: 'Pick the multi-model pool for Orchestration mode from the provider catalog.',
   noneSelected: 'No model selected',
@@ -69,14 +93,98 @@ function reusedEnglish(): Record<OrchestrationKey, string> {
 }
 
 /** Japanese dictionary: reuse English pending a native pass. */
-export const ja = { ...reusedEnglish() } satisfies Record<OrchestrationKey, string>
+export const ja = {
+  ...reusedEnglish(),
+  routingTitle: 'サブエージェントのモデル',
+  routingCurrent: '前回使用',
+  routingSelected: '次に使用するモデル',
+  routingRequested: '要求されたモデル',
+  routingPrevious: '以前のモデル',
+  routingNoRequest: 'まだリクエストはありません',
+  routingIdle: 'モデルを割り当て済み',
+  routingQueued: 'モデル変更は待機中',
+  routingChanging: 'モデルを変更中',
+  routingWaiting: '利用可能な容量を待機中',
+  routingBlocked: 'モデル変更がブロックされました',
+  routingReason: '理由',
+} satisfies Record<OrchestrationKey, string>
 /** Spanish dictionary: reuse English pending a native pass. */
-export const es = { ...reusedEnglish() } satisfies Record<OrchestrationKey, string>
+export const es = {
+  ...reusedEnglish(),
+  routingTitle: 'Modelos de subagentes',
+  routingCurrent: 'Último utilizado',
+  routingSelected: 'Siguiente seleccionado',
+  routingRequested: 'Modelo solicitado',
+  routingPrevious: 'Modelo anterior',
+  routingNoRequest: 'Aún no hay solicitudes',
+  routingIdle: 'Modelo asignado',
+  routingQueued: 'Cambio de modelo en cola',
+  routingChanging: 'Cambiando de modelo',
+  routingWaiting: 'Esperando capacidad disponible',
+  routingBlocked: 'Cambio de modelo bloqueado',
+  routingReason: 'Motivo',
+} satisfies Record<OrchestrationKey, string>
 /** French dictionary: reuse English pending a native pass. */
-export const fr = { ...reusedEnglish() } satisfies Record<OrchestrationKey, string>
+export const fr = {
+  ...reusedEnglish(),
+  routingTitle: 'Modèles des sous-agents',
+  routingCurrent: 'Dernier utilisé',
+  routingSelected: 'Prochain sélectionné',
+  routingRequested: 'Modèle demandé',
+  routingPrevious: 'Modèle précédent',
+  routingNoRequest: 'Aucune requête pour le moment',
+  routingIdle: 'Modèle attribué',
+  routingQueued: 'Changement de modèle en attente',
+  routingChanging: 'Changement de modèle en cours',
+  routingWaiting: 'En attente de capacité disponible',
+  routingBlocked: 'Changement de modèle bloqué',
+  routingReason: 'Motif',
+} satisfies Record<OrchestrationKey, string>
 /** German dictionary: reuse English pending a native pass. */
-export const de = { ...reusedEnglish() } satisfies Record<OrchestrationKey, string>
+export const de = {
+  ...reusedEnglish(),
+  routingTitle: 'Modelle der Unteragenten',
+  routingCurrent: 'Zuletzt verwendet',
+  routingSelected: 'Als Nächstes ausgewählt',
+  routingRequested: 'Angefordertes Modell',
+  routingPrevious: 'Vorheriges Modell',
+  routingNoRequest: 'Noch keine Anfrage',
+  routingIdle: 'Modell zugewiesen',
+  routingQueued: 'Modellwechsel vorgemerkt',
+  routingChanging: 'Modell wird gewechselt',
+  routingWaiting: 'Warten auf freie Kapazität',
+  routingBlocked: 'Modellwechsel blockiert',
+  routingReason: 'Grund',
+} satisfies Record<OrchestrationKey, string>
 /** Russian dictionary: reuse English pending a native pass. */
-export const ru = { ...reusedEnglish() } satisfies Record<OrchestrationKey, string>
+export const ru = {
+  ...reusedEnglish(),
+  routingTitle: 'Модели субагентов',
+  routingCurrent: 'Последняя использованная',
+  routingSelected: 'Выбрана следующей',
+  routingRequested: 'Запрошенная модель',
+  routingPrevious: 'Предыдущая модель',
+  routingNoRequest: 'Запросов пока нет',
+  routingIdle: 'Модель назначена',
+  routingQueued: 'Смена модели в очереди',
+  routingChanging: 'Смена модели',
+  routingWaiting: 'Ожидание свободной мощности',
+  routingBlocked: 'Смена модели заблокирована',
+  routingReason: 'Причина',
+} satisfies Record<OrchestrationKey, string>
 /** Portuguese dictionary: reuse English pending a native pass. */
-export const pt = { ...reusedEnglish() } satisfies Record<OrchestrationKey, string>
+export const pt = {
+  ...reusedEnglish(),
+  routingTitle: 'Modelos dos subagentes',
+  routingCurrent: 'Último utilizado',
+  routingSelected: 'Próximo selecionado',
+  routingRequested: 'Modelo solicitado',
+  routingPrevious: 'Modelo anterior',
+  routingNoRequest: 'Ainda não há solicitações',
+  routingIdle: 'Modelo atribuído',
+  routingQueued: 'Mudança de modelo na fila',
+  routingChanging: 'Alterando o modelo',
+  routingWaiting: 'Aguardando capacidade disponível',
+  routingBlocked: 'Mudança de modelo bloqueada',
+  routingReason: 'Motivo',
+} satisfies Record<OrchestrationKey, string>

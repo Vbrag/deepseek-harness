@@ -7,7 +7,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
-import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
+import type { CompactionAgentContext, CompactionPressureBudget, CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { EpochHeader, Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, LlmError } from '@deepseek-ai/dsh-llm'
@@ -34,6 +34,7 @@ import type { SummarizationInput, SummaryResult, SummaryRoute } from './summariz
 import type {
   BasicCompactionConfig,
   ModelCompactPolicyConfig,
+  ResolvedCompactSpec,
   ResolvedConfig,
 } from './types.ts'
 
@@ -136,7 +137,7 @@ export class BasicCompactionEngine extends CompactionEngine {
   /** Resolved and validated compaction configuration. */
   readonly config: ResolvedConfig
 
-  private readonly warnedPressureConfigTargets = new Set<string>()
+  private readonly warnedUnavailableContexts = new Set<string>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
   /** Registered at construction; `summarize()` awaits it, so no read precedes readiness. */
@@ -179,8 +180,9 @@ export class BasicCompactionEngine extends CompactionEngine {
           if (result !== null) logResult(result, 'step pressure')
         } catch (error: unknown) {
           if (error instanceof TargetPressureConfigError) {
-            if (this.warnedPressureConfigTargets.has(error.targetKey)) return next()
-            this.warnedPressureConfigTargets.add(error.targetKey)
+            if (error.code !== 'COMPACTION_CONTEXT_UNAVAILABLE') throw error
+            if (this.warnedUnavailableContexts.has(error.targetKey)) return next()
+            this.warnedUnavailableContexts.add(error.targetKey)
           }
           const message = error instanceof Error ? error.message : String(error)
           ctx.logger.warn(`step compaction failed: ${message}; continuing the turn`)
@@ -206,6 +208,7 @@ export class BasicCompactionEngine extends CompactionEngine {
         if (result !== null) logResult(result, 'model switch')
       } catch (error: unknown) {
         signal.throwIfAborted()
+        if (error instanceof TargetPressureConfigError && error.code === 'COMPACTION_INVALID_BUDGET') throw error
         const message = error instanceof Error ? error.message : String(error)
         throw new LlmError(
           `Cannot switch to ${config.provider}/${config.model}: context compaction failed: ${message}. `
@@ -242,6 +245,7 @@ export class BasicCompactionEngine extends CompactionEngine {
       try {
         result = await this.compactIfNeeded(agent, 'context-overflow', signal)
       } catch (recoveryError: unknown) {
+        if (recoveryError instanceof TargetPressureConfigError) throw recoveryError
         const message = recoveryError instanceof Error ? recoveryError.message : String(recoveryError)
         // A model-free prune can land before later summary work fails. That
         // durable reduction is sufficient retry proof; do not discard it just
@@ -330,6 +334,40 @@ export class BasicCompactionEngine extends CompactionEngine {
     }
   }
 
+  override async pressureBudget(
+    _agent: CompactionAgentContext,
+    header: EpochHeader,
+    signal: AbortSignal,
+  ): Promise<CompactionPressureBudget | undefined> {
+    try {
+      const { thresholdTokens, retainTokens } = await this.resolvePressureSpec(header, signal)
+      return { thresholdTokens, retainTokens }
+    } catch (error: unknown) {
+      if (error instanceof TargetPressureConfigError && error.code === 'COMPACTION_CONTEXT_UNAVAILABLE') return undefined
+      throw error
+    }
+  }
+
+  private async resolvePressureSpec(header: EpochHeader, signal: AbortSignal): Promise<ResolvedCompactSpec> {
+    const target = header.config
+    const policy = resolveTargetPolicy(this.config, target)
+    const info = await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+    const targetKey = `${target.provider}/${target.model}`
+    if (info.context === undefined) {
+      throw new TargetPressureConfigError(
+        targetKey,
+        `compaction-basic: no context capacity for ${targetKey}; `
+        + 'configure contextWindow on that adapter model',
+        'COMPACTION_CONTEXT_UNAVAILABLE',
+      )
+    }
+    return resolveCompactSpec(
+      policy,
+      info.context.contextWindow,
+      reservedCompletionTokens(header, info.defaultMaxTokens),
+    )
+  }
+
   /** Price the proposed header; switch checks require history below its threshold. */
   private async compactPressure(
     agent: Agent,
@@ -337,26 +375,11 @@ export class BasicCompactionEngine extends CompactionEngine {
     signal: AbortSignal,
     requireBelowThreshold: boolean,
   ): Promise<CompactionResult | null> {
-    const target = header.config
-    const policy = resolveTargetPolicy(this.config, target)
     const meter = this.ctx.tokenMeter
     let measurement = meter.measure(agent.session, header)
     const prune = this.ctx.get('toolResultPruner')
-    const info = await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+    const spec = await this.resolvePressureSpec(header, signal)
     assertNoActiveCompaction(agent.session, 'automatic pressure compaction')
-    const targetKey = `${target.provider}/${target.model}`
-    if (info.context === undefined) {
-      throw new TargetPressureConfigError(
-        targetKey,
-        `compaction-basic: no context capacity for ${targetKey}; `
-        + 'configure contextWindow on that adapter model',
-      )
-    }
-    const spec = resolveCompactSpec(
-      policy,
-      info.context.contextWindow,
-      reservedCompletionTokens(header, info.defaultMaxTokens),
-    )
     if (measurement.totalTokens < spec.thresholdTokens) return null
 
     // Once pressure qualifies, land the model-free pass before choosing a

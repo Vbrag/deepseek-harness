@@ -14,8 +14,8 @@ import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-a
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { type ReasoningEffortId, contentHasImage, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
-import { SessionLogOffset } from '@deepseek-ai/dsh-session'
-import type { Session, SessionId, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
+import { Session, SessionLogOffset, SessionPreparation } from '@deepseek-ai/dsh-session'
+import type { SessionId, SessionEvent, SessionHeader, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionObservation, SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -33,6 +33,7 @@ import type { SubagentDescriptorData } from './descriptor.ts'
 import { catalogNames, establishCatalogChild, establishExternalCatalogChild } from './catalog.ts'
 import { SubagentError } from './error.ts'
 import { assertAllowedModelSelection } from './model-selection-policy.ts'
+import { appendRunningModelPolicy } from './running-model-policy.ts'
 import type { LifecycleEmitter } from './lifecycle.ts'
 import { ROOT_AGENT_NAME, SiblingNameReservations, agentAddress, joinAgentPath, parentAgentPath } from './names.ts'
 import type { SiblingNameReservation } from './names.ts'
@@ -75,6 +76,11 @@ interface SubagentHost {
   modelSelectionPolicyOf?(session: Session): readonly SubagentModelRoute[] | undefined
 }
 
+/** A live target or an exclusively owned persisted child used only for control records. */
+type ModelChangeTarget =
+  | { readonly kind: 'live'; readonly child: Agent; readonly parentSessionId: SessionId; readonly signal: AbortSignal }
+  | { readonly kind: 'cold'; readonly session: Session; readonly parentSession: Session; readonly signal: AbortSignal; readonly flush: () => Promise<void> }
+
 /** Inputs shared by fresh and resumed Activation materialization. */
 interface MaterializeBase {
   provider: string
@@ -109,6 +115,8 @@ type MaterializeInputs = MaterializeBase & (
       delegatedPolicies: DelegatedPolicyOverrides
       /** Child-owned composition record appended after the inherited marker. */
       descriptor: SubagentDescriptorData
+      /** Running-child routes captured independently of the child's descendant-delegation policy. */
+      runningModelRoutes: readonly SubagentModelRoute[]
       /** Routing-owned initialization before the child is published. */
       modelSetup?: SubagentModelRouting['setup']
     }
@@ -240,6 +248,117 @@ export class SubagentManager {
     }
   }
 
+  /** Authorize self or an exact live creation ancestor for one resident local child.
+   * @param caller - Exact live Agent requesting a running-model change.
+   * @param target - Existing local child identity; this operation never creates or resumes one.
+   * @returns The owned live child and its direct spawning parent identity.
+   */
+  modelChangeTarget(caller: Agent, target: SessionId): { child: Agent; parentSessionId: SessionId } {
+    if (this.ctx.agents.get(caller.id) !== caller) {
+      throw new SubagentError('model reassignment requires the exact live caller', 'UNAUTHORIZED')
+    }
+    this.assertAdmitting(caller)
+    const activation = this.resident.get(target)
+    if (activation === undefined) throw new SubagentError('model reassignment requires a live local subagent', 'NOT_CONTINUABLE')
+    if (caller.id !== target && (this.rootOf(caller) !== activation.root || !activation.ancestors.includes(caller.id))) {
+      throw new SubagentError('only the target child or its exact live ancestor can request model reassignment', 'UNAUTHORIZED')
+    }
+    if (activation.closing !== undefined) throw new SubagentError('the target subagent is closing', 'ACTIVATION_CLOSING')
+    if (activation.kind !== 'local') {
+      throw new SubagentError('external subagent backends do not support local model reassignment', 'UNSUPPORTED_CAPABILITY')
+    }
+    const child = activation.handle.agent
+    if (this.ctx.agents.get(child.id) !== child || (caller.id === target && caller !== child)) {
+      throw new SubagentError('model reassignment requires the exact live target and caller', 'UNAUTHORIZED')
+    }
+    const parentSessionId = activation.ancestors.at(-1)
+    if (parentSessionId === undefined) throw new SubagentError('the target has no verified spawning parent', 'UNAUTHORIZED')
+    return { child, parentSessionId }
+  }
+
+  /** Serialize model control with input admission, retaining cold targets outside Agent and Session registries.
+   * @param caller - Exact live creation ancestor, or the resident target itself.
+   * @param target - Existing child identity; never a fresh Session.
+   * @param signal - Policy and caller cancellation, including rollback completion.
+   * @param change - Policy operation held inside target ownership.
+   * @returns The policy's admission result after persistence ownership closes.
+   */
+  async withModelChangeTarget<T>(
+    caller: Agent, target: SessionId, signal: AbortSignal, change: (target: ModelChangeTarget) => Promise<T>,
+  ): Promise<T> {
+    if (this.ctx.agents.get(caller.id) !== caller) {
+      throw new SubagentError('model reassignment requires the exact live caller', 'UNAUTHORIZED')
+    }
+    this.assertAdmitting(caller)
+    const root = this.rootOf(caller)
+    const callerDisposed = new AbortController()
+    const unwatch = this.ctx.on('agent/disposed', ({ agent }) => {
+      if (agent === caller) callerDisposed.abort(new DOMException('The model-change caller was disposed.', 'AbortError'))
+    })
+    return this.trackStartup(root, AbortSignal.any([signal, callerDisposed.signal]), trackedSignal => this.locks.run(target, async () => {
+      const assertCaller = (): void => {
+        trackedSignal.throwIfAborted()
+        if (this.ctx.agents.get(caller.id) !== caller) {
+          throw new SubagentError('model reassignment requires the same live caller throughout admission', 'UNAUTHORIZED')
+        }
+        this.assertAdmitting(caller)
+      }
+      assertCaller()
+      if (this.resident.has(target)) return change({ kind: 'live', ...this.modelChangeTarget(caller, target), signal: trackedSignal })
+      if (target === caller.id) throw new SubagentError('model reassignment requires a local subagent', 'NOT_CONTINUABLE')
+      const sessions = this.ctx.get('sessions')
+      if (sessions === undefined) throw new SubagentError('inactive model reassignment requires Session storage', 'PERSISTENCE_UNAVAILABLE')
+      if (this.ctx.agents.get(target) !== undefined || sessions.get(target) !== undefined) {
+        throw new SubagentError('the target is owned by another live lifecycle', 'ACTIVATION_CLOSING')
+      }
+      const persistence = this.requirePersistence()
+      const handle = await persistence.open(target, 'write', { signal: trackedSignal }).catch((cause: unknown) => {
+        throw new SubagentError('the inactive child could not acquire exclusive Session write ownership', 'PERSISTENCE_UNAVAILABLE', { cause })
+      })
+      try {
+        const read = await handle.read(0, undefined, { signal: trackedSignal })
+        assertCaller()
+        const appended: SessionEvent[] = []
+        using preparation = SessionPreparation.create(Session.fromRestore(
+          target, read.events, handle.header, handle.inheritedEventCount, read.eventState, sessions.messageProjections, appended,
+        ))
+        const session = preparation.session
+        const descriptor = foldSubagentDescriptor(read.events.slice(handle.inheritedEventCount))
+        if (descriptor?.mode !== 'continuable') {
+          throw new SubagentError('model reassignment requires a persisted local continuable child', 'NOT_CONTINUABLE')
+        }
+        const ancestry = await this.resolveCreationEdges(session.header, session.inheritedEventCount,
+          this.host.identityOf(session), trackedSignal, root)
+        assertCaller()
+        if (!ancestry.ancestors.includes(caller.id)) {
+          throw new SubagentError('only an exact creation ancestor may reassign an inactive child', 'UNAUTHORIZED')
+        }
+        const parentId = ancestry.ancestors.at(-1)
+        if (parentId === undefined) throw new SubagentError('the target has no verified direct parent', 'UNAUTHORIZED')
+        using parent = await this.observeContinuation(parentId, trackedSignal)
+        assertCaller()
+        const parentSession = Session.fromRestore(parent.header.id, parent.events, parent.header,
+          parent.inheritedEventCount, 'shared-frozen', sessions.messageProjections)
+        const flush = async (): Promise<void> => {
+          const batch = appended.slice()
+          try {
+            if (batch.length > 0) {
+              await handle.append(batch)
+              appended.splice(0, batch.length)
+            }
+            await handle.flush()
+          } catch (cause: unknown) {
+            throw new SubagentError('the inactive child model-change checkpoint could not be saved', 'PERSISTENCE_UNAVAILABLE', { cause })
+          }
+        }
+        assertCaller()
+        return await change({ kind: 'cold', session, parentSession, signal: trackedSignal, flush })
+      } finally {
+        await handle.close()
+      }
+    })).finally(() => { unwatch() })
+  }
+
   /**
    * Close admission, await every already-admitted materialization through
    * publication or rollback, then dispose every agent in the subagent tree.
@@ -349,6 +468,9 @@ export class SubagentManager {
       // Capture caller values before routing can wait.
       const capturedOptions = resolveChildAgentOptions(parent, spec.agentOptions, childDepth)
       const parentOptions = parentAgentOptionsForDelegation(parent)
+      const runningModelRoutes = this.host.modelSelectionPolicyOf?.(parent.session)
+        ?? (parentOptions.provider === undefined || parentOptions.model === undefined ? []
+          : [{ provider: parentOptions.provider, model: parentOptions.model }])
       const delegatedPolicies = captureDelegatedPolicyOverrides(parent)
       const routing = routeModel ? await this.host.resolveModelRouting?.({
         parent, childId, prompt: spec.prompt, agentOptions: capturedOptions, signal,
@@ -426,6 +548,7 @@ export class SubagentManager {
               inheritedEventCount,
               delegatedPolicies,
               descriptor,
+              runningModelRoutes,
               ...routing?.setup === undefined ? {} : { modelSetup: routing.setup },
             },
             agentOptions,
@@ -626,15 +749,23 @@ export class SubagentManager {
   private async resolveCreationAncestry(
     source: SessionObservation, signal: AbortSignal, root?: Agent,
   ): Promise<Pick<MaterializeBase, 'root' | 'ancestors' | 'path'>> {
+    return this.resolveCreationEdges(source.header, source.inheritedEventCount, source.projections?.values.subagent, signal, root)
+  }
+
+  private async resolveCreationEdges(
+    initialHeader: SessionHeader, initialCut: SessionLogOffset, initialIdentity: SubagentIdentityProjection | null | undefined,
+    signal: AbortSignal, root?: Agent,
+  ): Promise<Pick<MaterializeBase, 'root' | 'ancestors' | 'path'>> {
     const ancestors: SessionId[] = []
     const names: (string | undefined)[] = []
-    const seen = new Set<SessionId>([source.header.id])
-    let { header, projections, inheritedEventCount } = source
+    const seen = new Set<SessionId>([initialHeader.id])
+    let header = initialHeader
+    let inheritedEventCount = initialCut
+    let identity = initialIdentity
     const pathFromRoot = (): string | undefined => names.reduce<string | undefined>(joinAgentPath, '')
     while (true) {
       signal.throwIfAborted()
       const parentId = header.parentSession
-      const identity = projections?.values.subagent
       if (parentId === undefined || identity == null || identity.seq < inheritedEventCount) break
       if (seen.has(parentId)) throw new SubagentError('cyclic subagent creation ancestry', 'UNAUTHORIZED')
       seen.add(parentId)
@@ -646,7 +777,8 @@ export class SubagentManager {
       ancestors.unshift(parentId)
       names.unshift('name' in entry ? entry.name : undefined)
       if (parentId === root?.id) return { root, ancestors, path: pathFromRoot() }
-      ;({ header, projections, inheritedEventCount } = parent)
+      ;({ header, inheritedEventCount } = parent)
+      identity = parent.projections?.values.subagent
     }
     if (root === undefined && ancestors.length > 0 && header.origin !== 'subagent') {
       const owner = this.ctx.agents.get(header.id)
@@ -655,7 +787,7 @@ export class SubagentManager {
       }
       return { root: owner, ancestors, path: pathFromRoot() }
     }
-    throw new SubagentError(`agent "${source.header.id}" is not a member of this subagent tree`, 'UNAUTHORIZED')
+    throw new SubagentError(`agent "${initialHeader.id}" is not a member of this subagent tree`, 'UNAUTHORIZED')
   }
 
   /**
@@ -874,6 +1006,7 @@ export class SubagentManager {
             child.session.append('agent-preset/selected', { agentPreset: inputs.composition.agentPreset })
           }
           child.session.append('subagent/descriptor', create.descriptor)
+          appendRunningModelPolicy(child.session, create.runningModelRoutes)
           appendDelegatedPolicyOverrides(child.session, create.delegatedPolicies)
           const workingDirectory = childCtx.get('workingDirectory')
           if (workingDirectory === undefined) {

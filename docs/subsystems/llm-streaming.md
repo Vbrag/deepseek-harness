@@ -359,6 +359,7 @@ interface TokenUsage {
   totalTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
+  /** Provider-reported reasoning breakdown, already included in `outputTokens`. */
   reasoningTokens?: number
 }
 ```

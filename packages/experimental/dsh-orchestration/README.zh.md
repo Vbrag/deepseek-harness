@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-编排模式为每次普通的新建本地子代理委派选择模型。父代理通过普通子代理工具评估任务；本服务检查所有必需能力、预期输入模态和上下文余量，再从获准模型池中选择可用路由。执行、取消、结果交付和清理由普通子代理运行时负责。本实验性包不承诺稳定性。
+编排模式鼓励有效的并行委派，并为新建本地 subagent 及其后续已评估阶段选择模型。父代理通过普通子代理工具评估任务；本服务检查所有必需能力、预期输入模态和上下文余量，再在获准模型池中符合要求的路由之间平衡分配。执行、取消、结果交付和清理由普通子代理运行时负责。本实验性包不承诺稳定性。
 
 ## 目录
 
@@ -38,13 +38,17 @@ kind: "package-reference"
 
 编排模式下，每次新建本地委派都必须提供 task_assessment。requiredCapabilities 列出所有必需专长：coding、reasoning、vision、allrounder 或 european。preferredCapabilities 列出可选优势。不支持的必需或偏好标签，以及 text/image 之外的模态，会在检查路由前抛出 ORCHESTRATION_INVALID_ASSESSMENT，供调用方纠正拼写错误。模型必须满足每项必需专长；推理能力不能代替编程能力。
 
-contextTokens 估算工作代理所需的完整输入，包括它稍后读取的文件。requiredModalities 列出整个任务需要的输入；即使初始提示只有文本，浏览器或计算机截图任务也应包含 image。outputTokens 可选地提供预期响应余量。
+普通实现任务要求 coding。推理有帮助时，将 reasoning 加入 preferredCapabilities；只有任务确实需要该能力时，才将其列为必需项。可选偏好不会排除其他符合要求的空闲路由。
+
+contextTokens 估算工作代理所需的完整输入，包括它稍后读取的文件。requiredModalities 列出整个任务需要的输入；即使初始提示只有文本，浏览器或计算机截图任务也应包含 image。outputTokens 可选地估计响应 token 数，与生成上限独立。
 
 ### 配置
 
 pool 字段列出精确的 provider/model 路由。routeCapabilities 为精确路由提供经过验证的专长，并替换精选专长列表；空列表清除这些专长。重复的精确路由声明会被拒绝。设置客户端通过 getCatalog 读取精选网关选项，不直接导入 Host 数据。
 
-contextOverheadTokens 默认为 8192 个令牌，用于子代理指令、工具及请求包装。输入估算取 contextTokens 与初始提示文本及图像估算的较大值，再增加此余量。实际内联图像即使未在评估中声明，也要求图像能力。评估省略 outputTokens 时，outputReserveTokens 默认为 4096；更大的显式子代理输出上限会增加上下文余量。两项余量均是经过验证的部署设置。输入估算与输出余量之和必须适合模型的总上下文容量。路由保留子代理的实际输出上限；普通请求准备和提供方限制仍然适用。
+对于 uni-paderborn，精选专长包含 gwdg.deepseek-v4-flash-0731 的 coding 和 gwdg.glm-5.3-flash 的 reasoning，已于 2026-11-17 根据 [DeepSeek 模型卡](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731)和 [GLM 模型卡](https://huggingface.co/zai-org/GLM-5.3-Flash)验证。任务专长描述适用性，独立于网关用于标明 API 支持情况的 reasoning 标志。已记录权限、精确 routeCapabilities 覆盖、传输设置及容量限制仍然适用。选择影响新建委派，包括全新 Ralph Round；运行中的工作代理仅通过获授权的阶段或恢复准入切换路由。
+
+contextOverheadTokens 默认为 8192 个令牌，用于子代理指令、工具及请求包装。输入估算取 contextTokens 与初始提示文本及图像估算的较大值，再增加此余量。实际内联图像即使未在评估中声明，也要求图像能力。评估省略 outputTokens 时，outputReserveTokens 默认为 4096；有效的显式或适配器默认生成上限也参与上下文与压缩准入。两项余量均是经过验证的部署设置。输入估算与输出余量之和必须适合模型的总上下文容量。路由保留子代理的实际输出上限；普通请求准备和提供方限制仍然适用。
 
 defaultToOrchestrator 默认为 false，仅为尚未记录选择的 Session 写入初始模式。getPool、setPool 和 persistPool 提供模型池选择。persistPool 先在内存应用选择，再尝试保存至配置档；设置写入被拒绝时会产生警告，并在当前进程中保留内存选择。
 
@@ -54,9 +58,11 @@ defaultToOrchestrator 默认为 false，仅为尚未记录选择的 Session 写�
 
 服务先取模型池与已记录授权的交集，再检查严格任务能力、预期模态和上下文容量。已知的最大输出容量还必须覆盖响应余量；未知输出容量不增加额外限制。当前传输只接受文本和图像。精确适配器元数据优先于精选网关资料：明确仅支持文本的路由不能执行图像任务。精选资料仅适用于已知网关提供方；其他提供方即使使用相同模型 id，也需要自己的经验证专长声明及容量元数据。
 
-可用且胜任的路由按任务偏好优势、跨 Session 实时子代理工作量、最久未分配顺序及模型池顺序排序。实时负载读取活跃或有排队输入的子代理轮次，插件替换后也如此；空闲且可继续的子代理不增加负载。未发布分配在发布或回滚前计入负载。被限流的路由不会阻塞另一条可用且胜任的路由。所有胜任路由都忙碌时，委派准入会以可取消方式等待，最多每 availabilityPollMs 毫秒（默认 1000）重新检查共享队列，使提前返还的容量能在滚动窗口估算到期前恢复工作。缺少评估、无法获取路由元数据或不存在胜任且获准路由时，会在子代理启动前抛出结构化 OrchestrationError。单次请求估算超过每分钟令牌容量的路由会被排除。
+本地子级可通过 `requestModelChange()` 接受显式评估的阶段与持久检查点。获授权的祖先可为已停止的子级排队而不唤醒它；之后在编排模式下的获授权恢复会在首次请求前应用该阶段。待生效的关闭选择会延后准入并保留排队阶段。请求之前，若当前输入达到有效压力阈值，路由可在压缩前优先选择就绪且获准的更大路由。提供方确认溢出、无效压缩预算、限流、配额失败、超时及反复的空输出上限响应可在子级不可变授权内触发有界重新分配。`maxAutomaticReassignments` 默认每次恢复过程 2 次；`maxEmptyOutputLimits` 默认为 2。有效输出重置恢复过程。阶段切换保留子级与已完成效果，在准入前刷写检查点和选择，并重新组装提示词与工具；它绝不扩大权限或放宽任务要求。等待与阻塞状态持久保存。恢复耗尽时会明确阻塞，并在交接服务可用时记录交接；不会重放结果不明的工具。
 
-服务检查 LLM 适配器的共享队列可用性；实际发送准入及请求和令牌计量仍由适配器负责。不报告可用性的适配器返回 unknown，仅在没有胜任路由报告可用容量时才参与选择。等待已知被限流路由之前会先考虑未知容量。失败或拒绝任务的工作代理不会自动换模型重放。
+胜任且队列容量为 ready 或 unknown 的路由依次按最少活跃子代理分配数、已确认就绪状态、可选偏好能力、最久未分配和稳定模型池顺序排序。预留分配在启动、执行及清理期间持续计入负载，直到子代理运行时释放；预留分配与对应活跃子代理只计一次。正在执行或排队的子代理轮次也计入跨 Session 负载，插件替换后仍可读取。没有预留分配的空闲可继续子代理不增加负载。唯一胜任路由仍可复用。被限流路由不会阻塞另一条符合要求且胜任的路由。所有胜任路由均忙时，准入可取消地等待，并且最多每 availabilityPollMs 毫秒（默认 1000）重新检查共享队列，因此提前归还的容量可在滚动窗口估算到期前恢复工作。缺少评估、无法获取路由元数据或不存在胜任且获准路由时，会在子代理启动前抛出结构化 OrchestrationError。单次请求估算超过每分钟令牌容量的路由会被排除。
+
+服务检查 LLM 适配器的共享队列可用性；实际发送准入及请求和令牌计量仍由适配器负责。不报告可用性的适配器返回 unknown，与 ready 路由一同参与选择。空闲的未知容量路由优先于有负载的就绪路由；分配负载相同时，已确认就绪的路由优先。重新分配延续同一子级 Session，不重启任务或重放已完成工具。
 
 -----
 
@@ -65,7 +71,7 @@ defaultToOrchestrator 默认为 false，仅为尚未记录选择的 Session 写�
 
 服务向 SubagentRuntime 注册选择器，返回子代理选项、记录捕获模式的设置回调和幂等分配释放回调。运行时验证最终授权，并负责启动回滚及子代理清理后的分配释放。编排服务不保留工作代理 Promise 或子代理执行循环。
 
-orchestration 投影折叠已应用模式、持久待生效请求及历史命令结算。恢复语义改变时，状态版本随之改变。路由决策在信息性插件记录中保存任务评估、所选精确路由、令牌余量和选择原因。这些记录不进入模型历史。
+orchestration 投影折叠已应用模式、持久待生效请求及历史命令结算。恢复语义改变时，状态版本随之改变。信息性路由记录包含任务评估、所选路由、令牌余量、选择原因、符合要求的路由数、所选负载与就绪状态，以及模型池中其他路由的排除原因和容量信息。保留的历史记录可能不含诊断字段。这些记录不进入模型历史。
 
 -----
 
@@ -85,12 +91,12 @@ orchestration 投影折叠已应用模式、持久待生效请求及历史命令
 
 #### 模型看到什么
 
-启用模式会增加以下关于 `task_assessment` 的已记录运行时指导。父代理通过普通推理和普通子代理工具分解工作，不会发送额外规划请求。
+已记录的 `orchestration-phase` 上下文说明 `reassign_subagent`、完整阶段评估、检查点、显式生成上限和仅针对请求的中断。主 agent 保留所选模型；自我重新分配仅适用于本地子 agent。启用模式会添加已记录指导，让模型在用户指令和现有委派限制允许时优先自主委派可有效并行的工作，无需用户显式请求。委派无法带来有效并行进展时，模型直接完成小型或顺序工作。新建本地 subagent 通过继承模式接收相同指导。父代理通过普通推理和普通子代理工具分解工作，不会发送额外规划请求。
 
 ##### 编排运行时指导
 
 ```markdown
-Orchestration mode is active. Delegate independent tasks through the normal subagent tools. For every fresh local child, supply task_assessment with requiredCapabilities (coding, reasoning, vision, allrounder, european), contextTokens for expected input including files the child will read, and requiredModalities for inputs needed throughout the task. Include image for screenshots the child may capture later. Use preferredCapabilities for optional strengths and outputTokens for the expected response allowance. Every required capability must be supported; reasoning alone does not establish coding ability. Model selection automatically considers the allowed pool, capabilities, live load, and request/token queue availability.
+Orchestration mode is active. Proactively identify independent work that can make useful progress in parallel. When the available subagent tools and delegation limits allow it, prefer delegating bounded tasks with clear goals and expected results without waiting for the user to request delegation. Start independent delegations early and continue useful work yourself when possible. Respect the user's instructions, delegation depth, and active-child limits. Handle work directly when it is small, sequential, or delegation would add overhead without useful parallel progress. For every fresh local child, supply task_assessment with requiredCapabilities (coding, reasoning, vision, allrounder, european), contextTokens for expected input including files the child will read, and requiredModalities for inputs needed throughout the task. Require coding for ordinary implementation tasks. Prefer reasoning when it would help; require it only when the task specifically needs that capability. Include image for screenshots the child may capture later. Use preferredCapabilities for optional strengths and outputTokens for the expected response allowance. Every required capability must be supported; reasoning alone does not establish coding ability. Model selection automatically considers the allowed pool, capabilities, live load, and request/token queue availability.
 ```
 
 #### 令牌影响
@@ -108,7 +114,8 @@ Orchestration mode is active. Delegate independent tasks through the normal suba
 - 任务要求及未来上下文由父代理估算；服务无法推断父代理省略的文件或工具生成图像。
 - 可用性检查仅供参考，不预留提供方容量。发送前其他请求可能消耗容量；发送时仍以共享限流器为准。
 - 精选专长仅覆盖一个网关。其他提供方需要经过验证的路由声明；未知模态或上下文不能证明路由适合任务。
-- 模型在新建本地子代理启动前选择，不迁移活跃工作代理、不重跑失败的副作用，也不在另一模型上恢复放弃的工作。
+- 重新分配要求已有的本地子级、已保存授权及持久准入。已停止目标仅排队阶段，由另一条获授权消息恢复；任务要求和已完成工具效果保持完整。
+- 委派指导表达的是偏好，不保证模型发现每个可并行的机会。
 
 <a id="dev-note"></a>
 ### 开发备注

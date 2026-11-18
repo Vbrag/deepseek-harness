@@ -2,7 +2,7 @@
 import type { LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
 import { capabilityOf, POOL_PROVIDER } from './capabilities.ts'
-import type { PoolRoute, RouteCapabilities, OrchestrationRouteDecision } from './types.ts'
+import type { PoolRoute, RouteCapabilities, OrchestrationRouteDecision, OrchestrationRouteExclusion } from './types.ts'
 
 /** Route metadata sufficient to check every required task capability. */
 export interface CapabilityRoute extends PoolRoute {
@@ -56,43 +56,64 @@ export function routeFits(
   inputTokens: number,
   outputTokens: number,
 ): boolean {
-  return assessment.requiredCapabilities.every(item => route.capabilities.includes(item))
-    && (assessment.requiredModalities ?? ['text']).every(item => route.modalities?.includes(item) === true)
-    && route.contextWindow !== undefined
-    && route.contextWindow >= inputTokens + outputTokens
-    && (route.maxOutputTokens === undefined || route.maxOutputTokens >= outputTokens)
+  return routeExclusions(route, assessment, inputTokens, outputTokens).length === 0
 }
 
-/** A currently ready route with process-owned load information. */
+/**
+ * Explain every failed hard task or capacity requirement without relaxing eligibility.
+ * @param route - Exact route with resolved metadata.
+ * @param assessment - Required specialties and anticipated input modalities.
+ * @param inputTokens - Complete estimated input.
+ * @param outputTokens - Required response allowance.
+ * @returns Failed requirements in deterministic order, or an empty list for a capable route.
+ */
+export function routeExclusions(route: CapabilityRoute, assessment: SubagentTaskAssessment,
+  inputTokens: number, outputTokens: number): OrchestrationRouteExclusion[] {
+  const reasons: OrchestrationRouteExclusion[] = []
+  if (!assessment.requiredCapabilities.every(item => route.capabilities.includes(item))) reasons.push('missing-required-capability')
+  if (!(assessment.requiredModalities ?? ['text']).every(item => route.modalities?.includes(item) === true)) {
+    reasons.push('missing-required-modality')
+  }
+  if (route.contextWindow === undefined) reasons.push('unknown-context')
+  else if (route.contextWindow < inputTokens + outputTokens) reasons.push('context-capacity')
+  if (route.maxOutputTokens !== undefined && route.maxOutputTokens < outputTokens) reasons.push('output-capacity')
+  return reasons
+}
+
+/** A capable route with ready or unknown queue capacity and process-owned assignment load. */
 export interface ReadyRoute {
   /** Resolved candidate. */
   readonly route: CapabilityRoute
   /** Live children assigned to the exact route across all sessions. */
   readonly active: number
+  /** Confirmed ready capacity wins only between routes with equal active assignment counts. */
+  readonly readiness: 'ready' | 'unknown'
   /** Monotonic most recent assignment; zero before the first assignment. */
   readonly lastAssigned: number
 }
 
-/** Choose by task fit, live load, route diversity, then caller pool order.
- * @param candidates - Ready capable routes in pool order.
+/** Choose by assignment load, confirmed readiness, optional strengths, recency, then pool order.
+ * @param candidates - Capable ready-or-unknown routes in pool order.
  * @param assessment - Required and preferred task specialties.
  * @returns The selected route and the first priority that separated candidates.
  */
 export function selectReadyRoute(
   candidates: readonly ReadyRoute[],
   assessment: SubagentTaskAssessment,
-): { route: CapabilityRoute; reason: OrchestrationRouteDecision['reason'] } | undefined {
+): { route: CapabilityRoute; reason: OrchestrationRouteDecision['reason']; readiness: ReadyRoute['readiness'] } | undefined {
   const score = (entry: ReadyRoute): number =>
     (assessment.preferredCapabilities ?? []).filter(item => entry.route.capabilities.includes(item)).length
+  const readiness = (entry: ReadyRoute): number => entry.readiness === 'ready' ? 0 : 1
   const sorted = [...candidates].sort((a, b) =>
-    (score(b) - score(a)) || (a.active - b.active) || (a.lastAssigned - b.lastAssigned))
+    (a.active - b.active) || (readiness(a) - readiness(b)) || (score(b) - score(a)) || (a.lastAssigned - b.lastAssigned))
   const first = sorted[0]
   if (first === undefined) return undefined
   const second = sorted[1]
   const reason = second === undefined ? 'pool-order'
-    : score(first) !== score(second) ? 'task-fit'
-      : first.active !== second.active ? 'active-load'
-        : first.lastAssigned !== second.lastAssigned ? 'diversity'
-          : 'pool-order'
-  return { route: first.route, reason }
+    : first.active !== second.active ? 'active-load'
+      : first.readiness !== second.readiness ? 'queue-readiness'
+        : score(first) !== score(second) ? 'task-fit'
+          : first.lastAssigned !== second.lastAssigned ? 'diversity'
+            : 'pool-order'
+  return { route: first.route, reason, readiness: first.readiness }
 }

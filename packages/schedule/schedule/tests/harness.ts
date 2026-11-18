@@ -177,7 +177,7 @@ export function agentFor(ctx: Context, id = 'original', meta?: CreateSessionOpti
     id: session.id, session, ctx: ctx.extend(), options: {}, status: 'idle', model: unsupportedModel(), inbox: unsupportedInbox(),
     followup: vi.fn<(message: UserMessage) => void>(), inject: vi.fn<(message: UserMessage) => void>(),
     send() {}, steer() {}, cancel() {},
-    whenIdle: async () => {}, runMaintenance: operation => operation(new AbortController().signal),
+    whenIdle: async () => {}, interruptRequest: () => false, runMaintenance: operation => operation(new AbortController().signal),
   }
 }
 

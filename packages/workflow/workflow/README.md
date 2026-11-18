@@ -31,15 +31,21 @@ Run a workflow when a task decomposes into many independent pieces that one scri
 
 The model reaches the capability through the `workflow` tool from `dsh-tool-workflow`, which owns the call schema and result envelope; the engine supplies the execution underneath. A tool call submits `meta`, `script`, and optional `args` and returns `{ runId, agentsStarted, result }` when the run completes. The tool blocks the parent turn until the whole workflow settles, so the model sees one final outcome, never intermediate child messages.
 
+<a id="running-a-workflow-script"></a>
 ### Running a workflow script
 
 An orchestration script is a plain JavaScript body (not TypeScript) that runs with top-level `await` and ends with `return <json-value>`. The `meta` identity block and any `args` arrive as plain JSON data — never evaluated code. During execution the script calls the provided hooks: `agent(prompt, opts)` starts one subagent and resolves with its final text or, with a schema, a validated structured value; `parallel()` and `pipeline()` combine independent work; `phase()` and `log()` narrate progress for observers.
 
+`agent(prompt, { maxTokens })` sets a positive safe-integer generation cap independently of the routing estimate `task_assessment.outputTokens`. Omission preserves inherited model options. Invalid caps fail the workflow with `INVALID_ARGUMENT` before the child starts.
+
+Pass each child's routing requirements as `opts.task_assessment`: required `requiredCapabilities` (string array) and `contextTokens` (non-negative safe integer), with optional `preferredCapabilities` and `requiredModalities` string arrays and positive safe-integer `outputTokens`. Labels belong to the composed model router; input estimates include files and other material the child will read, and modalities include images it may capture later. Omission preserves ordinary delegation unless routing policy requires assessment, as Orchestration mode does. The workflow forwards these requirements without a classifier request; malformed assessment data fails the workflow with `INVALID_ARGUMENT` before that child starts.
+
 ```text
 // Script body — runs with top-level await, ends with a JSON return value:
+const taskAssessment = { requiredCapabilities: ['coding'], contextTokens: 8000 }
 const reviews = await parallel([
-  () => agent('Review src/a.ts for correctness'),
-  () => agent('Review src/b.ts for correctness'),
+  () => agent('Review src/a.ts for correctness', { task_assessment: taskAssessment }),
+  () => agent('Review src/b.ts for correctness', { task_assessment: taskAssessment }),
 ])
 return { reviewed: reviews.length }
 ```

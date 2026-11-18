@@ -135,6 +135,19 @@ function execute(ctx: Context, args: unknown, extra?: {
 }
 
 describe('dsh-tool-workflow', () => {
+  it('documents the per-child assessment needed for automatic routing', async () => {
+    const { ctx } = await setup()
+    try {
+      const description = ctx.tools.get('workflow')!.description
+      for (const field of ['task_assessment', 'requiredCapabilities', 'preferredCapabilities', 'requiredModalities', 'contextTokens', 'outputTokens']) {
+        expect(description).toContain(field)
+      }
+      expect(description).toContain('required when Orchestration mode is on')
+      expect(description).toContain('opts.maxTokens')
+      expect(description).toContain('independent of the routing estimate')
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('starts a run with the script/args/parent/signal and renders the completed value', async () => {
     const { ctx, engine, parent } = await setup()
     const controller = new AbortController()
@@ -481,6 +494,7 @@ describe('dsh-tool-workflow', () => {
         id: session.id, options: {}, session, model: unsupportedModel(),
         inbox: createInboxStub(), status: 'idle', ctx,
         send: () => {}, followup: () => {}, steer: () => {}, inject: () => {}, cancel: () => {},
+        interruptRequest: () => false,
         runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve(),
       }
       await ctx.agents.register(parent)
@@ -712,6 +726,7 @@ describe('dsh-tool-workflow', () => {
         id: session.id, options: {}, session, model: unsupportedModel(),
         inbox: createInboxStub(), status: 'idle', ctx,
         send: () => {}, followup: () => {}, steer: () => {}, inject: () => {}, cancel: () => {},
+        interruptRequest: () => false,
         runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve(),
       }
       await ctx.agents.register(parent)

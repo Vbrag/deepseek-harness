@@ -19,6 +19,8 @@ export type SubagentErrorCode =
   | 'DUPLICATE_MODEL_ROUTER'
   /** The model policy changed while it was selecting a child's route. */
   | 'MODEL_ROUTER_CHANGED'
+  /** No active model router supports changing a running local child's model. */
+  | 'MODEL_CHANGE_UNAVAILABLE'
   /** No subagent provider is registered under the requested name. */
   | 'NO_PROVIDER'
   /** The provider was removed or replaced while a delegation was starting; retry against the current registration. */

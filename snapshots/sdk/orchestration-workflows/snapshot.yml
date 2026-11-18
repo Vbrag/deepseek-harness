@@ -1,0 +1,12 @@
+version: 1
+scenario: orchestration-workflows
+profile: sdk
+composition: sdk-orchestration-workflows
+recording: authored
+header:
+  class: sdk-orchestration-workflows
+  pin: true
+  childSystemPrompts: [1, 2, 3, 4, 5]
+  childToolSchemas: [1, 2, 3, 4, 5]
+workspace:
+  final: true

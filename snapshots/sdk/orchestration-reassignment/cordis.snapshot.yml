@@ -1,0 +1,20 @@
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      required: true
+      config:
+        providers:
+          - id: snapshot-phases
+            models:
+              - id: lead
+                contextWindow: 200000
+                inputModalities: [text]
+                defaultMaxTokens: 4096
+              - id: visual
+                contextWindow: 200000
+                inputModalities: [text, image]
+                defaultMaxTokens: 4096
+              - id: solver
+                contextWindow: 200000
+                inputModalities: [text]
+                defaultMaxTokens: 4096

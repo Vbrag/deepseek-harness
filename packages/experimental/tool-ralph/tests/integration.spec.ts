@@ -8,13 +8,15 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { createUserMessage, type ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ToolCallId, type LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { pluginRecordOf } from '@deepseek-ai/dsh-session'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import PtcWorkflowEngine from '@deepseek-ai/dsh-workflow-ptc'
+import Orchestration from '@deepseek-ai/dsh-orchestration'
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as toolRalph from '../src/index.ts'
 import { mountWorkflowRuntime } from '../../../workflow/workflow-ptc/tests/setup.ts'
@@ -34,9 +36,15 @@ async function mountExecution(ctx: Context): Promise<string> {
 }
 
 /** Mount the shipped Ralph execution stack around one keyless model script. */
-async function mountRalph(script: MockScript, config: toolRalph.Config) {
+async function mountRalph(script: MockScript, config: toolRalph.Config,
+  orchestration?: { active: boolean; oneCapable?: boolean; allowPool?: boolean }) {
   const ctx = new Context()
-  const adapter = new MockAdapter(script)
+  class RoutingAdapter extends MockAdapter {
+    override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+      return { ...await super.resolveModel(provider, model), inputModalities: ['text'], context: { contextWindow: 100_000 } }
+    }
+  }
+  const adapter = new RoutingAdapter(script)
   await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   const cwd = await mountExecution(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
@@ -45,15 +53,83 @@ async function mountRalph(script: MockScript, config: toolRalph.Config) {
   await ctx.plugin(PtcWorkflowEngine, {})
   await ctx.plugin(toolRalph, config)
   ctx.llm.registerAdapter(['mock'], adapter)
+  const pool = [{ provider: 'mock', model: 'code-a' }, { provider: 'mock', model: 'code-b' }]
+  if (orchestration !== undefined) {
+    await ctx.plugin(Orchestration, { pool, routeCapabilities: pool.map((route, index) => ({ ...route,
+      capabilities: orchestration.oneCapable && index > 0 ? ['reasoning' as const] : ['coding' as const] })) })
+  }
   const parentHandle = await ctx.agents.create({
     sessionId: brandString<SessionId>('ralph-parent'),
     meta: { cwd },
     agentOptions: { provider: 'mock', model: 'mock' },
   })
+  if (orchestration !== undefined) {
+    parentHandle.agent.session.append('subagent/model-selection-policy', {
+      allowedModels: orchestration.allowPool === false ? [{ provider: 'mock', model: 'mock' }] : pool,
+    })
+    ctx.orchestrations.setMode(parentHandle.agent, orchestration.active)
+  }
   return { ctx, adapter, parentHandle, parent: parentHandle.agent }
 }
 
 describe('dsh-tool-ralph over the real spawn and sandboxed PTC stack', () => {
+  it.each([false, true])('carries the explicit task assessment through every fresh routed round (one capable: %s)',
+    { timeout: 90_000 }, async (oneCapable) => {
+      const task_assessment = { requiredCapabilities: ['coding'], preferredCapabilities: ['reasoning'],
+        requiredModalities: ['text'], contextTokens: 1000, outputTokens: 256 }
+      const { ctx, adapter, parent } = await mountRalph([
+        toolCallResponse('routed-round-1', STRUCTURED_OUTPUT_TOOL, { status: 'continue', summary: 'First parser slice complete.',
+          evidence: ['Focused parser check passed.'], nextSteps: ['Finish the second parser slice.'], blocker: '' }),
+        toolCallResponse('routed-round-2', STRUCTURED_OUTPUT_TOOL, { status: 'complete', summary: 'Parser work complete.',
+          evidence: ['Both parser checks passed.'], nextSteps: [], blocker: '' }),
+      ], { maxRounds: 2 }, { active: true, oneCapable })
+      const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: brandString<ToolCallId>('routed-ralph'),
+        name: 'ralph', arguments: { objective: 'Implement both parser slices.', task_assessment, maxTokens: 128 }, agent: parent })
+      expect(result.isError, JSON.stringify(result.content)).toBe(false)
+      expect(adapter.requests.map(request => request.model)).toEqual(oneCapable ? ['code-a', 'code-a'] : ['code-a', 'code-b'])
+      expect(adapter.requests.map(request => request.maxTokens)).toEqual([128, 128])
+      const decisions = parent.session.snapshotEvents().map(pluginRecordOf).filter(record => record?.type === 'plugin:orchestration/route')
+      expect(decisions).toHaveLength(2)
+      for (const decision of decisions) {
+        if (decision?.type !== 'plugin:orchestration/route') throw new Error('Expected a recorded child route')
+        expect(decision.data).toMatchObject({ assessment: task_assessment })
+      }
+    })
+
+  it('keeps missing assessments strict when Orchestration mode routes a Ralph round', { timeout: 90_000 }, async () => {
+    const { ctx, adapter, parent } = await mountRalph([], { maxRounds: 2 }, { active: true })
+    const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: brandString<ToolCallId>('unassessed-ralph'),
+      name: 'ralph', arguments: { objective: 'Implement the parser.' }, agent: parent })
+    expect(result.isError).toBe(true)
+    expect(result.error?.info).toEqual({ name: 'RalphError', code: 'RALPH_WORKFLOW_FAILED' })
+    const text = result.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+    expect(text).toContain('task_assessment')
+    expect(adapter.requests).toHaveLength(0)
+  })
+
+  it('does not expand recorded model permissions for an otherwise capable Ralph round', { timeout: 90_000 }, async () => {
+    const { ctx, adapter, parent } = await mountRalph([], { maxRounds: 1 }, { active: true, allowPool: false })
+    const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: brandString<ToolCallId>('unauthorized-ralph'),
+      name: 'ralph', arguments: { objective: 'Implement the parser.',
+        task_assessment: { requiredCapabilities: ['coding'], contextTokens: 1000 } }, agent: parent })
+    expect(result.error?.info).toEqual({ name: 'RalphError', code: 'RALPH_WORKFLOW_FAILED' })
+    expect(adapter.requests).toHaveLength(0)
+    expect(ctx.subagents.modelSelectionPolicyOf(parent.session)).toEqual([{ provider: 'mock', model: 'mock' }])
+  })
+
+  it('preserves inherited fresh-round routing when Orchestration mode is off and assessment is omitted',
+    { timeout: 90_000 }, async () => {
+      const { ctx, adapter, parent } = await mountRalph([
+        toolCallResponse('default-round', STRUCTURED_OUTPUT_TOOL, { status: 'complete', summary: 'Parser work complete.',
+          evidence: ['Parser check passed.'], nextSteps: [], blocker: '' }),
+      ], { maxRounds: 1 }, { active: false })
+      const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: brandString<ToolCallId>('default-ralph'),
+        name: 'ralph', arguments: { objective: 'Implement the parser.' }, agent: parent })
+      expect(result.isError).toBe(false)
+      expect(adapter.requests.map(request => request.model)).toEqual(['mock'])
+      expect(parent.session.snapshotEvents().some(event => pluginRecordOf(event)?.type === 'plugin:orchestration/route')).toBe(false)
+    })
+
   it('uses distinct empty-seed children, shared cwd, and only the prior bounded handoff', { timeout: 90_000 }, async () => {
     const firstReport = {
       status: 'continue',

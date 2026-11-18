@@ -59,7 +59,7 @@ function agentFor(ctx: Context, session: Session): Agent {
     id: session.id, session, options: {}, status: 'idle', ctx: scope.ctx, model: unsupportedModel(),
     inbox: unsupportedInbox(),
     send() {}, followup() {}, steer() {}, inject() {}, cancel() {},
-    whenIdle: async () => {}, runMaintenance: task => task(new AbortController().signal),
+    whenIdle: async () => {}, interruptRequest: () => false, runMaintenance: task => task(new AbortController().signal),
   }
   return agent
 }

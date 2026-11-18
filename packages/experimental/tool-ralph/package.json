@@ -63,6 +63,7 @@
     "@deepseek-ai/dsh-workflow-ptc": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
-    "@deepseek-ai/dsh-error": "workspace:*"
+    "@deepseek-ai/dsh-error": "workspace:*",
+    "@deepseek-ai/dsh-orchestration": "workspace:*"
   }
 }

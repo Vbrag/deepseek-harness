@@ -53,6 +53,7 @@ async function liveAgent(ctx: Context, session: Session): Promise<Agent> {
     steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),
     inject: () => { throw new Error('goal projection tests do not inject model context') },
     cancel() {},
+    interruptRequest: () => false,
     runMaintenance: task => task(new AbortController().signal),
     whenIdle() { return Promise.resolve() },
   }

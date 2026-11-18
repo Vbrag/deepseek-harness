@@ -16,6 +16,7 @@ import type { WorkflowAgentEndInfo, WorkflowAgentInfo, WorkflowErrorCode, Workfl
 import { WORKFLOW_GUEST_SOURCE } from './guest-source.ts'
 import type { WorkflowProgress } from './guest-types.ts'
 import { renderThrown } from './realm.ts'
+import { readMaxTokens, readTaskAssessment } from './task-assessment.ts'
 import type { ExecutionObserver } from './runtime.ts'
 import type { ChildStartRequest, WorkerInit } from './types.ts'
 
@@ -57,6 +58,8 @@ function childRequest(value: unknown): ChildStartRequest {
   }
   return {
     prompt,
+    ...request.taskAssessment === undefined ? {} : { taskAssessment: readTaskAssessment(request.taskAssessment, 'workflow taskAssessment') },
+    ...request.maxTokens === undefined ? {} : { maxTokens: readMaxTokens(request.maxTokens, 'workflow maxTokens') },
     ...provider === undefined ? {} : { provider },
     ...model === undefined ? {} : { model },
     ...schema === undefined ? {} : { schema },
@@ -222,12 +225,14 @@ export class PtcWorkflowRun implements WorkflowRun {
       signal: this.controller.signal,
       cwd: await this.cwd,
       prompt: [{ type: 'text', text: request.prompt }],
+      ...request.taskAssessment === undefined ? {} : { taskAssessment: request.taskAssessment },
       parent: this.parent,
       ...request.schema === undefined ? {} : { outputSchema: request.schema },
-      ...request.provider === undefined && request.model === undefined ? {} : {
+      ...request.provider === undefined && request.model === undefined && request.maxTokens === undefined ? {} : {
         agentOptions: {
           ...request.provider === undefined ? {} : { provider: request.provider },
           ...request.model === undefined ? {} : { model: request.model },
+          ...request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens },
         },
       },
     })

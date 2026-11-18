@@ -14,6 +14,14 @@ import type { CompactionId } from './brand.ts'
 
 export type { CompactionId }
 
+/** Read-only pressure limits for one proposed request route. */
+export interface CompactionPressureBudget {
+  /** Estimated input tokens at which the provider considers automatic compaction. */
+  readonly thresholdTokens: number
+  /** Estimated input tokens preserved as a verbatim conversation tail. */
+  readonly retainTokens: number
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**

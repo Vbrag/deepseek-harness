@@ -30,6 +30,8 @@ import {
 } from './model-selection.ts'
 import type { DelegationModelRequest } from './model-selection.ts'
 import { registerListSubagentModels } from './list-models.ts'
+import { registerReassignSubagent } from './reassign-model.ts'
+import { TASK_ASSESSMENT_PARAMETER, validateTaskAssessment } from './task-assessment.ts'
 import { SubagentPresetSelection, type PresetSelectionConfig, type PresetSelectionRequest } from './preset-selection.ts'
 
 export const name = 'tool-subagent'
@@ -55,7 +57,7 @@ export interface Config extends PresetSelectionConfig {
    */
   modelSelection?: boolean
   /**
-   * Register the shared `list_subagent_models` tool for this scope.
+   * Register shared `list_subagent_models` and `reassign_subagent` tools for this scope.
    * Enable on only one instance per scope; defaults to false and does not
    * enable model selection. Discovery is removed when this instance unloads.
    */
@@ -190,7 +192,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const initialProvider = ctx.subagents.getProvider(config.provider)
   if (initialProvider !== undefined) assertSubagentProviderConfiguration(initialProvider)
 
-  if (config.modelDiscovery === true) registerListSubagentModels(ctx)
+  if (config.modelDiscovery === true) {
+    registerListSubagentModels(ctx)
+    registerReassignSubagent(ctx)
+  }
 
   // Load order and HMR replacement can change provider availability while
   // this fiber remains active.
@@ -234,18 +239,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           required: true,
           description: wording.promptDescription,
         },
-        task_assessment: {
-          type: 'object',
-          additionalProperties: false,
-          description: 'Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.',
-          properties: {
-            requiredCapabilities: { type: 'array', items: { type: 'string' }, required: true },
-            preferredCapabilities: { type: 'array', items: { type: 'string' } },
-            requiredModalities: { type: 'array', items: { type: 'string' }, description: 'Inputs needed now or later, such as images captured during visual checks.' },
-            contextTokens: { type: 'integer', required: true, description: 'Expected total input tokens, including files and other context the child will read.' },
-            outputTokens: { type: 'integer', description: 'Expected positive response-token count; omit for the configured allowance.' },
-          },
-        },
+        task_assessment: TASK_ASSESSMENT_PARAMETER,
         context_image_ids: {
           type: 'array',
           items: { type: 'string' },
@@ -334,14 +328,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         }
         exec.signal.throwIfAborted()
         const assessment: SubagentTaskAssessment | undefined = args.task_assessment
-        if (assessment !== undefined) {
-          for (const [field, value] of [['contextTokens', assessment.contextTokens], ['outputTokens', assessment.outputTokens]] as const) {
-            const minimum = field === 'outputTokens' ? 1 : 0
-            if (value !== undefined && (!Number.isSafeInteger(value) || value < minimum)) {
-              throw new ToolArgsError([`task_assessment.${field} must be a ${minimum === 0 ? 'non-negative' : 'positive'} safe integer`])
-            }
-          }
-        }
+        validateTaskAssessment(assessment)
         let prompt: ContentBlock[] = [{ type: 'text', text: args.prompt }]
         if (args.context_image_ids !== undefined && args.context_image_ids.length > 0) {
           const available = ctx.subagents.contextImagesOf(parent.session)

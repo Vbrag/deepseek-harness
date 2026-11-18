@@ -407,6 +407,7 @@ export function testAgent(ctx: Context, session: Session): TestAgent {
     followup(message) { agent.send(message, 'next-turn', true) },
     steer(message) { agent.send(message, 'next-step', true) },
     inject(message) { agent.send(message, 'next-step', false) },
+    interruptRequest: () => false,
     cancel(cause, options = {}) {
       if (options.keepInbox !== true) inbox.clear()
       if (maintenance === undefined) return

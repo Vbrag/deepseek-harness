@@ -63,6 +63,26 @@ async function setup(execute?: (bindings: HostBindings, spec: PtcRunSpec) => Pro
 }
 
 describe('workflow host callback validation', () => {
+  it.each([
+    null,
+    { requiredCapabilities: [1], contextTokens: 1 },
+    { requiredCapabilities: [], contextTokens: -1 },
+    { requiredCapabilities: [], contextTokens: 1, outputTokens: 0 },
+    { requiredCapabilities: [], contextTokens: 1, extra: true },
+  ])('rejects malformed assessment on the PTC channel before delegation: %j', async (taskAssessment) => {
+    const { ctx, start } = await setup(async (bindings) => {
+      await expect(Promise.resolve().then(() => bindings.startChild!({ prompt: 'child', taskAssessment })))
+        .rejects.toMatchObject({ name: 'WorkflowError', code: 'INVALID_ARGUMENT' })
+      return completed
+    })
+    const childStart = vi.spyOn(ctx.subagents, 'startActivation')
+    const run = start()
+    try {
+      expect((await run.result).stopReason).toBe('completed')
+      expect(childStart).not.toHaveBeenCalled()
+    } finally { await run.dispose() }
+  })
+
   it('runs an unconfined provider under full access without forwarding a sandbox policy', async () => {
     const { runtime, parent, start } = await setup(async (_bindings, spec) => {
       expect(spec.sandboxPolicy).toBeUndefined()
@@ -132,6 +152,9 @@ describe('workflow host callback validation', () => {
     ['startChild', { prompt: 7 }, 'prompt must be a string'],
     ['startChild', { prompt: 'p', provider: 7 }, 'provider must be a string'],
     ['startChild', { prompt: 'p', model: false }, 'model must be a string'],
+    ['startChild', { prompt: 'p', maxTokens: 0 }, 'maxTokens must be a positive safe integer'],
+    ['startChild', { prompt: 'p', maxTokens: 1.5 }, 'maxTokens must be a positive safe integer'],
+    ['startChild', { prompt: 'p', maxTokens: '1' }, 'maxTokens must be a positive safe integer'],
     ['progress', {}, 'requires an array of events'],
     ['progress', [{ type: 'phase', title: null }], 'phase must be a string'],
     ['progress', [{ type: 'agent-start', info: { seq: 0 } }], 'sequence must be a positive integer'],
@@ -185,12 +208,26 @@ describe('workflow host callback validation', () => {
 })
 
 describe('workflow runtime outcomes', () => {
+  it('forwards an explicit generation cap without requiring a model override', async () => {
+    const { ctx, start } = await setup(async (bindings) => {
+      await bindings.startChild!({ prompt: 'answer', maxTokens: 64 })
+      return completed
+    })
+    const activation = vi.spyOn(ctx.subagents, 'startActivation')
+    const run = start()
+    try {
+      expect((await run.result).stopReason).toBe('completed')
+      expect(activation.mock.calls[0]?.[0].agentOptions).toEqual({ maxTokens: 64 })
+    } finally { await run.dispose() }
+  })
+
   it('collects child results without parent delivery and waits for child cleanup before settling', async () => {
     const disposing = Promise.withResolvers<undefined>()
     const released = Promise.withResolvers<undefined>()
     const schema = { type: 'object' as const, properties: { answer: { type: 'number' as const } } }
+    const taskAssessment = { requiredCapabilities: ['custom'], contextTokens: 1000, outputTokens: 100 }
     const { ctx, parent, start } = await setup(async (bindings) => {
-      const child = await bindings.startChild!({ prompt: 'answer', schema, model: 'selected' })
+      const child = await bindings.startChild!({ prompt: 'answer', schema, model: 'selected', maxTokens: 64, taskAssessment })
       expect(child).toEqual({ callId: 1, childId: 'ready-child' })
       expect(await bindings.childResult!(child)).toEqual({ output: [], structured: { answer: 42 }, stopReason: 'completed' })
       await bindings.disposeChild!(child)
@@ -214,7 +251,7 @@ describe('workflow runtime outcomes', () => {
       expect(delegation).toEqual({
         provider: 'stub', label: 'host-test child 1', delivery: 'caller',
         cwd: ctx.workingDirectory.get(parent.session),
-        prompt: [{ type: 'text', text: 'answer' }], outputSchema: schema, agentOptions: { model: 'selected' },
+        prompt: [{ type: 'text', text: 'answer' }], outputSchema: schema, agentOptions: { model: 'selected', maxTokens: 64 }, taskAssessment,
       })
       released.resolve(undefined)
       await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })

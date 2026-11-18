@@ -38,7 +38,9 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-orchestration": "workspace:*",
-    "@deepseek-ai/dsh-orchestration": "workspace:*"
+    "@deepseek-ai/dsh-orchestration": "workspace:*",
+    "@deepseek-ai/dsh-compaction-basic": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"
@@ -56,7 +58,11 @@
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "js-yaml": "^4.3.2",
-    "@deepseek-ai/dsh-tool-subagent": "workspace:*"
+    "@deepseek-ai/dsh-tool-subagent": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-token-meter": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/cordis-plugin-group": "workspace:~"
   },
   "engines": {
     "dsh": ">=0.2.2-rc.3"

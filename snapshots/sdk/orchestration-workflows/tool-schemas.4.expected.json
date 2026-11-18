@@ -1,0 +1,48 @@
+{
+  "initial": [
+    {
+      "name": "structured_output",
+      "description": "Report your final structured result. Call this exactly once, when your answer is complete; the arguments must match this tool's parameter schema exactly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "continue",
+              "complete",
+              "blocked"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nextSteps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocker": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "summary",
+          "evidence",
+          "nextSteps",
+          "blocker"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "changes": []
+}

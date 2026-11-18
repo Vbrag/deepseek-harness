@@ -581,6 +581,41 @@ describe('compact configuration and defaults', () => {
 })
 
 describe('pressure measurement and retention', () => {
+  it('rejects the GLM 128K output reserve when default headroom leaves less than the retained tail', async () => {
+    const ctx = createContext(200_000)
+    const compact = new TestCompactionEngine(ctx, { auto: false })
+    const session = conversation(4)
+    const before = session.snapshotEvents()
+    const header = { config: { provider: MODEL, model: 'gwdg.glm-5.3-flash', maxTokens: 128_000 } }
+    const budget = compact.pressureBudget(agent(session, MODEL), header, SIGNAL)
+    await expect(budget).rejects.toMatchObject({
+      code: 'COMPACTION_INVALID_BUDGET', targetKey: `${MODEL}/gwdg.glm-5.3-flash`,
+    })
+    await expect(budget).rejects.toThrow('retainTokens (11520) must be less than threshold tokens 6464')
+    expect(session.snapshotEvents()).toEqual(before)
+    expect(compact.calls).toEqual([])
+  })
+
+  it.each([
+    ['gwdg.glm-5.3-flash', 200_000, 63_808, 11_520],
+    ['hs-de.qwen3.8-27b', 262_000, 125_808, 21_440],
+  ] as const)('inspects the effective pressure policy for %s without measuring or modifying history', async (model, window, thresholdTokens, retainTokens) => {
+    const ctx = createContext(window)
+    const compact = new TestCompactionEngine(ctx, { auto: false,
+      modelPolicies: [{ provider: MODEL, model, headroomTokens: 8192, maxTokens: 8192 }],
+    })
+    const session = conversation(4)
+    const before = session.snapshotEvents()
+    const measure = vi.spyOn(ctx.tokenMeter, 'measure')
+    const stream = vi.spyOn(ctx.llm, 'stream')
+    await expect(compact.pressureBudget(agent(session, MODEL), {
+      config: { provider: MODEL, model, maxTokens: 128_000 },
+    }, SIGNAL)).resolves.toEqual({ thresholdTokens, retainTokens })
+    expect(measure).not.toHaveBeenCalled()
+    expect(stream).not.toHaveBeenCalled()
+    expect(session.snapshotEvents()).toEqual(before)
+  })
+
   const compactConfig: BasicCompactionConfig = {
     auto: false,
     thresholdRatio: 0.5,
@@ -703,8 +738,12 @@ describe('pressure measurement and retention', () => {
       reason: 'resume',
     })
 
-    await expect(compactIfNeeded(compact, session, 'pressure'))
-      .rejects.toThrow(/no context capacity for unknown-context\/model/)
+    await expect(compact.pressureBudget(agent(session), {
+      config: { provider: 'unknown-context', model: 'model' },
+    }, SIGNAL)).resolves.toBeUndefined()
+    const pressure = compactIfNeeded(compact, session, 'pressure')
+    await expect(pressure).rejects.toMatchObject({ code: 'COMPACTION_CONTEXT_UNAVAILABLE' })
+    await expect(pressure).rejects.toThrow(/no context capacity for unknown-context\/model/)
     await expect(compactIfNeeded(compact, session, 'context-overflow'))
       .resolves.not.toBeNull()
   })
@@ -1840,7 +1879,7 @@ describe('model-switch pressure', () => {
     const selected = { provider: '64k', model: '64k', maxTokens: 4_096 }
     const switching = request(ctx, session, selected)
     if (override) await expect(switching).resolves.toEqual(selected)
-    else await expect(switching).rejects.toMatchObject({ code: 'MODEL_SWITCH_COMPACTION_FAILED' })
+    else await expect(switching).rejects.toMatchObject({ code: 'COMPACTION_INVALID_BUDGET' })
     expect(session.requestHeader()).toEqual(previous)
     expect(adapter.lastOptions).toBeUndefined()
   })
@@ -1977,6 +2016,22 @@ describe('model-switch pressure', () => {
     expect(adapter.lastOptions).toBeUndefined()
   })
 
+  it('rejects a model switch with unknown capacity while preserving the current route', async () => {
+    const { ctx, adapter } = harness()
+    const metadata = ctx.llm.resolveModelInfo.bind(ctx.llm)
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model, signal) => provider === 'unknown-context'
+      ? Promise.resolve({ provider, id: model, name: model }) : metadata(provider, model, signal))
+    const session = conversation(1, 'short history')
+    const previous = session.requestHeader()
+    const switching = request(ctx, session, { provider: 'unknown-context', model: 'model' })
+    await expect(switching).rejects.toMatchObject({
+      code: 'MODEL_SWITCH_COMPACTION_FAILED', cause: { code: 'COMPACTION_CONTEXT_UNAVAILABLE' },
+    })
+    await expect(switching).rejects.toThrow('configure contextWindow on that adapter model')
+    expect(session.requestHeader()).toEqual(previous)
+    expect(adapter.lastOptions).toBeUndefined()
+  })
+
   it('reports a non-Error capacity failure without changing the route', async () => {
     const { ctx } = harness()
     vi.spyOn(ctx.llm, 'resolveModelInfo').mockRejectedValueOnce('capacity lookup unavailable')
@@ -2029,7 +2084,7 @@ describe('automatic listener and loader composition', () => {
     const turn = owner.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.data.turn ?? 1
     return agentEvents(ctx, owner).waterfall(
       'agent/request-error',
-      { turn, step: 1, provider: 'test', failure, retryPolicy: undefined, signal },
+      { turn, step: 1, provider: 'test', model: MODEL, failure, retryPolicy: undefined, signal },
       next,
     ).then(action => action?.kind === 'retry')
   }
@@ -2092,10 +2147,10 @@ describe('automatic listener and loader composition', () => {
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
   })
 
-  it('warns once per routed target when proactive pressure has no context metadata', async () => {
+  it('warns once and continues ordinary requests when context capacity is unavailable', async () => {
     const ctx = createContext()
     const warnings: string[] = []
-    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+    ctx.logger.warn = ((message: string) => { warnings.push(message) }) as typeof ctx.logger.warn
     vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => Promise.resolve({
       provider,
       id: model,
@@ -2108,19 +2163,19 @@ describe('automatic listener and loader composition', () => {
       retainTokens: 180,
     })
     const session = conversation(4)
+    const before = session.snapshotEvents()
 
-    await preStep(ctx, agent(session, MODEL))
-    await preStep(ctx, agent(session, MODEL))
-
-    expect(warnings).toEqual([
-      expect.stringContaining(`no context capacity for ${MODEL}/${MODEL}`),
-    ])
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
+    }
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain(`no context capacity for ${MODEL}/${MODEL}`)
+    expect(warnings[0]).toContain('continuing the turn')
+    expect(session.snapshotEvents()).toEqual(before)
   })
 
-  it('warns once per routed target when absolute retention exceeds its resolved threshold', async () => {
+  it('rejects request admission when absolute retention exceeds its resolved threshold', async () => {
     const ctx = createContext()
-    const warnings: string[] = []
-    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
     void new TestCompactionEngine(ctx, {
       headroomTokens: 0,
       maxTokens: 8192,
@@ -2129,18 +2184,13 @@ describe('automatic listener and loader composition', () => {
     })
     const session = conversation(4)
 
-    await preStep(ctx, agent(session, MODEL))
-    await preStep(ctx, agent(session, MODEL))
-
-    expect(warnings).toEqual([
-      expect.stringContaining('retainTokens (500) must be less than threshold tokens 500'),
-    ])
+    const preparation = preStep(ctx, agent(session, MODEL))
+    await expect(preparation).rejects.toMatchObject({ code: 'COMPACTION_INVALID_BUDGET' })
+    await expect(preparation).rejects.toThrow('retainTokens (500) must be less than threshold tokens 500')
   })
 
-  it.each([1_000, 1_500])('warns once and continues when the output reserve is %i for a 1,000-token window', async (maxTokens) => {
+  it.each([1_000, 1_500])('rejects request admission when the output reserve is %i for a 1,000-token window', async (maxTokens) => {
     const ctx = createContext(1_000)
-    const warnings: string[] = []
-    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
     vi.spyOn(ctx.llm, 'resolveModelInfo').mockResolvedValue({
       provider: MODEL,
       id: MODEL,
@@ -2152,13 +2202,9 @@ describe('automatic listener and loader composition', () => {
     const session = conversation(4)
     const before = session.snapshotEvents()
 
-    await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
-    await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
-
-    expect(warnings).toEqual([
-      expect.stringContaining(`reserves ${maxTokens} completion tokens`),
-    ])
-    expect(warnings[0]).toContain('configure the adapter model\'s contextWindow above the effective request maxTokens')
+    const preparation = preStep(ctx, agent(session, MODEL))
+    await expect(preparation).rejects.toMatchObject({ code: 'COMPACTION_INVALID_BUDGET' })
+    await expect(preparation).rejects.toThrow(`reserves ${maxTokens} completion tokens`)
     expect(session.snapshotEvents()).toEqual(before)
     expect(compact.calls).toHaveLength(0)
   })

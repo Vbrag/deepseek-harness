@@ -1,13 +1,17 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import { agentEvents, assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import { mountAgentLoopTestDependencies, provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { LlmAdapter, createUserMessage, type GenerateOptions, type LlmResolvedModelInfo,
   type ImageBlock, type LlmQueueAvailability, type LlmQueueRequest, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { appendPluginRecord, pluginRecordOf, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import SubagentRuntime, { type SubagentModelRouting, type SubagentModelRoutingContext } from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime, {
+  type SubagentActivation, type SubagentActivationSpec, type SubagentModelRouting, type SubagentModelRoutingContext,
+} from '@deepseek-ai/dsh-subagent'
+import * as SpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import SubagentModelSelectionConfig from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import { CommandId } from '@deepseek-ai/dsh-commands'
 import OrchestrationService from '../src/index.ts'
 import type { OrchestrationConfig, PoolRoute } from '../src/types.ts'
@@ -15,8 +19,24 @@ import type { OrchestrationConfig, PoolRoute } from '../src/types.ts'
 const pool: PoolRoute[] = [{ provider: 'mock', model: 'code' }, { provider: 'mock', model: 'mixed' }]
 const assessment = { requiredCapabilities: ['coding'], contextTokens: 1000, requiredModalities: ['text'] }
 const prompt = [{ type: 'text' as const, text: 'implement the parser' }]
+const orchestrationGuidance = 'Orchestration mode is active. '
+  + 'Proactively identify independent work that can make useful progress in parallel. '
+  + 'When the available subagent tools and delegation limits allow it, prefer delegating bounded tasks '
+  + 'with clear goals and expected results without waiting for the user to request delegation. '
+  + 'Start independent delegations early and continue useful work yourself when possible. '
+  + 'Respect the user\'s instructions, delegation depth, and active-child limits. '
+  + 'Handle work directly when it is small, sequential, or delegation would add overhead without useful parallel progress. '
+  + 'For every fresh local child, supply task_assessment with requiredCapabilities '
+  + '(coding, reasoning, vision, allrounder, european), contextTokens for expected input including files the child '
+  + 'will read, and requiredModalities for inputs needed throughout the task. Require coding for ordinary implementation tasks. '
+  + 'Prefer reasoning when it would help; require it only when the task specifically needs that capability. Include image for screenshots '
+  + 'the child may capture later. Use preferredCapabilities for optional strengths and outputTokens for the '
+  + 'expected response allowance. Every required capability must be supported; reasoning alone does not '
+  + 'establish coding ability. Model selection automatically considers the allowed pool, capabilities, '
+  + 'live load, and request/token queue availability.'
 
 class Adapter extends LlmAdapter {
+  readonly requests: GenerateOptions[] = []
   readonly queues = new Map<string, LlmQueueAvailability>()
   readonly metadata = new Map<string, Partial<LlmResolvedModelInfo>>()
   readonly unknownModels = new Set<string>()
@@ -36,7 +56,8 @@ class Adapter extends LlmAdapter {
     this.probe?.(request)
     return Promise.resolve(this.queues.get(request.model) ?? { kind: 'ready' })
   }
-  override async *stream(_request: GenerateOptions): AsyncIterable<StreamChunk> {
+  override async *stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(request)
     this.streamStarted?.()
     if (this.gate !== undefined) await this.gate
     yield { type: 'text-delta', index: 0, text: 'done' }
@@ -47,10 +68,11 @@ class Adapter extends LlmAdapter {
 async function fixture(config: OrchestrationConfig = {}) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
-  await mountAgentLoopTestDependencies(ctx)
-  provideWorkingDirectoryFixture(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(SubagentModelSelectionConfig, { enabled: false, allowedModels: [] })
+  await ctx.plugin(SpawnInProcess, { providerName: 'spawn' })
   const adapter = new Adapter()
   ctx.llm.registerAdapter(['mock'], adapter)
   const register = vi.spyOn(ctx.subagents, 'registerModelRouter')
@@ -93,7 +115,39 @@ function preStep(ctx: Context, agent: Agent, options: { reject?: boolean; signal
   }, async () => options.reject ? { kind: 'reject' } : { kind: 'enter', messages, startsRequestSeries: true })
 }
 
+async function orchestrationContext(ctx: Context, agent?: Agent) {
+  const assembly = await ctx.systemPrompt.assemble(agent === undefined ? undefined : assembleContextFor(agent))
+  return assembly.contexts.find(context => context.name === 'orchestration')
+}
+
+function activation(f: Awaited<ReturnType<typeof fixture>>, options: Partial<SubagentActivationSpec> = {}) {
+  return f.ctx.subagents.startActivation({ provider: 'spawn', label: 'implement parser', delivery: 'caller',
+    parent: f.parent, prompt, taskAssessment: assessment, signal: new AbortController().signal, ...options })
+}
+
+async function settleActivations(starts: readonly Promise<SubagentActivation>[]) {
+  const settled = await Promise.allSettled(starts)
+  await Promise.allSettled(settled.flatMap(item => item.status === 'fulfilled' ? [item.value.result] : []))
+}
+
+function routeRecords(agent: Agent) {
+  return agent.session.snapshotEvents().flatMap((event) => {
+    const record = pluginRecordOf(event)
+    return record?.type === 'plugin:orchestration/route' ? [record] : []
+  })
+}
+
 describe('session-scoped normal delegation routing', () => {
+  it('guides proactive parallel delegation only while Orchestration mode is active', async () => {
+    const f = await fixture()
+    expect(await orchestrationContext(f.ctx)).toEqual({ name: 'orchestration', text: '' })
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
+    f.service.setMode(f.parent, true)
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: orchestrationGuidance })
+    f.service.setMode(f.parent, false)
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
+  })
+
   it('logs defaults and leaves OFF delegation on its captured inherited route', async () => {
     const f = await fixture()
     expect(f.service.modeOf(f.parent)).toBe(false)
@@ -213,6 +267,253 @@ describe('session-scoped normal delegation routing', () => {
     })
     expect(f.parent.session.snapshotEvents().filter(event => pluginRecordOf(event)?.type === 'plugin:orchestration/route')
       .every(event => event.ignorable === true)).toBe(true)
+  })
+
+  it('balances simultaneous reservations after overlapping metadata lookups', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const entered = Promise.withResolvers<undefined>()
+    const gate = Promise.withResolvers<undefined>()
+    let lookups = 0
+    f.adapter.lookup = async (provider, model) => {
+      if (++lookups === 4) entered.resolve(undefined)
+      await gate.promise
+      return { provider, id: model, name: model, inputModalities: ['text'], context: { contextWindow: 100_000 } }
+    }
+    const starts = [f.resolve(), f.resolve()]
+    try {
+      await entered.promise
+      gate.resolve(undefined)
+      const routes = await Promise.all(starts)
+      expect(new Set(routes.map(route => route.agentOptions?.model))).toEqual(new Set(['code', 'mixed']))
+      for (const route of routes) route.release?.()
+    } finally {
+      gate.resolve(undefined)
+      const settled = await Promise.allSettled(starts)
+      for (const item of settled) if (item.status === 'fulfilled') item.value.release?.()
+    }
+  })
+
+  it('chooses idle unknown capacity before loaded preferred ready capacity', async () => {
+    const f = await fixture({ routeCapabilities: [
+      { ...pool[0]!, capabilities: ['coding', 'reasoning'] }, { ...pool[1]!, capabilities: ['coding', 'vision'] },
+    ] })
+    f.service.setMode(f.parent, true)
+    f.adapter.queues.set('mixed', { kind: 'unknown' })
+    const first = await f.resolve({ taskAssessment: { ...assessment, preferredCapabilities: ['reasoning'] } })
+    const second = await f.resolve({ taskAssessment: { ...assessment, preferredCapabilities: ['reasoning'] } })
+    expect([first.agentOptions?.model, second.agentOptions?.model]).toEqual(['code', 'mixed'])
+    const records = f.parent.session.snapshotEvents().map(pluginRecordOf)
+      .filter(record => record?.type === 'plugin:orchestration/route')
+    expect(records.at(-1)?.data).toMatchObject({ reason: 'active-load', eligibleCount: 2, selectedLoad: 0,
+      selectedReadiness: 'unknown', alternatives: [{ model: 'code', activeAssignments: 1, availability: { kind: 'ready' } }] })
+    first.release?.()
+    second.release?.()
+    const equal = await f.resolve({ taskAssessment: { ...assessment, preferredCapabilities: ['vision'] } })
+    expect(equal.agentOptions?.model).toBe('code')
+    const last = routeRecords(f.parent).at(-1)
+    expect(last?.data).toMatchObject({ reason: 'queue-readiness', selectedReadiness: 'ready' })
+    equal.release?.()
+  })
+
+  it('reuses the sole capable route while retaining strict required specialties', async () => {
+    const f = await fixture({ routeCapabilities: [
+      { ...pool[0]!, capabilities: ['coding', 'reasoning'] }, { ...pool[1]!, capabilities: ['coding'] },
+    ] })
+    f.service.setMode(f.parent, true)
+    const taskAssessment = { ...assessment, requiredCapabilities: ['coding', 'reasoning'] }
+    const first = await f.resolve({ taskAssessment })
+    const second = await f.resolve({ taskAssessment })
+    expect([first.agentOptions?.model, second.agentOptions?.model]).toEqual(['code', 'code'])
+    const record = routeRecords(f.parent).at(-1)
+    expect(record?.data).toMatchObject({ eligibleCount: 1, selectedLoad: 1,
+      alternatives: [{ model: 'mixed', exclusions: ['missing-required-capability'] }] })
+    first.release?.()
+    second.release?.()
+  })
+
+  it('retains the published startup reservation through initial-message admission and counts live work once', async () => {
+    const f = await fixture({ routeCapabilities: [
+      { ...pool[0]!, capabilities: ['coding', 'reasoning'] }, { ...pool[1]!, capabilities: ['coding'] },
+    ] })
+    f.service.setMode(f.parent, true)
+    const published = Promise.withResolvers<undefined>()
+    const admit = Promise.withResolvers<undefined>()
+    const work = Promise.withResolvers<undefined>()
+    f.adapter.gate = work.promise
+    let children = 0
+    f.ctx.on('agent/created', async ({ agent }) => {
+      if (agent.session.header.origin !== 'subagent' || ++children !== 1) return undefined
+      published.resolve(undefined)
+      await admit.promise
+      return undefined
+    })
+    const taskAssessment = { ...assessment, preferredCapabilities: ['reasoning'] }
+    const starts: Promise<SubagentActivation>[] = [activation(f, { taskAssessment })]
+    try {
+      await Promise.race([published.promise, starts[0]!.then(() => { throw new Error('Child startup skipped its publication barrier') })])
+      starts.push(activation(f, { taskAssessment }))
+      const second = await starts[1]!
+      expect(f.ctx.agents.get(second.childId)?.model.current()?.model).toBe('mixed')
+      const record = routeRecords(f.parent).at(-1)
+      expect(record?.data).toMatchObject({ reason: 'active-load', alternatives: [{ model: 'code', activeAssignments: 1 }] })
+      admit.resolve(undefined)
+      await starts[0]
+      const next = await f.resolve({ taskAssessment })
+      expect(next.agentOptions?.model).toBe('code')
+      const counted = routeRecords(f.parent).at(-1)
+      expect(counted?.data).toMatchObject({ selectedLoad: 1, alternatives: [{ model: 'mixed', activeAssignments: 1 }] })
+      next.release?.()
+    } finally {
+      admit.resolve(undefined)
+      work.resolve(undefined)
+      await settleActivations(starts)
+    }
+  })
+
+  it('counts startup work observed by a listener before its own created listener', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    let observed: SubagentModelRouting | undefined
+    f.ctx.on('agent/created', async ({ agent }) => {
+      if (agent.session.header.origin !== 'subagent') return undefined
+      observed = await f.resolve()
+      return undefined
+    }, { prepend: true })
+    try {
+      const child = await activation(f)
+      await child.result
+      expect(observed?.agentOptions?.model).toBe('mixed')
+    } finally {
+      observed?.release?.()
+    }
+  })
+
+  it('retains a completed child assignment until its teardown settles', async () => {
+    const f = await fixture({ routeCapabilities: [
+      { ...pool[0]!, capabilities: ['coding', 'reasoning'] }, { ...pool[1]!, capabilities: ['coding'] },
+    ] })
+    f.service.setMode(f.parent, true)
+    const disposing = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    f.ctx.on('agent/created', ({ agent }) => {
+      if (agent.session.header.origin === 'subagent') agent.ctx.effect(() => async () => {
+        disposing.resolve(undefined)
+        await finish.promise
+      })
+      return undefined
+    })
+    const starts = [activation(f, { taskAssessment: { ...assessment, preferredCapabilities: ['reasoning'] } })]
+    try {
+      await starts[0]
+      await disposing.promise
+      const during = await f.resolve({ taskAssessment: { ...assessment, preferredCapabilities: ['reasoning'] } })
+      expect(during.agentOptions?.model).toBe('mixed')
+      expect(routeRecords(f.parent).at(-1)?.data).toMatchObject({ alternatives: [{ model: 'code', activeAssignments: 1 }] })
+      during.release?.()
+      finish.resolve(undefined)
+      await (await starts[0]!).result
+      const after = await f.resolve({ taskAssessment: { ...assessment, preferredCapabilities: ['reasoning'] } })
+      expect(after.agentOptions?.model).toBe('code')
+      expect(routeRecords(f.parent).at(-1)?.data).toMatchObject({ selectedLoad: 0 })
+      after.release?.()
+    } finally {
+      finish.resolve(undefined)
+      await settleActivations(starts)
+    }
+  })
+
+  it('shares live loads across roots and nested delegations using ordinary child lifecycles', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const work = Promise.withResolvers<undefined>()
+    f.adapter.gate = work.promise
+    const other = (await f.ctx.agents.create({ sessionId: SessionId('other-root'),
+      agentOptions: { provider: 'mock', model: 'lead' } })).agent
+    other.session.append('subagent/model-selection-policy', { allowedModels: pool })
+    f.service.setMode(other, true)
+    const starts: Promise<SubagentActivation>[] = [activation(f)]
+    try {
+      const child = f.ctx.agents.get((await starts[0]!).childId)
+      if (child === undefined) throw new Error('The first child was not published')
+      starts.push(activation(f, { parent: child }))
+      const grandchild = await starts[1]!
+      expect(f.ctx.agents.get(grandchild.childId)?.model.current()?.model).toBe('mixed')
+      starts.push(activation(f, { parent: other }))
+      const third = await starts[2]!
+      expect(f.ctx.agents.get(third.childId)?.model.current()?.model).toBe('code')
+      const evidence = other.session.snapshotEvents().map(pluginRecordOf).find(record => record?.type === 'plugin:orchestration/route')
+      expect(evidence?.data).toMatchObject({ selectedLoad: 1, alternatives: [{ model: 'mixed', activeAssignments: 1 }] })
+    } finally {
+      work.resolve(undefined)
+      await settleActivations(starts)
+    }
+  })
+
+  it('releases failed startup reservations after caller cancellation', async () => {
+    const f = await fixture({ routeCapabilities: [
+      { ...pool[0]!, capabilities: ['coding', 'reasoning'] }, { ...pool[1]!, capabilities: ['coding'] },
+    ] })
+    f.service.setMode(f.parent, true)
+    const entered = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    f.ctx.on('agent/created', async ({ agent }) => {
+      if (agent.session.header.origin !== 'subagent') return undefined
+      entered.resolve(undefined)
+      await finish.promise
+      return undefined
+    })
+    const cancel = new AbortController()
+    const taskAssessment = { ...assessment, preferredCapabilities: ['reasoning'] }
+    const starting = activation(f, { taskAssessment, signal: cancel.signal })
+    const rejected = expect(starting).rejects.toBeDefined()
+    try {
+      await Promise.race([entered.promise, starting.then(() => { throw new Error('Child startup skipped its cancellation barrier') })])
+      cancel.abort(new DOMException('cancelled startup', 'AbortError'))
+      finish.resolve(undefined)
+      await rejected
+      const next = await f.resolve({ taskAssessment })
+      expect(next.agentOptions?.model).toBe('code')
+      const record = routeRecords(f.parent).at(-1)
+      expect(record?.data).toMatchObject({ selectedLoad: 0, alternatives: [{ activeAssignments: 0 }] })
+      next.release?.()
+    } finally {
+      finish.resolve(undefined)
+      await settleActivations([starting])
+      await rejected
+    }
+  })
+
+  it('leaves existing reservations intact when another route inspection fails', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const first = await f.resolve()
+    f.adapter.lookup = async () => { throw new Error('metadata unavailable') }
+    await expect(f.resolve()).rejects.toMatchObject({ code: 'ORCHESTRATION_ROUTE_METADATA_FAILED' })
+    f.adapter.lookup = undefined
+    const second = await f.resolve()
+    expect(second.agentOptions?.model).toBe('mixed')
+    const record = routeRecords(f.parent).at(-1)
+    expect(record?.data).toMatchObject({ selectedLoad: 0, alternatives: [{ model: 'code', activeAssignments: 1 }] })
+    first.release?.()
+    second.release?.()
+  })
+
+  it('records hard and queue exclusions without inspecting unauthorized route metadata', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    f.service.setPool([...pool, { provider: 'mock', model: 'denied' }])
+    const inspect = vi.spyOn(f.adapter, 'resolveModel')
+    f.adapter.queues.set('code', { kind: 'impossible', estimatedTokens: 20_000, tokenLimit: 10_000 })
+    const route = await f.resolve()
+    const record = routeRecords(f.parent).at(-1)
+    expect(record?.data).toMatchObject({ eligibleCount: 1, selectedReadiness: 'ready', alternatives: [
+      { model: 'code', exclusions: ['request-token-capacity'], contextWindow: 100_000,
+        availability: { kind: 'impossible', estimatedTokens: 20_000, tokenLimit: 10_000 } },
+      { model: 'denied', exclusions: ['unauthorized'] },
+    ] })
+    expect(inspect.mock.calls.some(call => call[1] === 'denied')).toBe(false)
+    route.release?.()
   })
 
   it('uses another capable route immediately when the best route is rate limited', async () => {
@@ -365,6 +666,8 @@ describe('session-scoped normal delegation routing', () => {
       setup: async (_ctx, agent) => { await route.setup?.(agent) },
     })).agent
     expect(f.service.modeOf(child)).toBe(true)
+    expect(await orchestrationContext(f.ctx, child)).toEqual({ name: 'orchestration', text: orchestrationGuidance })
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
     route.release?.()
   })
 
@@ -374,8 +677,10 @@ describe('session-scoped normal delegation routing', () => {
     const cause = new Error('provider gone')
     f.adapter.lookup = async () => { throw cause }
     await expect(f.resolve()).rejects.toMatchObject({ code: 'ORCHESTRATION_ROUTE_METADATA_FAILED', cause })
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: orchestrationGuidance })
     await f.mount.dispose()
     expect(f.ctx.subagents.modelRoutingDefaults()).toBeUndefined()
+    expect(await orchestrationContext(f.ctx, f.parent)).toBeUndefined()
   })
 
   it('aborts pending queue admission and releases its timer when the plugin unloads', async () => {
@@ -407,16 +712,25 @@ describe('durable mode selections', () => {
     f.parent.session.append('turn/start', { turn: 0 })
     expect(f.service.select(f.parent, true)).toBe('queued')
     expect(f.ctx.sessionProjections.snapshot(f.parent.session).values.orchestration).toEqual({ active: false, pending: true })
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
     await preStep(f.ctx, f.parent, { reject: true })
     expect(f.service.modeOf(f.parent)).toBe(false)
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
     await preStep(f.ctx, f.parent, { signal: AbortSignal.abort() })
     expect(f.service.modeOf(f.parent)).toBe(false)
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
     await preStep(f.ctx, f.parent, { empty: true })
     expect(f.service.modeOf(f.parent)).toBe(false)
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
     const result = await preStep(f.ctx, f.parent)
     expect(result).toMatchObject({ kind: 'enter', startsRequestSeries: true })
     expect(f.service.modeOf(f.parent)).toBe(true)
     expect(f.ctx.sessionProjections.snapshot(f.parent.session).values.orchestration).toEqual({ active: true, pending: false })
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: orchestrationGuidance })
+    expect(f.service.select(f.parent, false)).toBe('queued')
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: orchestrationGuidance })
+    await preStep(f.ctx, f.parent)
+    expect(await orchestrationContext(f.ctx, f.parent)).toEqual({ name: 'orchestration', text: '' })
   })
 
   it('recovers queued selections across plugin replacement and lets an opposite selection cancel them', async () => {

@@ -36,6 +36,10 @@ kind: "package-reference"
 
 面板显示已应用的所选池数量；当模型池为空时显示提示；当主机拒绝更新时显示保存失败提示。仅当主机应用了所选池后保存才报告成功；被拒绝的写入会显示失败提示，而非虚假的成功。主机会在内存中应用所选池，并把完整选择作为普通用户层值持久化到配置文件，因此保存的模型池在重启后仍然保留。
 
+### 查看子代理模型切换
+
+打开会话的子代理目录，即可在子代理列表下方查看**子代理模型**。每个已观察到的本地子代理会显示上次记录的请求所用模型、已选下一模型或请求的偏好模型、先前模型以及路由原因。已排队的切换、**正在切换模型**、**等待可用容量**和受阻的切换分别使用不同标签。只有主机发布使用某个模型的请求后，已选或请求的路由才会显示为**上次使用**；尚无请求记录的子代理显示**尚无模型请求**。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -44,13 +48,14 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-Client export 通过 `ctx.remote.$mount` 挂载 `orchestrations` Remote contribution，然后注册设置面板和一个附加的 `conversation.input.left` 输入栏控件。输入栏读取 `orchestration` 会话投影，通过会话绑定的命令服务提交 `/orchestration on|off`。销毁插件时，先撤下控件，再撤下 Remote mount。面板的目录和能力徽章来自 `PADERBORN_CATALOG`。
+Client export 通过 `ctx.remote.$mount` 挂载 `orchestrations` Remote contribution，然后注册设置面板、一个附加的 `conversation.input.left` 输入栏控件和子代理目录页脚。输入栏读取 `orchestration` 会话投影，通过会话绑定的命令服务提交 `/orchestration on|off`。页脚读取已发布的子代理 `orchestrationRouting` 与 `modelSelection` 投影；既有目录负责刷新子代理，页脚不打开会话，也不扫描日志。销毁插件时，先撤下控件，再撤下 Remote mount。面板的目录和能力徽章来自 `PADERBORN_CATALOG`。
 
 | 文件 | 职责 |
 |---|---|
 | [`src/client/mount.ts`](src/client/mount.ts) | locale、slot 与 Orchestration Remote registration |
 | [`src/client/OrchestrationPanel.tsx`](src/client/OrchestrationPanel.tsx) | 带能力徽章与模型池选择的提供商目录行 |
-| [`src/client/locales.ts`](src/client/locales.ts) | 中英文 panel 文案 |
+| [`src/client/OrchestrationRouting.tsx`](src/client/OrchestrationRouting.tsx) | 上次使用和后续子代理模型及其路由进度 |
+| [`src/client/locales.ts`](src/client/locales.ts) | 本地化控件与模型进度标签 |
 | [`src/index.ts`](src/index.ts) | 不执行行为的 Host entry |
 
 </details>

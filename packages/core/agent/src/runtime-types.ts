@@ -8,7 +8,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type {
-  LlmAttemptId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy, StreamChunk,
+  ContentBlock, FinishReason, LlmAttemptId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId,
+  ResolvedRetryPolicy, StreamChunk, TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import type { AgentCancelCause, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
@@ -152,7 +153,7 @@ export type PreStepDecision =
   }
 
 /** Action returned by a listener that owns model-request recovery. */
-export type RequestErrorAction = { kind: 'retry' } | undefined
+export type RequestErrorAction = { kind: 'retry' } | { kind: 'reprepare' } | undefined
 
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
 export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
@@ -217,6 +218,14 @@ declare module './types.ts' {
    * @param options - cancellation options; `keepInbox` preserves pending work.
    */
     cancel(cause: AgentCancelCause, options?: CancelOptions): void
+
+    /**
+     * Interrupt only the active model-request preparation or stream. Recovery runs after
+     * that request settles; queued input, the turn, and executing tools remain live.
+     * @param reason - explanation delivered to request-recovery policy.
+     * @returns true when a live model request was interrupted; false outside a request or after cancellation.
+     */
+    interruptRequest(reason?: string): boolean
 
     /**
    * Resolve after the current whole-agent activity reaches quiescence. This
@@ -343,6 +352,17 @@ declare module '@deepseek-ai/cordis' {
     'agent/inbox/discarded'(this: Scoped<Agent>, payload: { agent: Agent; message: UserMessage }): void
     // ---- the machine's extension points ----
     /**
+     * Await policy before capturing the proposed step's model, tools, and prompt.
+     * Repreparation repeats this event without readmitting already logged input.
+     * @param payload.agent - Agent preparing its next model step.
+     * @param payload.turn - open turn owning the step.
+     * @param payload.step - proposed step number, unchanged for request repreparation.
+     * @param payload.messages - claimed offered input; already admitted input is offered again on repreparation without duplicate logging.
+     * @param payload.signal - current turn cancellation signal.
+     * @mode serial
+     */
+    'agent/step-preparing'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; messages: readonly UserMessage[]; signal: AbortSignal }): Promise<void> | void
+    /**
      * Reject a proposed step or replace the messages that enter it. Calling
      * `next()` preserves the current messages.
      * @param payload.agent - the agent proposing the step.
@@ -387,13 +407,32 @@ declare module '@deepseek-ai/cordis' {
      * @param payload.turn - the turn containing the failed request.
      * @param payload.step - the step containing the failed request attempt.
      * @param payload.provider - the provider selected for the failed request.
+     * @param payload.model - model selected for the failed preparation or request.
      * @param payload.failure - serializable facts normalized at the final adapter boundary.
      * @param payload.retryPolicy - the policy of the adapter registration that served the failed request.
      * @param payload.signal - the turn abort signal.
+     * @param payload.stage - operation that failed; absent in older manually dispatched events.
+     * @param payload.requestInterrupted - true for an explicit request-only interruption.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode waterfall
      */
-    'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+    'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: 'step-preparation' | 'request-preparation' | 'stream'; requestInterrupted?: true }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+    /**
+     * Inspect a settled successful generation before accepting its message or executing tools.
+     * Returning retry or reprepare retains its stream as an attempt and executes no tool blocks.
+     * Undefined accepts the normal result unchanged.
+     * @param payload.agent - Agent whose generation settled.
+     * @param payload.turn - owning turn.
+     * @param payload.step - owning step.
+     * @param payload.provider - provider used by the settled request.
+     * @param payload.model - model used by the settled request.
+     * @param payload.finish - provider finish reason.
+     * @param payload.content - assembled blocks, borrowed without mutation.
+     * @param payload.usage - reported usage, when available.
+     * @param payload.signal - owning turn signal; whole-turn cancellation takes precedence.
+     * @mode waterfall
+     */
+    'agent/request-finished'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; finish: FinishReason; content: readonly ContentBlock[]; usage?: TokenUsage; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
     /**
      * Process-local assistant-stream publication. Chunk frames are transient;
      * the loop appends one final v2 `assistant/message` or `assistant/attempt`

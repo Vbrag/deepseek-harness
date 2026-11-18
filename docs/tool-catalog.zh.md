@@ -44,7 +44,7 @@
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-tool-schedule` | `schedule_create`、`schedule_edit`、`schedule_list`、`schedule_view` | `ctx.tools`、`ctx.schedule`、`ctx.systemPrompt` | `tool/call`、Schedule storage domain 创建、更新或删除、`tool/result` | - | preset 或 Agent scope 挂载本包，并决定哪些 Agent 获得工具。管理工具按 id 跨会话读写 Host 的任务。任务保存 RFC 5545 重复规则，执行位置可选已有会话、首次创建后复用的会话或每次运行新建的会话。委派子 Agent 不能调用这些工具。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.workingDirectory`、`ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
-| `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。 |
+| `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型提供目标、可选的 Round 上限和可选的任务评估。 |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.workingDirectory`、`ctx.tools`、`ctx.agents`、`ctx.skills` | `tool/call`、`tool/result`、`user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`、`session_event_search`、`session_event_trace`、`session_search`、`session_trace` | `ctx.tools`、`ctx.systemPrompt`、`ctx.sessionQuery`、`a calling Agent for workspace authority` | `tool/call`、`tool/result` | - | 这 5 个只读工具会隐藏提供方游标，并根据不可变的调用 agent 会话为每个结果授权。该包需要选择启用；需要强制截止时间或限制行内输出的组合还会挂载通用超时或 spill 策略。 |
 | `@deepseek-ai/dsh-experimental-tool-subagent-oar` | `subagent_oar` | `ctx.tools`, `ctx.subagents` | `tool/call`, `tool/result`, `parent subagent catalog and completion notices` | - | subagent_oar 工具在为外部提供方配置的别名之间选择。本目录展示 Codex 和 Claude Code 别名；每个部署自行选择提供方。原生模型和权限设置由所选提供方的配置决定。 |
@@ -2072,7 +2072,7 @@ preset 或 Agent scope 挂载本包，并决定哪些 Agent 获得工具。管�
 
 lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。
 
-<a id="deepseek-aidsh-experimental-tool-ralph"></a>
+<a id="deepseek-aidsh-tool-ralph"></a>
 
 ## `@deepseek-ai/dsh-tool-ralph`
 
@@ -2091,6 +2091,48 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     "maxRounds": {
       "type": "number",
       "description": "Optional positive safe-integer round cap, bounded by the deployment ceiling."
+    },
+    "maxTokens": {
+      "type": "number",
+      "description": "Optional positive safe-integer generation cap for every round, independent of task_assessment.outputTokens."
+    },
+    "task_assessment": {
+      "type": "object",
+      "description": "Task requirements shared by every fresh Ralph round. Required when Orchestration mode is on; supply every capability and input modality the rounds need, including coding and vision for visual code changes.",
+      "additionalProperties": false,
+      "properties": {
+        "requiredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preferredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredModalities": {
+          "type": "array",
+          "description": "Inputs needed throughout the task, including images captured during visual checks.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contextTokens": {
+          "type": "integer",
+          "description": "Expected total input tokens per round, including files and context the child will read."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Expected positive response-token count; omit for the configured allowance."
+        }
+      },
+      "required": [
+        "requiredCapabilities",
+        "contextTokens"
+      ]
     }
   },
   "required": [
@@ -2101,7 +2143,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 来源：[`packages/experimental/tool-ralph/src/index.ts`](../packages/experimental/tool-ralph/src/index.ts)
 
-固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。
+固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型提供目标、可选的 Round 上限和可选的任务评估。
 
 <a id="deepseek-aidsh-tool-skill"></a>
 
@@ -2438,6 +2480,99 @@ subagent_oar 工具在为外部提供方配置的别名之间选择。本目录�
 
 来源：[`packages/subagent/tool-subagent/src/list-models.ts`](../packages/subagent/tool-subagent/src/list-models.ts)
 
+### `reassign_subagent`
+
+当任务需求改变时，为现有本地子 agent 请求另一模型。省略 target 可请求更换自己的模型；祖先 agent 可指定其后代。必须提供具体原因、当前工作检查点和完整任务要求。子 agent 保留 Session、工作区和任务，路由不能扩大已记录的模型权限。当前路由策略负责选择安全的应用时机；此操作不会创建新的子 agent，也不会增加委派深度。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "string",
+      "description": "Child name/path or Session id. Omit for your own local subagent Session."
+    },
+    "task_assessment": {
+      "type": "object",
+      "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+      "additionalProperties": false,
+      "properties": {
+        "requiredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preferredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredModalities": {
+          "type": "array",
+          "description": "Inputs needed now or later, such as images captured during visual checks.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contextTokens": {
+          "type": "integer",
+          "description": "Expected total input tokens, including files and other context the child will read."
+        },
+        "outputTokens": {
+          "type": "integer",
+          "description": "Expected positive response-token count; omit for the configured allowance."
+        }
+      },
+      "required": [
+        "requiredCapabilities",
+        "contextTokens"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Why the current model should change for the next task phase."
+    },
+    "checkpoint": {
+      "type": "string",
+      "description": "Current work, verified facts, pending work, and next actions retained across the model change."
+    },
+    "preferred_route": {
+      "type": "object",
+      "description": "Optional exact route preference, still subject to task requirements and permissions.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "model"
+      ]
+    },
+    "max_tokens": {
+      "type": "integer",
+      "description": "Optional positive safe-integer response limit for the requested model phase."
+    },
+    "interrupt_current_request": {
+      "type": "boolean",
+      "description": "Default false. Request interruption of the current model request only when supported by the routing policy."
+    }
+  },
+  "required": [
+    "task_assessment",
+    "reason",
+    "checkpoint"
+  ]
+}
+```
+
+来源：[`packages/subagent/tool-subagent/src/reassign-model.ts`](../packages/subagent/tool-subagent/src/reassign-model.ts)
 ### `subagent`
 
 将一项自包含任务委派给 subagent（在自身上下文中工作的独立 agent），用它卸载聚焦且独立的工作，例如研究、限定范围的实现或分析，以免消耗当前对话的上下文。subagent 会返回结果，但不会返回中间步骤。此工具启动独立管理的 subagent 并立即返回其名称。如果它结束时你仍在线，运行时会自动递送其完成通知。通知包含最终回答，除非子任务在结束前刚给你发过消息。你可以使用 `send_message` 在运行时引导它，或在结束后继续对话。
@@ -2986,12 +3121,16 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 脚本函数体提供以下钩子：
 
-- `agent(prompt, opts?): Promise<any>`：运行一个 subagent 直至完成。不提供 `opts.schema` 时，解析为子级最终文本；提供 `opts.schema` 时，它必须是以对象为根、且**只能**使用 type/properties/required/additionalProperties/items/enum/const/oneOf 的 JSON Schema，此时解析为通过校验的对象。子级失败时解析为 `null`，可使用 `.filter(Boolean)` 过滤。其他选项包括 `label`（显示名称）、`phase`（进度组），以及相互独立的 `provider`／`model` LLM（大语言模型）目标覆盖项。
+- `agent(prompt, opts?): Promise<any>`：运行一个 subagent 直至完成。不提供 `opts.schema` 时，解析为子级最终文本；提供 `opts.schema` 时，它必须是以对象为根、且**只能**使用 type/properties/required/additionalProperties/items/enum/const/oneOf 的 JSON Schema，此时解析为通过校验的对象。子级失败时解析为 `null`，可使用 `.filter(Boolean)` 过滤。其他选项包括 `label`（显示名称）、`phase`（进度组）、相互独立的 `provider`／`model` LLM（大语言模型）目标覆盖项，以及用于自动模型路由的 `task_assessment`。
 - `pipeline(items, ...stages): Promise<any[]>`：让每个条目分别经过各阶段，阶段之间**没有**屏障；多阶段工作优先使用它。每个阶段接收 `(prev, item, index)`。阶段异常会将该**条目**变为 `null`，并跳过它的剩余阶段。
 - `parallel(thunks): Promise<any[]>`：并发运行零参数函数并等待**全部**完成。它会形成屏障，仅当某个阶段确实需要汇总全部先前结果时使用。抛出异常的 thunk 解析为 `null`。
 - `phase(title)`：开始一个进度阶段；`log(message)`：说明进度；`args`：工具调用的 `args` 输入，原样提供。
 
+开启编排模式时必须提供 `opts.task_assessment`。传入 `{ requiredCapabilities: string[], contextTokens: number, preferredCapabilities?: string[], requiredModalities?: string[], outputTokens?: number }`。能力标签由路由策略定义。提供全部必需能力、预计输入 token 数（包括子级后续读取的文件），以及整个任务期间所需的模态，包括后续捕获的图像。`contextTokens` 必须是非负安全整数；可选的 `outputTokens` 必须是正安全整数，省略时使用路由器的预留额度。不要求任务评估时，省略此项会保留普通委派行为。
+
 如果误用钩子（参数错误、未知选项、不受支持的 schema、触发上限），整个脚本会终止，而不会产生 `null`。脚本没有文件系统、网络、定时器或 Node.js API；具体工作由 agent 完成。
+
+`opts.maxTokens` 将子 agent 的显式生成上限设为正安全整数。它独立于路由估算值 `task_assessment.outputTokens`；省略时保留继承的模型选项。
 
 ```json
 {

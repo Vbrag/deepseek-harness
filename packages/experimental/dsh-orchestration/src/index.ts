@@ -9,6 +9,7 @@ import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-compaction'
 import { estimateRequestInputTokens } from '@deepseek-ai/dsh-llm/input-estimate'
 import { appendPluginRecord, pluginRecordOf, type Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type { CommandDefinitionId, CommandId } from '@deepseek-ai/dsh-commands/types'
@@ -16,11 +17,15 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type { ProjectionDefinition, ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type { SubagentModelRouting, SubagentModelRoutingContext, SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { capabilityRoute, routeFits, selectReadyRoute } from './plan.ts'
+import { capabilityRoute, routeExclusions, selectReadyRoute } from './plan.ts'
 import type { CapabilityRoute, ReadyRoute } from './plan.ts'
 import { OrchestrationError } from './error.ts'
+import { AdaptiveRouting, type AdaptiveAdmission } from './adaptive.ts'
 import { PADERBORN_CATALOG, POOL_PROVIDER, TASK_DOMAINS } from './capabilities.ts'
-import type { OrchestrationCatalog, OrchestrationConfig, OrchestrationProjection, OrchestrationUnitState, PoolRoute } from './types.ts'
+import type {
+  OrchestrationCatalog, OrchestrationConfig, OrchestrationProjection, OrchestrationRouteAlternative,
+  OrchestrationUnitState, PoolRoute,
+} from './types.ts'
 
 export type * from './types.ts'
 export { OrchestrationError, type OrchestrationErrorCode } from './error.ts'
@@ -130,7 +135,7 @@ function waitForAvailability(waitMs: number, signal: AbortSignal): Promise<void>
 
 /** Mode and pool owner; one registered selector serves every normal local delegation. */
 export class OrchestrationService extends TypertRemoteService {
-  static inject = ['llm', 'subagents', 'sessionProjections', 'agents', 'systemPrompt']
+  static inject = ['llm', 'subagents', 'sessionProjections', 'agents', 'systemPrompt', 'sessions']
 
   static Config = z.object({
     pool: z.array(routeSchema).default([]).volatile(),
@@ -141,6 +146,8 @@ export class OrchestrationService extends TypertRemoteService {
     outputReserveTokens: z.number().step(1).min(1).default(4096),
     availabilityPollMs: z.number().step(1).min(1).default(1000),
     defaultToOrchestrator: z.boolean().default(false),
+    maxAutomaticReassignments: z.number().step(1).min(0).default(2),
+    maxEmptyOutputLimits: z.number().step(1).min(1).default(2),
   })
 
   private readonly config: Required<Omit<OrchestrationConfig, 'pool'>>
@@ -150,6 +157,7 @@ export class OrchestrationService extends TypertRemoteService {
   private readonly pendingAssignments = new Map<SessionId, PoolRoute>()
   private readonly lastAssigned = new Map<string, number>()
   private sequence = 0
+  private adaptive: AdaptiveRouting | undefined
 
   /** @param ctx - Required policy, LLM, projection, and prompt services.
    * @param config - Pool, verified specialties, and token allowances.
@@ -164,11 +172,15 @@ export class OrchestrationService extends TypertRemoteService {
       outputReserveTokens: config.outputReserveTokens ?? 4096,
       availabilityPollMs: config.availabilityPollMs ?? 1000,
       defaultToOrchestrator: config.defaultToOrchestrator ?? false,
+      maxAutomaticReassignments: config.maxAutomaticReassignments ?? 2,
+      maxEmptyOutputLimits: config.maxEmptyOutputLimits ?? 2,
     }
     for (const [name, value, minimum] of [
       ['contextOverheadTokens', this.config.contextOverheadTokens, 0],
       ['outputReserveTokens', this.config.outputReserveTokens, 1],
       ['availabilityPollMs', this.config.availabilityPollMs, 1],
+      ['maxAutomaticReassignments', this.config.maxAutomaticReassignments, 0],
+      ['maxEmptyOutputLimits', this.config.maxEmptyOutputLimits, 1],
     ] as const) {
       if (!Number.isSafeInteger(value) || value < minimum) {
         throw new OrchestrationError(name + ' must be a safe integer at least ' + String(minimum), 'ORCHESTRATION_INVALID_CONFIG')
@@ -187,6 +199,17 @@ export class OrchestrationService extends TypertRemoteService {
 
   protected async [Service.init](): Promise<void> {
     this.projection = await this.ctx.sessionProjections.register(orchestrationProjectionDefinition)
+    this.adaptive = await AdaptiveRouting.create(this.ctx, {
+      modeOf: agent => this.modeOf(agent),
+      preparingEnabled: (agent) => {
+        const state = this.stateOf(agent.session)
+        return state.active && state.wanted !== false
+      },
+      modeOfSession: session => this.stateOf(session).active,
+      config: this.config,
+      validate: validateAssessment,
+      resolve: (request, options) => this.resolveRoute(request, true, request.signal, options),
+    })
     const lifetime = new AbortController()
     const pending = new Set<Promise<SubagentModelRouting>>()
     this.ctx.effect(() => async () => {
@@ -195,6 +218,8 @@ export class OrchestrationService extends TypertRemoteService {
     }, 'orchestration: settle pending route admission')
     this.ctx.subagents.registerModelRouter({
       newRootPolicyDefaults: () => this.getPool(),
+      requestChange: request => this.adaptiveRouting().requestChange(request),
+      requestColdChange: request => this.adaptiveRouting().requestColdChange(request),
       resolve: (request) => {
         const active = this.modeOf(request.parent)
         const operation = this.resolveRoute(request, active, AbortSignal.any([request.signal, lifetime.signal]))
@@ -204,9 +229,14 @@ export class OrchestrationService extends TypertRemoteService {
       },
     })
     this.ctx.on('agent/created', ({ agent }) => {
-      this.pendingAssignments.delete(agent.id)
       this.seedMode(agent)
       return undefined
+    })
+    this.ctx.on('subagent/end', (run) => { this.pendingAssignments.delete(run.id) })
+    this.ctx.on('session/event', (session, event) => {
+      if (event.type === 'request/header' && this.pendingAssignments.has(session.id)) {
+        this.pendingAssignments.set(session.id, { provider: event.data.header.config.provider, model: event.data.header.config.model })
+      }
     })
     for (const agent of this.ctx.agents.list()) this.seedMode(agent)
     this.ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
@@ -225,7 +255,7 @@ export class OrchestrationService extends TypertRemoteService {
       order: 600,
       required: true,
       text: ({ agent }) => agent !== undefined && this.modeOf(agent)
-        ? 'Orchestration mode is active. Delegate independent tasks through the normal subagent tools. For every fresh local child, supply task_assessment with requiredCapabilities (coding, reasoning, vision, allrounder, european), contextTokens for expected input including files the child will read, and requiredModalities for inputs needed throughout the task. Include image for screenshots the child may capture later. Use preferredCapabilities for optional strengths and outputTokens for the expected response allowance. Every required capability must be supported; reasoning alone does not establish coding ability. Model selection automatically considers the allowed pool, capabilities, live load, and request/token queue availability.'
+        ? 'Orchestration mode is active. Proactively identify independent work that can make useful progress in parallel. When the available subagent tools and delegation limits allow it, prefer delegating bounded tasks with clear goals and expected results without waiting for the user to request delegation. Start independent delegations early and continue useful work yourself when possible. Respect the user\'s instructions, delegation depth, and active-child limits. Handle work directly when it is small, sequential, or delegation would add overhead without useful parallel progress. For every fresh local child, supply task_assessment with requiredCapabilities (coding, reasoning, vision, allrounder, european), contextTokens for expected input including files the child will read, and requiredModalities for inputs needed throughout the task. Require coding for ordinary implementation tasks. Prefer reasoning when it would help; require it only when the task specifically needs that capability. Include image for screenshots the child may capture later. Use preferredCapabilities for optional strengths and outputTokens for the expected response allowance. Every required capability must be supported; reasoning alone does not establish coding ability. Model selection automatically considers the allowed pool, capabilities, live load, and request/token queue availability.'
         : '',
     })
     this.ctx.inject(['commands'], (commandCtx) => {
@@ -254,6 +284,11 @@ export class OrchestrationService extends TypertRemoteService {
     return this.projection.stateOf(session)
   }
 
+  private adaptiveRouting(): AdaptiveRouting {
+    if (this.adaptive === undefined) throw new OrchestrationError('Adaptive routing is not ready.', 'ORCHESTRATION_NOT_READY')
+    return this.adaptive
+  }
+
   private seedMode(agent: Agent): void {
     const state = this.stateOf(agent.session)
     if (!state.entered && state.wanted === null && state.running === null) this.commit(agent, this.config.defaultToOrchestrator)
@@ -263,21 +298,21 @@ export class OrchestrationService extends TypertRemoteService {
     agent.session.append('orchestration/mode', { active })
   }
 
-  /** Live child work survives selector replacement; only unpublished assignments need local ownership. */
+  /** Count each assigned child once across its reservation and any published live work. */
   private activeLoads(): ReadonlyMap<string, number> {
     const counts = new Map<string, number>()
-    const count = (route: PoolRoute): void => {
-      const key = routeKey(route)
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-    }
+    const assignments = new Map(this.pendingAssignments)
     for (const agent of this.ctx.agents.list()) {
       if (agent.session.header.origin !== 'subagent') continue
       const open = this.ctx.agents.turnBoundaryOf(agent.session).openTurnStartSeq !== null
       if (!open && agent.inbox.nextStep.length === 0 && agent.inbox.nextTurn.length === 0) continue
-      const route = agent.model.current()
-      if (route !== undefined) count(route)
+      const route = agent.session.requestHeader()?.config
+      if (route !== undefined && !assignments.has(agent.id)) assignments.set(agent.id, route)
     }
-    for (const route of this.pendingAssignments.values()) count(route)
+    for (const route of assignments.values()) {
+      const key = routeKey(route)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
     return counts
   }
 
@@ -371,9 +406,13 @@ export class OrchestrationService extends TypertRemoteService {
     request: SubagentModelRoutingContext,
     active: boolean,
     signal: AbortSignal,
+    admission?: AdaptiveAdmission,
   ): Promise<SubagentModelRouting> {
     signal.throwIfAborted()
-    const setup = (child: Agent): void => { this.commit(child, active) }
+    const setup = (child: Agent): void => {
+      this.commit(child, active)
+      if (active && request.taskAssessment !== undefined) this.adaptiveRouting().initialize(child, request.taskAssessment)
+    }
     if (!active) return { setup }
     const declared = request.taskAssessment
     if (declared === undefined) {
@@ -386,14 +425,13 @@ export class OrchestrationService extends TypertRemoteService {
       requiredCapabilities: [...new Set([...declared.requiredCapabilities, ...hasImage ? ['vision'] : []])],
       requiredModalities: [...new Set(['text', ...declared.requiredModalities ?? [], ...hasImage ? ['image'] : []])],
     }
-    const inputTokens = Math.max(assessment.contextTokens, estimateRequestInputTokens([{ content: request.prompt }]))
-      + this.config.contextOverheadTokens
-    const outputTokens = Math.max(assessment.outputTokens ?? this.config.outputReserveTokens, request.agentOptions.maxTokens ?? 0)
-    const queueOutputTokens = request.agentOptions.maxTokens ?? assessment.outputTokens ?? this.config.outputReserveTokens
+    const inputTokens = admission?.inputTokens ?? (Math.max(assessment.contextTokens,
+      estimateRequestInputTokens([{ content: request.prompt }])) + this.config.contextOverheadTokens)
     const policy = this.ctx.subagents.modelSelectionPolicyOf(request.parent.session)
     const parent = request.parent.model.current()
-    const allowed = policy ?? (parent === undefined ? [] : [{ provider: parent.provider, model: parent.model }])
-    const pool = this.getPool().filter(route =>
+    const allowed = admission?.allowedModels ?? policy ?? (parent === undefined ? [] : [{ provider: parent.provider, model: parent.model }])
+    const configuredPool = this.getPool()
+    const pool = configuredPool.filter(route =>
       allowed.some(item => item.provider === route.provider && item.model === route.model))
     const inspected = await Promise.allSettled(pool.map(async (route): Promise<CapabilityRoute> => {
       try {
@@ -411,39 +449,98 @@ export class OrchestrationService extends TypertRemoteService {
       if (result.status === 'rejected') throw result.reason
       candidates.push(result.value)
     }
-    const capable = candidates.filter(route => routeFits(route, assessment, inputTokens, outputTokens))
+    const caps = new Map<string, number>()
+    const exclusions = new Map<string, OrchestrationRouteAlternative['exclusions']>()
+    for (const route of candidates) {
+      const same = route.provider === request.agentOptions.provider && route.model === request.agentOptions.model
+      const effective = await this.ctx.llm.resolveCallConfig({ provider: route.provider, model: route.model,
+        ...request.agentOptions.maxTokens === undefined ? {} : { maxTokens: request.agentOptions.maxTokens },
+        ...!same || request.agentOptions.reasoningEffort === undefined ? {} : { reasoningEffort: request.agentOptions.reasoningEffort },
+      }, signal)
+      const cap = effective.maxTokens ?? assessment.outputTokens ?? this.config.outputReserveTokens
+      caps.set(routeKey(route), cap)
+      const reasons = routeExclusions(route, assessment, inputTokens,
+        Math.max(cap, assessment.outputTokens ?? this.config.outputReserveTokens))
+      if (admission?.excludeRoutes?.some(item => routeKey(item) === routeKey(route))) reasons.push('recovery-attempted')
+      if (admission?.minimumContextWindow !== undefined && (route.contextWindow ?? 0) < admission.minimumContextWindow) reasons.push('context-capacity')
+      if (reasons.length === 0) {
+        try {
+          await request.parent.ctx.get('compaction')?.pressureBudget(request.parent,
+            { config: effective }, signal)
+        } catch (error: unknown) {
+          if (!(error instanceof Error) || !('code' in error) || error.code !== 'COMPACTION_INVALID_BUDGET') throw error
+          reasons.push('compaction-budget')
+        }
+      }
+      exclusions.set(routeKey(route), reasons)
+    }
+    const capable = candidates.filter(route => exclusions.get(routeKey(route))?.length === 0)
     if (capable.length === 0) {
       throw new OrchestrationError('no allowed pool model satisfies every required capability, modality, and context allowance',
         'ORCHESTRATION_NO_CAPABLE_ROUTE')
     }
     while (true) {
       signal.throwIfAborted()
-      const availability = await Promise.all(capable.map(async route => ({
-        route,
-        queue: await this.ctx.llm.queueAvailability({ ...route, inputTokens, maxTokens: queueOutputTokens }),
-      })))
+      if (admission?.isCurrent?.() === false) throw new OrchestrationError('A newer phase replaced this admission.', 'ORCHESTRATION_REASSIGNMENT_STALE')
+      const availability = await Promise.all(capable.map(async (route) => {
+        const cap = caps.get(routeKey(route))
+        if (cap === undefined) throw new Error('A capable route has no resolved generation cap')
+        const queue = await this.ctx.llm.queueAvailability({ ...route, inputTokens, maxTokens: cap })
+        const providerWaitMs = this.adaptiveRouting().providerWaitMs(route)
+        if (providerWaitMs > 0 && queue.kind !== 'impossible') {
+          return { route, queue: { kind: 'wait' as const, waitMs: Math.max(providerWaitMs, queue.kind === 'wait' ? queue.waitMs : 0) } }
+        }
+        return { route, queue }
+      }))
       signal.throwIfAborted()
-      const knownReady = availability.filter(item => item.queue.kind === 'ready')
-      const available = knownReady.length > 0 ? knownReady : availability.filter(item => item.queue.kind === 'unknown')
-      const load = this.activeLoads()
-      const ready: ReadyRoute[] = available
-        .map(({ route }) => ({
-          route,
-          active: load.get(routeKey(route)) ?? 0,
-          lastAssigned: this.lastAssigned.get(routeKey(route)) ?? 0,
-        }))
-      const selected = selectReadyRoute(ready, assessment)
+      if (admission?.isCurrent?.() === false) throw new OrchestrationError('A newer phase replaced this admission.', 'ORCHESTRATION_REASSIGNMENT_STALE')
+      const load = new Map(this.activeLoads())
+      const previous = this.pendingAssignments.get(request.childId)
+      if (admission !== undefined && previous !== undefined) {
+        const oldKey = routeKey(previous)
+        load.set(oldKey, Math.max(0, (load.get(oldKey) ?? 0) - 1))
+      }
+      const ready: ReadyRoute[] = availability.flatMap(({ route, queue }) =>
+        queue.kind === 'ready' || queue.kind === 'unknown' ? [{ route, readiness: queue.kind,
+          active: load.get(routeKey(route)) ?? 0, lastAssigned: this.lastAssigned.get(routeKey(route)) ?? 0 }] : [])
+      const preferred = admission?.preferredRoute
+      const available = preferred === undefined ? ready : ready.filter(item => routeKey(item.route) === routeKey(preferred))
+      const selected = selectReadyRoute(available, assessment)
       if (selected !== undefined) {
         const key = routeKey(selected.route)
+        const cap = caps.get(key)
+        if (cap === undefined) throw new Error('The selected route has no resolved generation cap')
+        const alternatives: OrchestrationRouteAlternative[] = configuredPool.filter(route => routeKey(route) !== key).map((route) => {
+          const id = routeKey(route)
+          const metadata = candidates.find(item => routeKey(item) === id)
+          const queue = availability.find(item => routeKey(item.route) === id)?.queue
+          return {
+            ...route,
+            activeAssignments: load.get(id) ?? 0,
+            exclusions: metadata === undefined ? ['unauthorized'] : [...exclusions.get(id) ?? [],
+              ...queue?.kind === 'wait' ? ['rate-limit' as const]
+                : queue?.kind === 'impossible' ? ['request-token-capacity' as const] : []],
+            ...queue === undefined ? {} : { availability: queue },
+            ...metadata === undefined ? {} : { capabilities: metadata.capabilities },
+            ...metadata?.modalities === undefined ? {} : { modalities: metadata.modalities },
+            ...metadata?.contextWindow === undefined ? {} : { contextWindow: metadata.contextWindow },
+            ...metadata?.maxOutputTokens === undefined ? {} : { maxOutputTokens: metadata.maxOutputTokens },
+          }
+        })
         appendPluginRecord(request.parent.session, 'plugin:orchestration/route', {
           childId: request.childId,
           assessment,
           selected: { provider: selected.route.provider, model: selected.route.model },
           reason: selected.reason,
+          eligibleCount: ready.length,
+          selectedLoad: load.get(key) ?? 0,
+          selectedReadiness: selected.readiness,
+          alternatives,
           inputTokens,
-          outputTokens,
+          outputTokens: Math.max(cap, assessment.outputTokens ?? this.config.outputReserveTokens),
         })
-        this.pendingAssignments.set(request.childId, { provider: selected.route.provider, model: selected.route.model })
+        const assignment = { provider: selected.route.provider, model: selected.route.model }
+        this.pendingAssignments.set(request.childId, assignment)
         this.lastAssigned.set(key, ++this.sequence)
         return {
           agentOptions: {
@@ -456,7 +553,9 @@ export class OrchestrationService extends TypertRemoteService {
               ? request.agentOptions.reasoningEffort : undefined,
           },
           setup,
-          release: () => { this.pendingAssignments.delete(request.childId) },
+          release: () => {
+            if (this.pendingAssignments.get(request.childId) === assignment) this.pendingAssignments.delete(request.childId)
+          },
         }
       }
       const waits = availability.flatMap(item => item.queue.kind === 'wait' ? [item.queue.waitMs] : [])
@@ -464,6 +563,8 @@ export class OrchestrationService extends TypertRemoteService {
         throw new OrchestrationError('every capable pool model exceeds its token-per-minute request capacity',
           'ORCHESTRATION_NO_CAPABLE_ROUTE')
       }
+      if (admission?.readyOnly === true) throw new OrchestrationError('compatible models are temporarily busy', 'ORCHESTRATION_CAPACITY_BUSY')
+      await admission?.onWaiting?.()
       await waitForAvailability(Math.min(...waits, this.config.availabilityPollMs), signal)
     }
   }

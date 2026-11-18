@@ -1,0 +1,186 @@
+{
+  "initial": [
+    {
+      "name": "reassign_subagent",
+      "description": "Request a different model for an existing local subagent when its task needs change. Omit target to request your own model change; an ancestor may name its descendant. Supply a concrete reason, current checkpoint, and complete task requirements. The child keeps its Session, workspace, and task. Routing cannot expand its recorded model permissions. The active routing policy owns the safe application boundary; this does not create another child or increase delegation depth.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Child name/path or Session id. Omit for your own local subagent Session."
+          },
+          "task_assessment": {
+            "type": "object",
+            "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+            "additionalProperties": false,
+            "properties": {
+              "requiredCapabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "preferredCapabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "requiredModalities": {
+                "type": "array",
+                "description": "Inputs needed now or later, such as images captured during visual checks.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "contextTokens": {
+                "type": "integer",
+                "description": "Expected total input tokens, including files and other context the child will read."
+              },
+              "outputTokens": {
+                "type": "integer",
+                "description": "Expected positive response-token count; omit for the configured allowance."
+              }
+            },
+            "required": [
+              "requiredCapabilities",
+              "contextTokens"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the current model should change for the next task phase."
+          },
+          "checkpoint": {
+            "type": "string",
+            "description": "Current work, verified facts, pending work, and next actions retained across the model change."
+          },
+          "preferred_route": {
+            "type": "object",
+            "description": "Optional exact route preference, still subject to task requirements and permissions.",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ]
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Optional positive safe-integer response limit for the requested model phase."
+          },
+          "interrupt_current_request": {
+            "type": "boolean",
+            "description": "Default false. Request interruption of the current model request only when supported by the routing policy."
+          }
+        },
+        "required": [
+          "task_assessment",
+          "reason",
+          "checkpoint"
+        ]
+      }
+    }
+  ],
+  "changes": [
+    [
+      {
+        "name": "reassign_subagent",
+        "description": "Request a different model for an existing local subagent when its task needs change. Omit target to request your own model change; an ancestor may name its descendant. Supply a concrete reason, current checkpoint, and complete task requirements. The child keeps its Session, workspace, and task. Routing cannot expand its recorded model permissions. The active routing policy owns the safe application boundary; this does not create another child or increase delegation depth.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "description": "Child name/path or Session id. Omit for your own local subagent Session."
+            },
+            "task_assessment": {
+              "type": "object",
+              "description": "Assess the task for automatic model routing. Supply every required capability, including both coding and vision for visual code changes. Required when Orchestration mode is on.",
+              "additionalProperties": false,
+              "properties": {
+                "requiredCapabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "preferredCapabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "requiredModalities": {
+                  "type": "array",
+                  "description": "Inputs needed now or later, such as images captured during visual checks.",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "contextTokens": {
+                  "type": "integer",
+                  "description": "Expected total input tokens, including files and other context the child will read."
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "description": "Expected positive response-token count; omit for the configured allowance."
+                }
+              },
+              "required": [
+                "requiredCapabilities",
+                "contextTokens"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "description": "Why the current model should change for the next task phase."
+            },
+            "checkpoint": {
+              "type": "string",
+              "description": "Current work, verified facts, pending work, and next actions retained across the model change."
+            },
+            "preferred_route": {
+              "type": "object",
+              "description": "Optional exact route preference, still subject to task requirements and permissions.",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "model"
+              ]
+            },
+            "max_tokens": {
+              "type": "integer",
+              "description": "Optional positive safe-integer response limit for the requested model phase."
+            },
+            "interrupt_current_request": {
+              "type": "boolean",
+              "description": "Default false. Request interruption of the current model request only when supported by the routing policy."
+            }
+          },
+          "required": [
+            "task_assessment",
+            "reason",
+            "checkpoint"
+          ]
+        }
+      }
+    ]
+  ]
+}

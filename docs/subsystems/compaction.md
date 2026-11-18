@@ -83,6 +83,18 @@ type CompactionTrigger = 'pressure' | 'context-overflow'
 
 `CompactionEngine` exposes `compactIfNeeded(agent, trigger, signal)` for automatic `pressure` or `context-overflow` policy, `compactNow(agent, signal)` for one useful idle-session reduction even below pressure, and `compactRegion(...)` for an explicit inclusive surface range. `compactNow()` runs as agent maintenance between turns, returns `null` without writing when no useful range exists, records a standalone `turn: null` bracket before summarization, and flushes a closed attempt before later queued prompts may derive from the new surface. Every backend creates its replacement `user/message` source with `compactCheckpointSource(compactionId, sourceCommandId?)`; client and wire consumers import that constructor, `CompactionCheckpointSource`, and `isCompactCheckpointSource()` from the cordis-free `@deepseek-ai/dsh-compaction/checkpoint` subpath, while the package root re-exports them for host consumers. The required transaction identity correlates the replacement checkpoint, while the predicate keeps recognition independent of any one backend. Implementations must forward the supplied signal to summarization. The seam owns no pricing API: the singleton [`ctx.tokenMeter`](token-meter.md) directly owns estimation and replay, while `dsh-compaction-basic` owns retention, event sequencing, routed summarization calls, and their configuration.
 
+```ts type-equiv
+/** Read-only pressure limits for one proposed request route. */
+interface CompactionPressureBudget {
+  /** Estimated input tokens at which the provider considers automatic compaction. */
+  readonly thresholdTokens: number
+  /** Estimated input tokens preserved as a verbatim conversation tail. */
+  readonly retainTokens: number
+}
+```
+
+`pressureBudget(agent, proposedHeader, signal)` returns `CompactionPressureBudget` without changing history or requesting a summary; the default provider implementation returns `undefined` when it declares no pressure policy or capacity is unknown. Invalid basic-provider budgets reject with `COMPACTION_INVALID_BUDGET`.
+
 Expected manual failures use `ManualCompactionErrorCode`:
 
 ```ts type-equiv
@@ -148,6 +160,16 @@ Abstract compaction service. Implementations own trigger policy, retention, and 
 
 ```ts cordis-catalog
 /**
+ * Inspect a proposed route's pressure policy without modifying the session or summarizing.
+ * @param _agent - owner of the conversation being admitted.
+ * @param _header - proposed request fields, including its effective output limit.
+ * @param _signal - cancellation for provider metadata resolution.
+ * @returns pressure limits, or `undefined` without a policy or known model capacity;
+ *   an invalid configured budget rejects with a structured provider failure.
+ */
+pressureBudget( _agent: CompactionAgentContext, _header: EpochHeader, _signal: AbortSignal, ): Promise<CompactionPressureBudget | undefined>
+
+/**
  * Consider automatic compaction for one explicit trigger. Pressure policy
  * uses the latest durable routed request, while context-overflow policy may
  * force a useful balanced reduction even below the normal threshold. Return
@@ -205,7 +227,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
 abstract compactRegion( start: SessionSeq, end: SessionSeq, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```
 
-Types: [CommandId](commands.md) · [SessionSeq](session.md)
+Types: [CommandId](commands.md) · [EpochHeader](session.md) · [SessionSeq](session.md)
 
 Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 

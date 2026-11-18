@@ -83,6 +83,7 @@ function childAgentFixture(ctx: Context, id: SessionId, inject: Agent['inject'])
     steer: () => ({ outcome: Promise.resolve({ status: 'rejected' }) }),
     inject,
     cancel: () => {},
+    interruptRequest: () => false,
     runMaintenance: task => task(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
   }

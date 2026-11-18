@@ -52,6 +52,10 @@ The Node PTC provider's `maxPendingCalls` also limits workflow concurrency: chil
 
 The script runs with top-level `await`; `meta` and `args` arrive as JSON data. Every `agent()` call starts a managed subagent Activation under the run's fixed parent and waits for its text or structured result. The workflow records its own members and collects their results without adding them to the parent's subagent catalog or sending child settlement notices to the parent model. The final lossless-JSON return value becomes the run result; an ordinary child failure resolves `agent()` to `null`.
 
+The guest and host validate optional `agent()` `maxTokens` as a positive safe integer and forward it as the child's explicit generation cap. Task assessment response tokens remain a routing estimate; they never replace this cap.
+
+`agent(prompt, { task_assessment })` forwards the caller's [task requirements](../workflow/README.md#running-a-workflow-script) to subagent model routing. The guest and host both validate the JSON fields; capability labels remain router-owned. Omission preserves ordinary delegation unless routing policy requires assessment. Invalid assessment data fails with `INVALID_ARGUMENT` before child startup; a router's rejection fails child startup with `AGENT_START`.
+
 Invalid metadata, an unparseable body, an unavailable provider route or a per-run cap above the ceiling is rejected before a run is published. During execution, hook misuse and tripped cooperative caps fail the workflow. Process failures, unavailable required confinement and PTC output or control limits also fail the run.
 
 ### File policy and cancellation
@@ -121,7 +125,7 @@ Use these references for the shared execution guarantees and workflow contracts.
 
 #### What the model sees
 
-Every script `agent()` call sends its prompt verbatim and optional model or structured-output schema to a subagent provider. Each child sees that provider's own context; phase and log narration stays on observer events.
+Every script `agent()` call sends its prompt verbatim and optional model, task assessment, or structured-output schema to a subagent provider. Each child sees that provider's own context; phase and log narration stays on observer events.
 
 #### Token effect
 

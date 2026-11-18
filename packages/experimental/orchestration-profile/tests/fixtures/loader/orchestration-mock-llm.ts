@@ -1,6 +1,9 @@
 /** Deterministic model responses for real-profile subagent routing smokes. */
+import { randomUUID } from 'node:crypto'
+import { appendFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
-import { LlmAdapter, type GenerateOptions, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { LlmAdapter, type GenerateOptions, type LlmResolvedModelInfo, type StreamChunk, type ToolCallId } from '@deepseek-ai/dsh-llm'
 
 class OrchestrationMockAdapter extends LlmAdapter {
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
@@ -12,6 +15,24 @@ class OrchestrationMockAdapter extends LlmAdapter {
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    if (options.tools?.some(tool => tool.name === 'project_context_update')) {
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'block-end', index: 0, block: {
+        type: 'tool-call', id: brandString<ToolCallId>(randomUUID()), name: 'project_context_update',
+        arguments: JSON.stringify({ outcome: 'deferred', summary: 'This isolated routing probe contains no project implementation to document.' }),
+      } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (options.purpose === undefined) {
+      const context = options.messages.findLast(message => message.role === 'user'
+        && 'source' in message && message.source.kind === 'runtime-context')
+      await appendFile('model-requests.jsonl', `${JSON.stringify({
+        sessionId: options.sessionId,
+        model: options.model,
+        context: context?.content.filter(block => block.type === 'text').map(block => block.text).join('\n') ?? '',
+      })}\n`)
+    }
     const text = `ran:${options.model}`
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text }

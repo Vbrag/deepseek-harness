@@ -62,8 +62,9 @@ function fixture(options: SetupOptions = {}) {
   const ctx = new Context()
   // The Agent runs a maintenance task at once and cancels it through this controller, as its cancel and disposal do.
   const maintenance = new AbortController()
-  const members: Pick<Agent, 'id' | 'ctx' | 'runMaintenance' | 'cancel' | 'whenIdle'> = {
-    id: brandString<SessionId>('cua-mcp-fake'), ctx: new Context(), runMaintenance: task => task(maintenance.signal),
+  const members: Pick<Agent, 'id' | 'ctx' | 'runMaintenance' | 'cancel' | 'whenIdle' | 'interruptRequest'> = {
+    id: brandString<SessionId>('cua-mcp-fake'), ctx: new Context(),
+    interruptRequest: () => false, runMaintenance: task => task(maintenance.signal),
     cancel: (cause) => { maintenance.abort(cause) }, whenIdle: async () => {},
   }
   const runMaintenance = vi.spyOn(members, 'runMaintenance')

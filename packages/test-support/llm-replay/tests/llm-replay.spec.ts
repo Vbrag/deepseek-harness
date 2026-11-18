@@ -1393,6 +1393,67 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
     })
   })
 
+  it('uses exact recorded parent and child capacities while preserving configured capabilities', async () => {
+    const events = parseSessionLog(replaySessionJsonl([TEXT_CHUNKS]))
+    const recorded = (model: string, contextWindow: number, id: string): string => {
+      const context: SessionEvent = {
+        type: 'request/context', seq: SessionSeq(0), time: 0, data: { provider: 'm', model, contextWindow },
+      }
+      return sessionJsonl([
+        ...events.slice(0, 2), context, ...events.slice(2),
+      ].map((event, index) => ({ ...event, seq: SessionSeq(index) })), { version: 4, id })
+    }
+    writeFileSync(file, recorded('parent', 131_072, 'parent'), 'utf8')
+    const child = join(dir, 'child.jsonl')
+    writeFileSync(child, recorded('vision', 262_144, 'child'), 'utf8')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const handle = installLlmReplay(ctx, { file, childFiles: [child], providers: [{ id: 'm', models: [
+      { id: 'parent', contextWindow: 65_536, inputModalities: ['text'] },
+      { id: 'vision', inputModalities: ['text'] }, { id: 'unknown' },
+    ] }] })
+    try {
+      await expect(ctx.llm.resolveModelInfo('m', 'parent')).resolves.toMatchObject({
+        context: { contextWindow: 65_536 }, inputModalities: ['text'],
+      })
+      await expect(ctx.llm.resolveModelInfo('m', 'vision')).resolves.toMatchObject({
+        context: { contextWindow: 262_144 }, inputModalities: ['text'],
+      })
+      await expect(ctx.llm.resolveModelInfo('m', 'unknown')).resolves.not.toHaveProperty('context')
+    } finally {
+      handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('requires explicit capacity when one recorded route reports conflicting capacities', async () => {
+    const events = parseSessionLog(replaySessionJsonl([TEXT_CHUNKS]))
+    const contexts: SessionEvent[] = [
+      { type: 'request/context', seq: SessionSeq(0), time: 0, data: { provider: 'm', model: 'm', contextWindow: 131_072 } },
+      { type: 'request/context', seq: SessionSeq(1), time: 0, data: { provider: 'm', model: 'm', contextWindow: 262_144 } },
+    ]
+    writeFileSync(file, sessionJsonl([
+      ...events.slice(0, 2),
+      ...contexts,
+      ...events.slice(2),
+    ].map((event, index) => ({ ...event, seq: SessionSeq(index) })), { version: 4 }), 'utf8')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    try {
+      expect(loadSessionScripts({ file })).toHaveLength(1)
+      expect(() => installLlmReplay(ctx, { file, providers: [{ id: 'm' }] }))
+        .toThrow('conflicting recorded context capacities')
+      const handle = installLlmReplay(ctx, { file, providers: [{ id: 'm', models: [{ id: 'm', contextWindow: 65_536 }] }] })
+      try {
+        await expect(ctx.llm.resolveModelInfo('m', 'm')).resolves.toMatchObject({ context: { contextWindow: 65_536 } })
+      } finally {
+        handle.dispose()
+      }
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('registers a replay-only provider catalog when configured', async () => {
     writeLog(TEXT_CHUNKS)
     const ctx = new Context()

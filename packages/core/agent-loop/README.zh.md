@@ -74,6 +74,8 @@ const handle = await ctx.agents.create({
 
 每个步骤都会发送会话的派生历史——最新的非空 `system/message` 节点是有效提示词，渲染提示词为空时则没有系统消息——及其可见工具 schema；模型的工具调用经过受守卫的工具流水线，每个被接纳的事实都会在下一步据此派生之前追加到会话日志。循环把完整的原始调用批次传给 `ctx.tools.execute()`；内置执行器保留模型顺序的结果和独占屏障。取消是协作式的：`agent.cancel()` 中止当前活动，并在未设置 `keepInbox` 时清除待处理工作；被取消的流会终结已送达用户的文本。
 
+每次组装之前，循环先等待串行 `agent/step-preparing` 监听器，再捕获模型选择。恢复动作 `retry` 复用已准入的组装结果；`reprepare` 在同一步骤内重新准备并组装工具与提示词，不重复已提交的用户消息或已完成工具。`agent/request-finished` 在成功响应提交或执行工具之前运行。`interruptRequest()` 仅取消活跃模型请求，并向恢复策略报告 `REQUEST_INTERRUPTED`；轮次取消仍然优先。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -131,7 +133,7 @@ loop 在发布工厂前等待必需的注册完成。它对模型选择和 inbox
 
 抛出的 `HarnessError` 失败在 `turn/end` 中保留其稳定代码；`agent/error` 携带原始错误对象。其他抛出值使用 `UNKNOWN`。
 
-最终适配器选择、分发与迭代失败以终止结束的形式到达并进入 `agent/request-error`；处理该失败的监听器返回 `{ kind: 'retry' }` 且不调用 `next()`，未被处理的失败则是终态。Middleware、结果处理、工具及其他扩展失败仍会抛出并直接关闭轮次——插件失败结束的是轮次，不是循环。取消后未分发的模型工具调用会收到合成的 `tool/call` 加 `ABORTED_BEFORE_DISPATCH` 结果对。
+最终适配器选择、分发与迭代失败以终止结束的形式到达并进入 `agent/request-error`；处理该失败的监听器返回 `{ kind: 'retry' }` 或 `{ kind: 'reprepare' }` 且不调用 `next()`，未被处理的失败则是终态。Middleware、结果处理、工具及其他扩展失败仍会抛出并直接关闭轮次——插件失败结束的是轮次，不是循环。取消后未分发的模型工具调用会收到合成的 `tool/call` 加 `ABORTED_BEFORE_DISPATCH` 结果对。
 
 关闭失败步骤之前，驱动器为每个尚无结果的 assistant 工具调用记录错误结果。已有 `tool/call` 记录但尚无已提交结果的调用获得 `TOOL_OUTCOME_UNKNOWN`；没有调用记录的请求获得 `TOOL_NOT_STARTED`。已提交的结果保持完整，已启动的派发先结算再恢复，轮次保留原始失败。这些结果让后续请求使用配对完整的工具历史，而不自动重试结果不明的操作。
 

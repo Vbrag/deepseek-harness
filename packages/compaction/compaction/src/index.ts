@@ -8,12 +8,12 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { EpochHeader, Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { CommandId } from '@deepseek-ai/dsh-commands/types'
-import type { CompactionResult } from './types.ts'
+import type { CompactionPressureBudget, CompactionResult } from './types.ts'
 import type { CompactionCheckpointSource } from './checkpoint.ts'
 
-export type { CompactionResult } from './types.ts'
+export type { CompactionPressureBudget, CompactionResult } from './types.ts'
 export { CompactionId } from './brand.ts'
 export { toolPairingBalancedAfter, toolPairingBalancedBefore } from './tool-pairing.ts'
 // The checkpoint source constructor and predicate are declared on the cordis-free
@@ -119,6 +119,22 @@ declare module '@deepseek-ai/cordis' {
 export abstract class CompactionEngine extends Service {
   constructor(ctx: Context) {
     super(ctx, 'compaction')
+  }
+
+  /**
+   * Inspect a proposed route's pressure policy without modifying the session or summarizing.
+   * @param _agent - owner of the conversation being admitted.
+   * @param _header - proposed request fields, including its effective output limit.
+   * @param _signal - cancellation for provider metadata resolution.
+   * @returns pressure limits, or `undefined` without a policy or known model capacity;
+   *   an invalid configured budget rejects with a structured provider failure.
+   */
+  pressureBudget(
+    _agent: CompactionAgentContext,
+    _header: EpochHeader,
+    _signal: AbortSignal,
+  ): Promise<CompactionPressureBudget | undefined> {
+    return Promise.resolve(undefined)
   }
 
   /**

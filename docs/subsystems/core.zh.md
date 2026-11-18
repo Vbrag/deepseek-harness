@@ -89,6 +89,14 @@ interface Agent {
   cancel(cause: AgentCancelCause, options?: CancelOptions): void
 
   /**
+     * Interrupt only the active model-request preparation or stream. Recovery runs after
+     * that request settles; queued input, the turn, and executing tools remain live.
+     * @param reason - explanation delivered to request-recovery policy.
+     * @returns true when a live model request was interrupted; false outside a request or after cancellation.
+     */
+    interruptRequest(reason?: string): boolean
+
+  /**
    * Resolve after the current whole-agent activity reaches quiescence. This
    * follows replacement work started before the observed driver retires,
    * but does not identify the settlement of any particular message.
@@ -404,14 +412,14 @@ type PreStepDecision =
   }
 ```
 
-`agent/request-error` 在失败的模型步骤关闭之后、其轮次关闭之前运行。listener 可以在失败轮次的 signal 仍然存活时修复持久状态或 await 策略工作。处理该错误的 listener 返回 `{ kind: 'retry' }` 且不调用 `next()`；默认的 `undefined` 会让失败保持终态。
+`agent/request-error` 在失败的模型步骤关闭之后、其轮次关闭之前运行。listener 可以在失败轮次的 signal 仍然存活时修复持久状态或 await 策略工作。处理该错误的 listener 返回 `{ kind: 'retry' }` 以保留组装结果，或返回 `{ kind: 'reprepare' }` 在同一步骤内重新捕获当前路由并组装工具、提示词与 pre-step，且不调用 `next()`；默认的 `undefined` 会让失败保持终态。
 
 ```ts type-equiv
 /** Action returned by a listener that owns model-request recovery. */
-type RequestErrorAction = { kind: 'retry' } | undefined
+type RequestErrorAction = { kind: 'retry' } | { kind: 'reprepare' } | undefined
 ```
 
-`agent/pre-step` 是请求推导前唯一的 waterfall（瀑布式）监听器链。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。其 `cause: TurnStoppingCause` 区分 `model-finished`、`tool-concluded` 与 `output-limit`。输出限制在该轮次后续完成的步骤中仍持续生效；取消仍可改变最终结果。
+`agent/step-preparing` 在路由捕获与组装前串行运行。`agent/pre-step` 是请求推导前的 waterfall（瀑布式）监听器链。`agent/request-finished` 可在消息提交或工具执行前恢复响应。`interruptRequest()` 仅停止活跃的模型准备或流式输出；恢复保留轮次、inbox 与正在执行的工具。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。其 `cause: TurnStoppingCause` 区分 `model-finished`、`tool-concluded` 与 `output-limit`。输出限制在该轮次后续完成的步骤中仍持续生效；取消仍可改变最终结果。
 
 `agent/created` 携带 `SessionStartSource`（会话生命周期为何开始；桥接层据此匹配其 SessionStart）：
 
@@ -1075,16 +1083,48 @@ Handle one failed model-request attempt before the loop retries or closes its st
  * @param payload.turn - the turn containing the failed request.
  * @param payload.step - the step containing the failed request attempt.
  * @param payload.provider - the provider selected for the failed request.
+ * @param payload.model - model selected for the failed preparation or request.
  * @param payload.failure - serializable facts normalized at the final adapter boundary.
  * @param payload.retryPolicy - the policy of the adapter registration that served the failed request.
  * @param payload.signal - the turn abort signal.
+ * @param payload.stage - operation that failed; absent in older manually dispatched events.
+ * @param payload.requestInterrupted - true for an explicit request-only interruption.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode waterfall
  */
-'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: 'step-preparation' | 'request-preparation' | 'stream'; requestInterrupted?: true }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
 ```
 
 Types: [LlmFailure](llm-streaming.zh.md) · [ResolvedRetryPolicy](llm-streaming.zh.md) · [Scoped](scope.zh.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
+<a id="agentrequest-finished--waterfall"></a>
+
+#### `agent/request-finished` — waterfall
+
+Inspect a settled successful generation before accepting its message or executing tools. Returning retry or reprepare retains its stream as an attempt and executes no tool blocks. Undefined accepts the normal result unchanged.
+
+```ts cordis-catalog
+/**
+ * Inspect a settled successful generation before accepting its message or executing tools.
+ * Returning retry or reprepare retains its stream as an attempt and executes no tool blocks.
+ * Undefined accepts the normal result unchanged.
+ * @param payload.agent - Agent whose generation settled.
+ * @param payload.turn - owning turn.
+ * @param payload.step - owning step.
+ * @param payload.provider - provider used by the settled request.
+ * @param payload.model - model used by the settled request.
+ * @param payload.finish - provider finish reason.
+ * @param payload.content - assembled blocks, borrowed without mutation.
+ * @param payload.usage - reported usage, when available.
+ * @param payload.signal - owning turn signal; whole-turn cancellation takes precedence.
+ * @mode waterfall
+ */
+'agent/request-finished'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; finish: FinishReason; content: readonly ContentBlock[]; usage?: TokenUsage; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+```
+
+Types: [ContentBlock](llm-streaming.zh.md) · [FinishReason](llm-streaming.zh.md) · [Scoped](scope.zh.md) · [TokenUsage](llm-streaming.zh.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 
@@ -1108,6 +1148,30 @@ Agent status changed (`idle` ⇄ `running`). A waking delivery enters `running` 
 ```
 
 Types: [Scoped](scope.zh.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
+<a id="agentstep-preparing--serial"></a>
+
+#### `agent/step-preparing` — serial
+
+Await policy before capturing the proposed step's model, tools, and prompt. Repreparation repeats this event without readmitting already logged input.
+
+```ts cordis-catalog
+/**
+ * Await policy before capturing the proposed step's model, tools, and prompt.
+ * Repreparation repeats this event without readmitting already logged input.
+ * @param payload.agent - Agent preparing its next model step.
+ * @param payload.turn - open turn owning the step.
+ * @param payload.step - proposed step number, unchanged for request repreparation.
+ * @param payload.messages - claimed offered input; already admitted input is offered again on repreparation without duplicate logging.
+ * @param payload.signal - current turn cancellation signal.
+ * @mode serial
+ */
+'agent/step-preparing'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; messages: readonly UserMessage[]; signal: AbortSignal }): Promise<void> | void
+```
+
+Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 

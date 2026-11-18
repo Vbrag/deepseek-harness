@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
+import type { SubagentProvider, SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
 import { defineTool, ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 import type { ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools'
 import type { WorkflowResult, WorkflowRun } from '@deepseek-ai/dsh-workflow'
@@ -76,6 +76,8 @@ type RalphTerminalResult = RalphRunResult | RalphRoundFailure
 interface RalphCallArgs {
   objective: string
   maxRounds?: number
+  maxTokens?: number
+  task_assessment?: SubagentTaskAssessment
 }
 
 const RALPH_META = {
@@ -165,6 +167,8 @@ for (let round = 1; round <= args.maxRounds; round += 1) {
     label: 'Ralph round ' + round,
     phase: 'Fresh-agent rounds',
     schema: reportSchema,
+    ...(args.taskAssessment === undefined ? {} : { task_assessment: args.taskAssessment }),
+    ...(args.maxTokens === undefined ? {} : { maxTokens: args.maxTokens }),
   })
   if (rawReport === null) {
     return { status: 'round-failed', roundsStarted: round, lastReport: previous ?? null }
@@ -428,6 +432,25 @@ export function apply(ctx: Context, config: Config): void {
         type: 'number',
         description: 'Optional positive safe-integer round cap, bounded by the deployment ceiling.',
       },
+      maxTokens: {
+        type: 'number',
+        description: 'Optional positive safe-integer generation cap for every round, independent of task_assessment.outputTokens.',
+      },
+      task_assessment: {
+        type: 'object',
+        additionalProperties: false,
+        description: 'Task requirements shared by every fresh Ralph round. Required when Orchestration mode is on; '
+          + 'supply every capability and input modality the rounds need, including coding and vision for visual code changes.',
+        properties: {
+          requiredCapabilities: { type: 'array', items: { type: 'string' }, required: true },
+          preferredCapabilities: { type: 'array', items: { type: 'string' } },
+          requiredModalities: { type: 'array', items: { type: 'string' },
+            description: 'Inputs needed throughout the task, including images captured during visual checks.' },
+          contextTokens: { type: 'integer', required: true,
+            description: 'Expected total input tokens per round, including files and context the child will read.' },
+          outputTokens: { type: 'integer', description: 'Expected positive response-token count; omit for the configured allowance.' },
+        },
+      },
     },
     output: {
       schema: {
@@ -448,12 +471,26 @@ export function apply(ctx: Context, config: Config): void {
       const objective = args.objective.trim()
       if (objective.length === 0) throw new ToolArgsError(['Ralph objective must be a non-empty string'])
       const maxRounds = resolveMaxRounds(args.maxRounds, resolved.maxRounds)
+      if (args.maxTokens !== undefined && (!Number.isSafeInteger(args.maxTokens) || args.maxTokens < 1)) {
+        throw new ToolArgsError(['Ralph maxTokens must be a positive safe integer'])
+      }
+      const assessment: SubagentTaskAssessment | undefined = args.task_assessment
+      if (assessment !== undefined) {
+        for (const [field, value] of [['contextTokens', assessment.contextTokens], ['outputTokens', assessment.outputTokens]] as const) {
+          const minimum = field === 'outputTokens' ? 1 : 0
+          if (value !== undefined && (!Number.isSafeInteger(value) || value < minimum)) {
+            throw new ToolArgsError([`task_assessment.${field} must be a ${minimum === 0 ? 'non-negative' : 'positive'} safe integer`])
+          }
+        }
+      }
       void requireFreshProvider(ctx, resolved.subagentProvider)
 
       const run: WorkflowRun = ctx.workflowEngine.start({
         script: RALPH_SCRIPT,
         meta: RALPH_META,
-        args: { objective, maxRounds, maxHandoffChars: resolved.maxHandoffChars },
+        args: { objective, maxRounds, maxHandoffChars: resolved.maxHandoffChars,
+          ...args.maxTokens === undefined ? {} : { maxTokens: args.maxTokens },
+          ...assessment === undefined ? {} : { taskAssessment: assessment } },
         subagentProvider: resolved.subagentProvider,
         maxTotalAgents: maxRounds,
         parent,

@@ -1,7 +1,7 @@
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -82,6 +82,7 @@ interface SetupOptions {
 
 async function setup(options?: SetupOptions) {
   const ctx = new Context()
+  onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(NativeToolExecutor)
@@ -151,6 +152,39 @@ async function settleCompleted(
 }
 
 describe('dsh-tool-ralph', () => {
+  it('passes an explicit task assessment as fixed workflow data without adding a model classifier', async () => {
+    const { ctx, engine, parent } = await setup()
+    const task_assessment = { requiredCapabilities: ['coding'], preferredCapabilities: ['reasoning'],
+      requiredModalities: ['text'], contextTokens: 0, outputTokens: 256 }
+    const pending = execute(ctx, { objective: 'Implement the parser.', task_assessment, maxTokens: 128 }, { agent: parent })
+    const result = await settleCompleted(engine, pending, { status: 'complete', roundsStarted: 1, report: COMPLETE })
+    expect(result.isError).toBe(false)
+    expect(engine.requests).toHaveLength(1)
+    expect(engine.requests[0]?.args).toEqual({ objective: 'Implement the parser.', maxRounds: 256,
+      maxHandoffChars: 16384, taskAssessment: task_assessment, maxTokens: 128 })
+    expect(engine.requests[0]?.script).toContain('task_assessment: args.taskAssessment')
+    expect(engine.requests[0]?.script).toContain('maxTokens: args.maxTokens')
+  })
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid generation cap %j before starting the workflow', async (maxTokens) => {
+    const { ctx, engine, parent } = await setup()
+    const result = await execute(ctx, { objective: 'Implement the parser.', maxTokens }, { agent: parent })
+    expect(result.error?.info).toEqual({ name: 'ToolArgsError', code: 'INVALID_ARGS' })
+    expect(engine.requests).toHaveLength(0)
+  })
+
+  it.each([
+    { contextTokens: -1 }, { contextTokens: 1.5 }, { contextTokens: Number.MAX_SAFE_INTEGER + 1 },
+    { contextTokens: 0, outputTokens: 0 }, { contextTokens: 0, outputTokens: -1 },
+    { contextTokens: 0, outputTokens: 1.5 }, { contextTokens: 0, outputTokens: Number.MAX_SAFE_INTEGER + 1 },
+  ])('rejects invalid task-assessment token counts before starting the workflow: %j', async (counts) => {
+    const { ctx, engine, parent } = await setup()
+    const result = await execute(ctx, { objective: 'Implement the parser.',
+      task_assessment: { requiredCapabilities: ['coding'], ...counts } }, { agent: parent })
+    expect(result.error?.info).toEqual({ name: 'ToolArgsError', code: 'INVALID_ARGS' })
+    expect(engine.requests).toHaveLength(0)
+  })
+
   it('starts the fixed workflow through the configured fresh provider and renders completion', async () => {
     const { ctx, engine, parent } = await setup({ config: { maxRounds: 9, maxHandoffChars: 9000 } })
     const pending = execute(ctx, { objective: '  Finish the migration.  ', maxRounds: 4 }, { agent: parent })

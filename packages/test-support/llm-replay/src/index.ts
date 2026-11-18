@@ -805,7 +805,33 @@ function deriveScriptFromFixture(file: string, fixture: ParsedSessionFixture | u
  * @returns the primary script first, then the child scripts in bind order.
  */
 export function loadSessionScripts(config: ReplayConfig): SessionScript[] {
+  return loadReplayFixtures(config, false).scripts
+}
+
+/** Load scripts and exact recorded capacities without assigning facts to unrecorded routes. */
+function loadReplayFixtures(config: ReplayConfig, includeMetadata: boolean): {
+  scripts: SessionScript[]
+  contexts: ReadonlyMap<string, number>
+} {
+  const contexts = new Map<string, number>()
+  const observeContexts = (events: readonly SessionEvent[]): void => {
+    if (!includeMetadata) return
+    for (const event of events) {
+      if (event.type !== 'request/context' || event.data.contextWindow === undefined) continue
+      const { provider, model, contextWindow } = event.data
+      const configured = config.providers?.find(candidate => candidate.id === provider)
+        ?.models?.find(candidate => candidate.id === model)
+      if (configured?.contextWindow !== undefined) continue
+      const key = JSON.stringify([provider, model])
+      const previous = contexts.get(key)
+      if (previous !== undefined && previous !== contextWindow) {
+        throw new Error(`llm-replay: conflicting recorded context capacities for ${provider}/${model}; configure contextWindow explicitly`)
+      }
+      contexts.set(key, contextWindow)
+    }
+  }
   const primaryFixture = readPrimaryFixture(config)
+  if (primaryFixture !== undefined) observeContexts(primaryFixture.events)
   const primaryEntries = resolveReplayScript(config, primaryFixture)
   // The override path replaces the derived script but carries no header; read
   // the header off the JSONL when it exists, else use a stable default so an
@@ -824,6 +850,7 @@ export function loadSessionScripts(config: ReplayConfig): SessionScript[] {
     // Derive the child's script from its own events only — events AT OR after the seed
     // boundary.
     const ownEvents = fixture.events.slice(fixture.inheritedEventCount)
+    observeContexts(ownEvents)
     children.push({
       recordedId: fixture.id,
       createdAt: fixture.createdAt,
@@ -834,7 +861,7 @@ export function loadSessionScripts(config: ReplayConfig): SessionScript[] {
   // Synchronous children start in creation order; the id only stabilizes timestamp ties.
   // XXX(concurrent-subagents): concurrent children need an explicit first-call ordinal.
   children.sort((a, b) => a.createdAt - b.createdAt || a.recordedId.localeCompare(b.recordedId))
-  return [primary, ...children]
+  return { scripts: [primary, ...children], contexts }
 }
 
 /** Replay adapter that makes a configured provider catalog discoverable without provider I/O. */
@@ -843,6 +870,7 @@ class ReplayAdapter extends LlmAdapter {
 
   constructor(
     providers: readonly ReplayProviderConfig[],
+    private readonly recordedContexts: ReadonlyMap<string, number>,
     private readonly replay: (options: GenerateOptions<string>) => AsyncIterable<StreamChunk>,
   ) {
     super()
@@ -895,6 +923,7 @@ class ReplayAdapter extends LlmAdapter {
     /* v8 ignore next -- LlmRuntime only asks about routes registered from this same map. */
     if (configured === undefined) return Promise.resolve({ provider, id: model, name: model })
     const configuredModel = configured.models?.find(candidate => candidate.id === model)
+    const contextWindow = configuredModel?.contextWindow ?? this.recordedContexts.get(JSON.stringify([provider, model]))
     return Promise.resolve({
       provider,
       id: model,
@@ -903,9 +932,9 @@ class ReplayAdapter extends LlmAdapter {
       ...configuredModel?.inputModalities === undefined
         ? {}
         : { inputModalities: [...configuredModel.inputModalities] },
-      ...configuredModel?.contextWindow === undefined
+      ...contextWindow === undefined
         ? {}
-        : { context: { contextWindow: configuredModel.contextWindow } },
+        : { context: { contextWindow } },
       ...configuredModel?.defaultMaxTokens === undefined
         ? {}
         : { defaultMaxTokens: configuredModel.defaultMaxTokens },
@@ -1021,7 +1050,7 @@ export function installLlmReplay(ctx: Context, config: ReplayConfig): ReplayHand
   if (!Number.isInteger(paceMs) || paceMs < 0) {
     throw new Error(`llm-replay: paceMs must be a non-negative integer, got ${String(config.paceMs)}`)
   }
-  const scripts = loadSessionScripts(config)
+  const { scripts, contexts } = loadReplayFixtures(config, true)
   // Live-session → its bound script + cursor. A new live session id claims the
   // next not-yet-bound script (scripts are in bind order); `nextScript` is the
   // index of the next unclaimed one.
@@ -1087,7 +1116,7 @@ export function installLlmReplay(ctx: Context, config: ReplayConfig): ReplayHand
   }
   const providers = config.providers ?? []
   const dispose = providers.length > 0
-    ? ctx.llm.registerAdapter(providers.map(provider => provider.id), new ReplayAdapter(providers, replay))
+    ? ctx.llm.registerAdapter(providers.map(provider => provider.id), new ReplayAdapter(providers, contexts, replay))
     : ctx.on('llm/stream', (options: GenerateOptions<string>, _next) => replay(options))
   return {
     dispose,

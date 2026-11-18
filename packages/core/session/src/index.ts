@@ -633,6 +633,7 @@ export class Session {
    * @param inheritedEventCount - exact fork-inherited prefix length decoded from storage.
    * @param eventState - aliasing state carried from the operation that produced the seed.
    * @param projections - pure interpreters for plugin-owned message changes.
+   * @param appended - optional owner-drained collection of new immutable events and the resume marker, excluding seed events.
    * @returns a restored detached session.
    * @throws when a seed event requires a missing message interpreter or fails validation.
    */
@@ -643,6 +644,7 @@ export class Session {
     inheritedEventCount: SessionLogOffset,
     eventState: SessionSeedEventState,
     projections?: readonly SessionMessageProjection[],
+    appended?: SessionEvent[],
   ): Session {
     return new Session(
       id,
@@ -651,6 +653,7 @@ export class Session {
       eventState,
       inheritedEventCount,
       projections,
+      appended,
     )
   }
 
@@ -661,6 +664,7 @@ export class Session {
     mode: 'snapshot' | SessionSeedEventState = 'snapshot',
     suppliedInheritedEventCount?: SessionLogOffset,
     projections: readonly SessionMessageProjection[] = [],
+    private readonly appended?: SessionEvent[],
   ) {
     this.surfaceManager = new SurfaceManager(this.log, SessionLogOffset(0), projections)
     const restoredHeader = mode === 'snapshot' ? undefined : validateRestoredSessionHeader(id, header)
@@ -897,6 +901,7 @@ export class Session {
       for (const event of events) this.log.push(event)
       this.eventsSnapshot = undefined
       acceptSurface()
+      if (this.appended !== undefined) for (const event of events) this.appended.push(event)
       if (entry !== undefined) {
         for (const { event, args, callbacks } of publications) {
           this.batchPublication = event
@@ -989,6 +994,7 @@ export class Session {
         : collectSessionCallbacks(entry.emitCtx, [entry.carrier, 'session/event', ...callbackArgs])
       this.log.push(event)
       this.eventsSnapshot = undefined
+      this.appended?.push(event)
       if (entry !== undefined && callbacks !== undefined) {
         invokeContainedSessionObservers(entry.emitCtx, 'session/event', entry.id, callbackArgs, callbacks)
       }

@@ -35,6 +35,8 @@ kind: "package-reference"
 
 独立的 `Session.create()` 和 `Session.fromRestore()` 实例接受事件和插件记录，但不发送 `session/event`。`SessionStore` 通过 `prepare()` 或 `enter()` 接管实例；此后只有实例仍在 Store 中且同步 `session/created` 宣告已完成时才能写入。创建监听器只能读取，并能看到全部已有历史；独立实例进入 Store 时不会把已有历史重放为 `session/event`。宣告失败或移除后仍禁止写入。只有开始过 `session/created` 宣告的实例在移除时发出 `session/disposed`，宣告失败也不例外；进入 Store 但从未宣告的实例不发出这两个通知。
 
+独立持久化所有者可以向 `Session.fromRestore()` 传入 `appended` 集合。它收集新提交的不可变事件，包括构造时的恢复标记，但不包含重放的种子事件，也不发布实时宣告。所有者负责持久化并清空集合；被拒绝的写入不增加任何事件。
+
 ```text
 const session = ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })
 ctx.sessions.get(sessionId)      // the live session

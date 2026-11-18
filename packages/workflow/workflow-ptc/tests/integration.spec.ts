@@ -6,6 +6,8 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent'
+import OrchestrationService from '@deepseek-ai/dsh-orchestration'
+import { pluginRecordOf } from '@deepseek-ai/dsh-session'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import PtcWorkflowEngine from '../src/index.ts'
 import { mountPtcRuntime } from './setup.ts'
@@ -28,6 +30,45 @@ async function setup(script: Script) {
 }
 
 describe('dsh-workflow-ptc over the real in-process stack', () => {
+  it.each([
+    { active: false, assessed: false, model: 'mock' },
+    { active: true, assessed: false, model: undefined },
+    { active: true, assessed: true, model: 'coder' },
+  ])('routes workflow children with orchestration active=$active and assessed=$assessed', async ({ active, assessed, model }) => {
+    const { ctx, parent, adapter } = await setup([textResponse('child complete')])
+    vi.spyOn(adapter, 'resolveModel').mockImplementation((provider, id) => Promise.resolve({
+      provider, id, name: id, inputModalities: ['text'], context: { contextWindow: 100_000 },
+    }))
+    const pool = [{ provider: 'mock', model: 'coder' }]
+    parent.session.append('subagent/model-selection-policy', { allowedModels: pool })
+    await ctx.plugin(OrchestrationService, {
+      pool, routeCapabilities: [{ ...pool[0]!, capabilities: ['coding'] }],
+    })
+    ctx.orchestrations.setMode(parent, active)
+    const assessment = { requiredCapabilities: ['coding'], contextTokens: 1000 }
+    const run = ctx.workflowEngine.start({
+      meta: { name: 'assessed-workflow', description: 'route a fresh local child' },
+      script: `return await agent('implement the parser'${assessed ? `, { task_assessment: ${JSON.stringify(assessment)} }` : ''})`,
+      parent,
+    })
+    try {
+      const result = await run.result
+      if (model === undefined) {
+        expect(result).toMatchObject({ stopReason: 'error', errorCode: 'AGENT_START' })
+        expect(result.error).toContain('orchestration mode requires task_assessment')
+        expect(adapter.requests).toEqual([])
+      } else {
+        expect(result).toMatchObject({ stopReason: 'completed', value: 'child complete', agentsStarted: 1 })
+        expect(adapter.requests.map(request => request.model)).toEqual([model])
+      }
+      const decisions = parent.session.snapshotEvents().flatMap((event) => {
+        const record = pluginRecordOf(event)
+        return record?.type === 'plugin:orchestration/route' ? [record.data] : []
+      })
+      expect(decisions).toMatchObject(assessed ? [{ assessment, selected: pool[0] }] : [])
+    } finally { await run.dispose() }
+  })
+
   it('runs a two-stage workflow: a plain child, then a schema child through the structured runtime', async () => {
     const { ctx, parent } = await setup([
       textResponse('the file list is a.ts'),

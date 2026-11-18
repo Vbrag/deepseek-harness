@@ -1,5 +1,22 @@
 # Apply after dsh-base. Normal subagent tools use this pool in Orchestration mode.
+- id: compaction-basic
+  config:
+    modelPolicies: &compaction-budgets
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3-flash
+        headroomTokens: 8192
+        maxTokens: 8192
+      - provider: uni-paderborn
+        model: hs-de.qwen3.8-27b
+        headroomTokens: 8192
+        maxTokens: 8192
+
 - insert:
+    - id: orchestration-compaction-defaults
+      name: '@deepseek-ai/dsh-orchestration-profile'
+      config:
+        modelPolicies: *compaction-budgets
+
     - id: orchestration
       name: '@deepseek-ai/dsh-orchestration'
       config:

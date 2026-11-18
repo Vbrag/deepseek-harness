@@ -1,0 +1,7 @@
+# Run the real readiness and interruption commands with Git Bash on Windows.
+- insert:
+    - id: fixture-shell-path-prefix
+      name: '../../../packages/test-support/session-snapshot/tests/fixtures/shell-path-prefix.ts'
+      disabled: !!js process.platform !== 'win32'
+      config:
+        directory: !!js "process.env.ProgramFiles + '/Git/bin'"

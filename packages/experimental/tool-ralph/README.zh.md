@@ -29,7 +29,9 @@ kind: "package-reference"
 
 ### 调用工具
 
-模型提交 `{ objective, maxRounds? }`，调用会阻塞到整个运行结算。部署配置中的 `maxRounds` 既是默认值，也是调用覆盖值的上限。终态结果为 `complete`、`blocked` 或 `budget-limited`，携带最后一份有界报告与已启动的 Round 数量；普通子 agent 失败会返回错误，其中标明失败的 Round，并在存在时保留上一次成功交接。失败携带 `RalphError`，其 code 为封闭集合：子 agent Round 结束时没有结构化报告为 `RALPH_ROUND_FAILED`，workflow 出错或被调用方以外的原因取消为 `RALPH_WORKFLOW_FAILED`，其中包括在 workflow 内校验失败的子 agent 报告，因为 workflow 只以文本返回错误，workflow 返回值格式错误为 `RALPH_INVALID_RESULT`，提供方路由不符合要求为 `RALPH_PROVIDER_UNAVAILABLE` 或 `RALPH_PROVIDER_UNSUPPORTED`。空目标或超出范围的 `maxRounds` 是 `ToolArgsError`，调用方取消是 `AbortError`。
+模型提交 `{ objective, maxRounds?, task_assessment?, maxTokens? }`，调用会阻塞到整个运行结算。`task_assessment` 使用[子 agent 任务要求](../../subagent/subagent/README.zh.md)：必需能力、可选的偏好能力和输入模态、预计输入 token 数，以及可选的响应 token 数。开启编排模式时须提供此项；同一份评估会传给每个全新 Round。默认模式允许省略，并保留普通继承行为。输入 token 数必须是非负安全整数；响应 token 数在提供时必须是正安全整数。工具不会推断要求，也不会额外发起分类请求。 可选的正安全整数 `maxTokens` 设置每个 Round 的生成上限，与 `task_assessment.outputTokens` 独立；省略时保留继承的模型选项。
+
+部署配置中的 `maxRounds` 既是默认值，也是调用覆盖值的上限。终态结果为 `complete`、`blocked` 或 `budget-limited`，携带最后一份有界报告与已启动的 Round 数量；普通子 agent 失败会返回错误，其中标明失败的 Round，并在存在时保留上一次成功交接。失败携带 `RalphError`，其 code 为封闭集合：子 agent Round 结束时没有结构化报告为 `RALPH_ROUND_FAILED`，workflow 出错或被调用方以外的原因取消为 `RALPH_WORKFLOW_FAILED`，其中包括在 workflow 内校验失败的子 agent 报告，因为 workflow 只以文本返回错误，workflow 返回值格式错误为 `RALPH_INVALID_RESULT`，提供方路由不符合要求为 `RALPH_PROVIDER_UNAVAILABLE` 或 `RALPH_PROVIDER_UNSUPPORTED`。空目标、无效的任务评估 token 数或超出范围的 `maxRounds` 是 `ToolArgsError`，调用方取消是 `AbortError`。
 
 ### 每个 Round 看到什么
 
@@ -62,7 +64,7 @@ kind: "package-reference"
 
 ### 固定脚本与路由
 
-配置的提供方以 `WorkflowStartRequest.subagentProvider` 传递，因此固定脚本无法检查或更改路由，普通的模型编写 `workflow` 工具也不会因此获得提供方选择器。解析后的 Round 上限以 `WorkflowStartRequest.maxTotalAgents` 传递，使固定循环与引擎的子 agent 总数后备上限协同；上限超过引擎部署上限时，引擎会在发布运行前拒绝。
+配置的提供方以 `WorkflowStartRequest.subagentProvider` 传递；普通的模型编写 `workflow` 工具没有提供方选择器。显式任务评估以数据形式进入固定脚本，并通过每次 `agent()` 调用的 `task_assessment` 选项传给普通子 agent 路由。编排可以为每个全新 Round 选择不同的合格模型，但不会扩大已记录权限。解析后的 Round 上限以 `WorkflowStartRequest.maxTotalAgents` 传递，使固定循环与引擎的子 agent 总数后备上限协同；上限超过引擎部署上限时，引擎会在发布运行前拒绝。
 
 ### 报告校验
 
@@ -127,7 +129,7 @@ Use the ralph tool ONLY when the direct human explicitly asks for a Ralph loop o
 
 #### 模型看到什么
 
-已生成的 [`ralph` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-ralph) 公开一个必填 `objective` 字符串与一个可选 `maxRounds` 数字。提供方选择、交接大小、报告 schema、工作流脚本与编排行为均由部署侧控制，不在调用 schema 中。
+已生成的 [`ralph` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-ralph) 公开一个必填 `objective` 字符串、一个可选 `maxRounds` 数字，以及一个可选的结构化 `task_assessment`。提供方选择、交接大小、报告 schema、工作流脚本和路由策略仍由部署侧控制。
 
 #### Token 影响
 
@@ -161,7 +163,7 @@ Use the ralph tool ONLY when the direct human explicitly asks for a Ralph loop o
 - **完成由 worker 自行声明**——没有独立评估器或验证器判断目标是否完成；评估器策略与评估器驱动的延续均暂缓。评估器须先单独定义输入、工具访问、确定性检查、提供方选择、隔离与授权规则，才能认证完成或驱动延续。
 - **仅支持前台**——没有 job id、后台收集、进程恢复检查点、调度器或基于挂钟时间的启动策略。
 - **工作区是唯一的跨 Round 长期记忆**——一份有界报告作为显式交接，每个子 agent 结束后，未提交的对话推理都会消失。
-- **一个 Round 对应一个全新子 agent**——Round 内没有扇出、模型或提供方切换、fork 上下文或由模型调用选择的提供方。
+- **一个 Round 对应一个全新子 agent**——Round 内没有扇出、路由切换、fork 上下文或由模型调用选择的提供方；编排可以为后续全新 Round 选择其他合格模型。
 - **没有强制拒绝递归 Ralph**——结构性拒绝尚未实现；提示词引导不能强制禁止递归。
 - **普通子 agent 失败会终止运行**——固定脚本报告失败的 Round 与上一次成功交接，但不会重试；致命的工作流基础设施失败可能在该状态返回前结束。
 - **聚合工作量仅受 Round 数量限制**——token、价格与耗时预算均暂缓。

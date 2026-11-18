@@ -1574,6 +1574,13 @@ describe('headless recorded-session snapshots', () => {
             }
             if (scenario.name === 'team-tree-messages') verifyTeamTreeMessage(actualLogs)
             if (scenario.name === 'team-task-inbox') verifyTeamTaskInbox(actualLogs)
+            if (scenario.name === 'team-direct-inbox') {
+              const child = parseSessionLog(actualLogs[1]!.content)
+              expect(child.flatMap(event => event.type === 'turn/end' ? [event.data.reason] : []))
+                .toEqual([{ kind: 'aborted', reason: { kind: 'parent' } }])
+              expect(child.find(event => event.type === 'tool/result'))
+                .toMatchObject({ data: { error: { code: 'ABORTED' } } })
+            }
             if (scenario.name === 'session-query-spill') {
               await verifySessionQuerySpill(actualLogs[0]!.content, spillRoot, locatorRoot)
             }
