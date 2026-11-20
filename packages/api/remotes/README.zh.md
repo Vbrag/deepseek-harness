@@ -29,7 +29,7 @@ kind: "package-reference"
 
 [`@deepseek-ai/dsh-api-session-controller`](../session-controller/README.zh.md) 拥有 agent（智能体）与会话身份策略，包括供其他 namespace 使用的 Typert lookup 解析器。本包选择并挂载生成的会话 contribution，无需直接依赖 `@deepseek-ai/dsh-session` 的运行时；激活策略由会话控制器负责。
 
-Client 组合挂载 Office 转换、Commands、Agent Teams、凭据、settings、Goal、Schedule、动态 Cordis、文件与会话引用、只读 Host 插件清单、插件安装源响应比较、消息反馈、权限预设、会话控制器、subagents、Web 提供方列表和 Workspace 控制器 contribution。`permissionPresets` namespace 返回 current-session 控件使用的完整进程级目录。该组合卸载时，Cordis effect 的所有权机制会撤回所有贡献；`@deepseek-ai/dsh-api-gateway/client` 负责描述符校验、可追踪的 namespace 服务、直接与作用域方法、调用、流与取消。Client 入口通过 Cordis 消费共享的 `TypertClientRemote` 接口，不导入具体 Gateway；它只以 type-only 形式重新导出 Gateway Client face 的声明合并，因此消费端经由本外观取到转发事件词汇时，运行时不会多出一条通往 Gateway 实现的边。
+Client 组合挂载 Office 转换、Commands、Agent Teams、凭据、settings、Goal、Schedule、动态 Cordis、文件与会话引用、只读 Host 插件清单、插件安装源响应比较、连接器账号、消息反馈、权限预设、会话控制器、subagents、Web 提供方列表和 Workspace 控制器 contribution。`permissionPresets` namespace 返回 current-session 控件使用的完整进程级目录。该组合卸载时，Cordis effect 的所有权机制会撤回所有贡献；`@deepseek-ai/dsh-api-gateway/client` 负责描述符校验、可追踪的 namespace 服务、直接与作用域方法、调用、流与取消。Client 入口通过 Cordis 消费共享的 `TypertClientRemote` 接口，不导入具体 Gateway；它只以 type-only 形式重新导出 Gateway Client face 的声明合并，因此消费端经由本外观取到转发事件词汇时，运行时不会多出一条通往 Gateway 实现的边。
 
 `workHandoffs` namespace 挂载 `get`、`resumeTodos` 与 `continueInNewSession`，供显式的未完成工作操作使用。`workHandoff` Session 投影携带最新报告与保存状态；复制与下载使用捕获的 Markdown，继续执行的操作则通过共享 lookup 拥有方解析源 Agent。
 

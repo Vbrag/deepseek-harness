@@ -330,10 +330,6 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "cwd": {
-            "type": "string",
-            "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-          },
           "description": {
             "type": "string",
             "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -404,10 +400,6 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "cwd": {
-            "type": "string",
-            "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-          },
           "description": {
             "type": "string",
             "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -680,19 +672,6 @@
           "script",
           "meta"
         ]
-      }
-    },
-    {
-      "name": "working_directory",
-      "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "cd": {
-            "type": "string",
-            "description": "Existing directory to enter. Omit to read the current directory."
-          }
-        }
       }
     },
     {
@@ -1069,10 +1048,6 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "cwd": {
-              "type": "string",
-              "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-            },
             "description": {
               "type": "string",
               "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -1143,10 +1118,6 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "cwd": {
-              "type": "string",
-              "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-            },
             "description": {
               "type": "string",
               "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -1419,19 +1390,6 @@
             "script",
             "meta"
           ]
-        }
-      },
-      {
-        "name": "working_directory",
-        "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "cd": {
-              "type": "string",
-              "description": "Existing directory to enter. Omit to read the current directory."
-            }
-          }
         }
       },
       {
@@ -1799,10 +1757,6 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "cwd": {
-              "type": "string",
-              "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-            },
             "description": {
               "type": "string",
               "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -1873,10 +1827,6 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "cwd": {
-              "type": "string",
-              "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent."
-            },
             "description": {
               "type": "string",
               "description": "A short (3-5 word) description of the delegated task, for display. Use the language of the user's current request."
@@ -2149,19 +2099,6 @@
             "script",
             "meta"
           ]
-        }
-      },
-      {
-        "name": "working_directory",
-        "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "cd": {
-              "type": "string",
-              "description": "Existing directory to enter. Omit to read the current directory."
-            }
-          }
         }
       },
       {

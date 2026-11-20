@@ -33,7 +33,7 @@ They share the same endpoint but use **different route keys** and load through d
 
 ### 2.1 The canonical catalogue — `packages/llm/llm-pi-ai/src/upb-gateway-catalog.ts`
 
-This is the **single source of truth** for all 41 gateway identifiers: 32 numeric model rows (M01–M32), 6 routers (R01–R06), and 3 base-model aliases. Every entry is a typed `UpbGatewayEntry` carrying its published facts and provenance:
+This is the **single source of truth** for all 41 gateway identifiers: 32 numeric model rows (M01–M32), 6 routers (R01–R06), and 3 base-model aliases. Every entry is a typed `UpbGatewayEntry` carrying its published facts and source:
 
 - `id`, `name`, `kind` (`llm`/`multimodal`/`embedding`/`image`/`router`/`alias`), `mode` (`chat`/`responses`/`embedding`/`image_generation`), `providers[]`, `regions[]`
 - `maxInputTokens` / `maxOutputTokens` — preserved **separately** (no input+output sum, no relabelling of input as a "combined" window; embeddings keep `maxOutputTokens` distinct from vector dimensions)
@@ -121,7 +121,7 @@ The three places user/deployment model configuration is persisted:
 
 | Layer | Location | What it holds | Persisted? |
 |---|---|---|---|
-| **A. Canonical catalogue** | [`upb-gateway-catalog.ts`](packages/llm/llm-pi-ai/src/upb-gateway-catalog.ts) | Every gateway fact (41 ids): input/output tokens, RPM/TPM arrays/ranges, prices, badges, mode, compat, provenance | On disk (source) |
+| **A. Canonical catalogue** | [`upb-gateway-catalog.ts`](packages/llm/llm-pi-ai/src/upb-gateway-catalog.ts) | Every gateway fact (41 ids): input/output tokens, RPM/TPM arrays/ranges, prices, badges, mode, compat, source | On disk (source) |
 | **B. Shipped chat route** | [`upb-gateway.ts`](packages/llm/llm-pi-ai/src/upb-gateway.ts) (`UPB_GATEWAY_MODELS`) | **Derived** `PiAiModelProfile[]` (chat, incl. `(Test)`) | On disk (source) |
 | **C. Orchestration preferences** | [`capabilities.ts`](packages/experimental/dsh-orchestration/src/capabilities.ts) (`PADERBORN_CATALOG`) | Curated `domains`/`health`/`suggested` + factual columns gated equal to the catalogue | On disk (source) |
 | **D. Reference doc** | [`paderborn-ai-gateway-models.md`](paderborn-ai-gateway-models.md) | Human-readable mirror of the snapshot | On disk (reference) |
@@ -160,7 +160,7 @@ The dynamic `/models` listing, listing cache, and disk writes belong to the **De
 | [`packages/llm/llm-pi-ai/src/config.ts`](packages/llm/llm-pi-ai/src/config.ts) | `PiAiProviderProfile` schema (incl. `rateLimitBudgetKey`), route defaults, `resolveProfiles` |
 | [`packages/llm/llm-pi-ai/src/rate-limit.ts`](packages/llm/llm-pi-ai/src/rate-limit.ts) | RPM/TPM pacing ledger (optional shared `budgetKey`) |
 | [`packages/llm/llm-pi-ai/tests/upb-gateway.spec.ts`](packages/llm/llm-pi-ai/tests/upb-gateway.spec.ts) | Behavior tests guarding the shipped route (incl. derivation policy) |
-| [`packages/llm/llm-pi-ai/tests/upb-gateway-catalog.spec.ts`](packages/llm/llm-pi-ai/tests/upb-gateway-catalog.spec.ts) | Structural catalogue checks (unique ids, alias/router refs, provenance, partition) |
+| [`packages/llm/llm-pi-ai/tests/upb-gateway-catalog.spec.ts`](packages/llm/llm-pi-ai/tests/upb-gateway-catalog.spec.ts) | Structural catalogue checks (unique ids, alias/router refs, source, partition) |
 | [`packages/llm/llm-pi-ai/scripts/gen-upb-profile.ts`](packages/llm/llm-pi-ai/scripts/gen-upb-profile.ts) | Refreshes a deployment profile's chat-route `models` from the shipped catalogue (`pnpm gen-upb-profile` / `verify-upb-profile`) |
 | [`packages/llm/llm-pi-ai/tests/gen-upb-profile.spec.ts`](packages/llm/llm-pi-ai/tests/gen-upb-profile.spec.ts) | Pins that derivation and the deployment-field-preserving patch edit |
 | [`packages/experimental/orchestration-profile/cordis.patch.yml`](packages/experimental/orchestration-profile/cordis.patch.yml) | Orchestration pool + compaction model policies for route `uni-paderborn` |
@@ -194,7 +194,7 @@ AgentOptions { provider, model, reasoningEffort? }
 
 ### A. Change a factual gateway fact (the ONLY place for facts)
 Edit the canonical catalogue **`packages/llm/llm-pi-ai/src/upb-gateway-catalog.ts`**. Every consumer (shipped route, orchestration routing facts, reference doc) follows; the tests assert:
-- `[upb-gateway-catalog.spec.ts]` — ids unique/non-empty, all entries carry provenance, alias/router targets resolve, `UPB_CHAT_MODELS` + `UPB_REFERENCE_ONLY` partition the catalogue, chat-executable entries are chat-interface models.
+- `[upb-gateway-catalog.spec.ts]` — ids unique/non-empty, all entries name their source, alias/router targets resolve, `UPB_CHAT_MODELS` + `UPB_REFERENCE_ONLY` partition the catalogue, chat-executable entries are chat-interface models.
 - `[upb-gateway.spec.ts]` — `UPB_GATEWAY_MODELS` equals `UPB_CHAT_MODELS` (the full chat-executable subset, incl. `(Test)`); context/output ceilings and the conservative RPM policy are preserved, and the `(Test)` listings are asserted shipped and callable.
 - `[capabilities.gate.spec.ts]` — orchestration factual columns equal the catalogue; a drift fails CI.
 

@@ -3,8 +3,8 @@
  *
  * These are structural, deterministic assertions over {@link UPB_GATEWAY_CATALOG}
  * and its derived views, so a catalogue edit cannot ship duplicate, dangling,
- * or unprovenanced facts. They check behaviour (uniqueness, referential
- * integrity, provenance) rather than any specific model count.
+ * or unsourced facts. They check behaviour (uniqueness, referential
+ * integrity, source linkage) rather than any specific model count.
  *
  * @module dsh-llm-pi-ai/tests/upb-gateway-catalog
  */
@@ -28,7 +28,7 @@ describe('UPB AI-Gateway canonical catalogue', () => {
     expect(partitioned.size).toBe(UPB_GATEWAY_CATALOG.length)
   })
 
-  it('records provenance on every entry', () => {
+  it('records a source on every entry', () => {
     expect(UPB_GATEWAY_SNAPSHOT.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     for (const entry of UPB_GATEWAY_CATALOG) {
       expect(entry.source.url.length, entry.id).toBeGreaterThan(0)

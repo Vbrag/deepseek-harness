@@ -20,7 +20,7 @@
  * @module dsh-llm-pi-ai/upb-gateway-catalog
  */
 
-/** Snapshot provenance for every entry in the catalogue. */
+/** Snapshot source for every entry in the catalogue. */
 export const UPB_GATEWAY_SNAPSHOT = {
   url: 'https://ai-gateway.uni-paderborn.de/api_hub/models-info',
   date: '2026-11-19',
@@ -39,7 +39,7 @@ export type UpbCompatStatus = 'chat-executable' | 'chat-unsupported'
 /** Interface a page example demonstrates for an entry. */
 export type UpbApiInterface = 'chat' | 'responses' | 'embeddings' | 'image'
 
-/** One gateway catalogue entry with its published facts and provenance. */
+/** One gateway catalogue entry with its published facts and source URL. */
 export interface UpbGatewayEntry {
   /** Exact gateway API id passed to the endpoint. */
   readonly id: string
@@ -91,7 +91,7 @@ export interface UpbGatewayEntry {
   readonly aliasTarget?: string
   /** For router entries: routing stage to target gateway model ids. */
   readonly routedModelMap?: Readonly<Record<string, readonly string[]>>
-  /** Provenance. */
+  /** Source URL and catalogue snapshot date for the entry. */
   readonly source: { readonly url: string; readonly snapshot: string }
   /** Material source discrepancies, preserved verbatim. */
   readonly discrepancies?: readonly string[]

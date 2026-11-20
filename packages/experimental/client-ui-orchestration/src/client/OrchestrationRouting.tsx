@@ -1,15 +1,15 @@
-/** Child model progress below the existing subagent catalog, using published projection snapshots. */
+/** Child model progress in the session panel below the subagent catalog, using published projection snapshots. */
 
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OrchestrationRoutingState, PoolRoute } from '@deepseek-ai/dsh-orchestration/client'
-import type {} from '@deepseek-ai/dsh-client-ui-subagent/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session-panel/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { NS, OrchestrationKey } from './locales.ts'
 import css from './OrchestrationRouting.module.css'
 
-/** Session-scoped catalog footer and its framework-bound projection hooks. */
+/** Session panel section and its framework-bound projection hooks. */
 export type OrchestrationRoutingProps =
-  PropsRuntime<'conversation.session.header.actions.subagent.footer'> & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.session.panel.section'> & PropsLocale<typeof NS>
 
 const statusKeys = {
   idle: 'routingIdle', queued: 'routingQueued', changing: 'routingChanging',
@@ -27,7 +27,7 @@ function routeLabel(route: PoolRoute): string {
 /**
  * Show the model used by the last admitted request separately from selected and requested future routes.
  * Catalog opening owns projection refresh; rendering neither loads Sessions nor reads their logs.
- * @param props - Session list snapshots and localized labels supplied by the footer slot.
+ * @param props - Session list snapshots and localized labels supplied by the session panel section.
  * @returns Model progress for observed local children, or nothing before routing facts are available.
  */
 export function OrchestrationRouting({ sessionId, useSessions, t }: OrchestrationRoutingProps) {

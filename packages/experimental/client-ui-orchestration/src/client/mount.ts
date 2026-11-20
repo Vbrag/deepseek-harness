@@ -65,10 +65,12 @@ function registerUi(ctx: Context, initial: readonly PoolRoute[], catalog: Orches
     locale: NS,
     inject: (): OrchestrationInjected => ({ pool, catalog, setPool }),
   }, OrchestrationPanel))
-  ctx.slots.inject('conversation.session.header.actions.subagent.footer', () => ctx.slots.register({
-    name: 'conversation.session.header.actions.subagent.footer',
+  ctx.slots.inject('conversation.session.panel.section', () => ctx.slots.register({
+    name: 'conversation.session.panel.section',
     id: 'orchestration-routing',
-    order: 20,
+    // After change requests (100) and subagents (200), before shared tasks (250) and background jobs (300).
+    order: 210,
+    label: () => ctx.locale.bind(NS)('routingTitle'),
     locale: NS,
   }, OrchestrationRouting))
   ctx.inject(['remote.commands'], (commandCtx) => {

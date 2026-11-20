@@ -61,19 +61,28 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
  */
 @Remote('getPool') getPool(): readonly PoolRoute[]
 
-/** Read curated gateway choices without importing Host catalog values into the browser.
- * @returns Detached provider identity and model facts used by the pool picker.
+/** Project the pool picker catalog from the live LLM registry, not a static list.
+ * Providers and models are taken from `ctx.llm.listProviders()`/`listModels()`,
+ * so the picker matches the models the composer can actually select. Curated
+ * specialties/capacity from the Paderborn catalogue apply only to known
+ * `uni-paderborn` routes; everything else carries live adapter metadata.
+ * @returns Detached per-provider model facts used by the pool picker.
  */
-@Remote('getCatalog') getCatalog(): OrchestrationCatalog
+@Remote('getCatalog') async getCatalog(): Promise<OrchestrationCatalog>
 
 /** Replace the pool in memory; existing Session authorization is never widened.
  * @param pool - Exact routes, possibly empty to disable automatic selection.
  */
 @Remote('setPool') setPool(pool: readonly PoolRoute[]): void
 
-/** Apply the pool and attempt to persist it in this profile's settings.
+/** Apply the pool and persist it in this profile's settings.
+ * The in-memory pool is replaced unconditionally; persistence is best-effort
+ * but reported honestly. A refused or failed settings write (for example, a
+ * profile that owns the `orchestration` entry in a shipped layer rather than a
+ * user layer) makes this resolve `false` so the picker can show a save failure
+ * instead of claiming a save that never happened.
  * @param pool - New default routes; existing Session authorization remains fixed.
- * @returns True after memory apply; a failed settings write is reported as a warning.
+ * @returns True only when the pool was applied in memory AND persisted to settings.
  */
 @Remote('persistPool') async persistPool(pool: readonly PoolRoute[]): Promise<boolean>
 ```
