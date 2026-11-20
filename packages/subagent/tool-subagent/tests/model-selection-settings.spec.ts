@@ -72,6 +72,14 @@ async function createAgent(ctx: Context, id: string, options: {
   return handle.agent
 }
 
+let policySessionCounter = 0
+
+/** Observe settings through the policy recorded on a fresh top-level Agent. */
+async function capturePolicy(ctx: Context) {
+  const { agent } = await ctx.agents.create({ sessionId: brandString<SessionId>(`settings-policy-${++policySessionCounter}`) })
+  return ctx.subagents.modelSelectionPolicyOf(agent.session)
+}
+
 /** Delegate one explicit route from an Agent and return the tool result. */
 function delegate(ctx: Context, agent: Awaited<ReturnType<typeof createAgent>>, id: string, model = 'fast-model') {
   return executeToolFixture(ctx, {
@@ -112,40 +120,46 @@ describe('SubagentModelSelectionConfig', () => {
 
   it('uses the composed default without a settings provider', async () => {
     const ctx = ownContext(new Context())
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(SubagentRuntime)
     await ctx.plugin(SubagentModelSelectionConfig, { enabled: true, allowedModels: ALLOWED_MODELS })
-    expect(ctx.subagentModelSelection.allowedRoutes()).toEqual(ALLOWED_MODELS)
+    expect(await capturePolicy(ctx)).toEqual(ALLOWED_MODELS)
     await ctx.fiber.dispose()
   })
 
-  it('defaults off and reads the current user layer at each call', async () => {
+  it('samples the user layer at each fresh-root creation', async () => {
     const ctx = ownContext(new Context())
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(SubagentRuntime)
     selectionConfigs.set(ctx, await liveConfig(ctx, SubagentModelSelectionConfig))
-    expect(ctx.subagentModelSelection.allowedRoutes()).toBeUndefined()
+    expect(await capturePolicy(ctx)).toBeUndefined()
     await selectionConfigs.get(ctx)!.update({ enabled: true, allowedModels: ALLOWED_MODELS })
-    const routes = ctx.subagentModelSelection.allowedRoutes()
-    expect(routes).toEqual(ALLOWED_MODELS)
-    routes!.pop()
-    expect(ctx.subagentModelSelection.allowedRoutes()).toEqual(ALLOWED_MODELS)
+    expect(await capturePolicy(ctx)).toEqual(ALLOWED_MODELS)
     await selectionConfigs.get(ctx)!.update({ enabled: false })
-    expect(ctx.subagentModelSelection.allowedRoutes()).toBeUndefined()
+    expect(await capturePolicy(ctx)).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
-  it('ignores disabled routes and rejects duplicate or empty routes only while enabled', async () => {
+  it('rejects duplicate or empty routes at fresh roots and records a policy only when enabled', async () => {
     const ctx = ownContext(new Context())
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(SubagentRuntime)
     selectionConfigs.set(ctx, await liveConfig(ctx, SubagentModelSelectionConfig))
-    await selectionConfigs.get(ctx)!.update({ allowedModels: [...ALLOWED_MODELS, ...ALLOWED_MODELS] })
-    expect(ctx.subagentModelSelection.allowedRoutes()).toBeUndefined()
-    await selectionConfigs.get(ctx)!.update({ enabled: true })
-    expect(() => ctx.subagentModelSelection.allowedRoutes()).toThrow(expect.objectContaining({
-      name: 'SubagentError', code: 'INVALID_MODEL_SELECTION_SETTINGS',
-      message: 'subagent model selection repeats route "alpha/fast-model"',
-    }))
+    // Disabled with valid routes records no policy.
+    await selectionConfigs.get(ctx)!.update({ allowedModels: ALLOWED_MODELS })
+    expect(await capturePolicy(ctx)).toBeUndefined()
+    // Duplicate routes reject fresh-root creation regardless of the enabled flag.
+    await selectionConfigs.get(ctx)!.update({ enabled: true, allowedModels: [...ALLOWED_MODELS, ...ALLOWED_MODELS] })
+    await expect(capturePolicy(ctx)).rejects.toThrow('subagent model selection repeats route "alpha/fast-model"')
+    // Enabled with an empty allowlist rejects fresh-root creation.
     await selectionConfigs.get(ctx)!.update({ enabled: true, allowedModels: [] })
-    expect(() => ctx.subagentModelSelection.allowedRoutes())
-      .toThrow(expect.objectContaining({ name: 'SubagentError', code: 'INVALID_MODEL_SELECTION_SETTINGS' }))
-    await selectionConfigs.get(ctx)!.update({ enabled: false })
-    expect(ctx.subagentModelSelection.allowedRoutes()).toBeUndefined()
+    await expect(capturePolicy(ctx)).rejects.toThrow('enabled subagent model selection requires at least one allowed model')
+    // Enabled with valid routes records the allowlist as the Session policy.
+    await selectionConfigs.get(ctx)!.update({ enabled: true, allowedModels: ALLOWED_MODELS })
+    expect(await capturePolicy(ctx)).toEqual(ALLOWED_MODELS)
     await ctx.fiber.dispose()
   })
 

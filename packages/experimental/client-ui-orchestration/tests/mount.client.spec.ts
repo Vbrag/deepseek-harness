@@ -147,7 +147,7 @@ it('exposes the host marker and the browser inject list', () => {
 it('adds model progress to the subagent catalog and withdraws it before its Remote owner', async () => {
   const built = await buildCtx()
   const dispose = await clientApply(built.ctx)
-  const slot = 'conversation.session.header.actions.subagent.footer'
+  const slot = 'conversation.session.panel.section'
   expect(built.ctx.slots.entries(slot).some(entry => entry.component === OrchestrationRouting)).toBe(true)
   await dispose()
   expect(built.ctx.slots.entries(slot)).toEqual([])

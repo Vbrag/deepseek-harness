@@ -398,12 +398,12 @@ describe('the shipped Web composition', () => {
       expect(toolParameterNames(ctx, disabled.agent, 'subagent')).toEqual(expect.arrayContaining([
         'model', 'provider', 'reasoning_effort',
       ]))
-      expect(ctx.subagentModelSelection.allowedRoutes()).toEqual([
+      // `disabled` was created while the setting was off and records no policy;
+      // `enabled` samples the live allowlist into its Session on creation.
+      expect(ctx.subagents.modelSelectionPolicyOf(disabled.agent.session)).toBeUndefined()
+      expect(ctx.subagents.modelSelectionPolicyOf(enabled.agent.session)).toEqual([
         { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       ])
-      for (const agent of [disabled.agent, enabled.agent]) {
-        expect(agent.session.snapshotEvents().some(event => event.type === 'subagent/model-selection-policy')).toBe(false)
-      }
       expect(toolNames(ctx, enabled.agent)).toContain('list_subagent_models')
       expect(toolParameterNames(ctx, enabled.agent, 'subagent')).toEqual(expect.arrayContaining([
         'model', 'provider', 'reasoning_effort',

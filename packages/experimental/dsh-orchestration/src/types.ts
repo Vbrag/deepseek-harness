@@ -49,6 +49,8 @@ export interface RouteCapabilities extends PoolRoute {
 export interface OrchestrationConfig {
   /** Default pool for new root-session model policies and the pool picker. */
   readonly pool?: PoolRoute[]
+  /** User-selected pool persisted through Settings; takes precedence over `pool`. */
+  readonly userPool?: PoolRoute[]
   /** Exact-route specialties for models outside the curated gateway catalog. */
   readonly routeCapabilities?: RouteCapabilities[]
   /** Input-token allowance for child instructions, tool schemas, and request wrappers; defaults to 8192. */

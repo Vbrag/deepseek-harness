@@ -35,10 +35,10 @@ it('boots the profile and routes ordinary coding, vision, and mixed subagents on
   expect(report.codingOutput).toBe('ran:gwdg.glm-5.3-flash')
   expect(report.visionOutput).toBe('ran:gwdg.gemma-4-31b-it')
   expect(report.mixedOutput).toBe('ran:gwdg.qwen3.5-397b-a17b')
-  // The orchestrations entry's pool lives in a shipped bundle layer, so the
-  // user-level settings write is refused by the config editor. persistPool
-  // reports that honestly (false) while still applying the pool in memory.
-  expect(report.persistAccepted).toBe(false)
+  // The pool persists to the user-owned `userPool` settings value (the shipped
+  // `pool` default stays a layer-provided fallback), so the write is accepted
+  // and the effective pool becomes the persisted selection.
+  expect(report.persistAccepted).toBe(true)
   expect(report.persistedPool).toEqual([{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }])
   expect(report.compactionConfig.modelPolicies).toEqual([
     { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash', headroomTokens: 8192, maxTokens: 8192 },

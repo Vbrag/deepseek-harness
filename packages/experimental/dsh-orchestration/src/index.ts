@@ -146,6 +146,9 @@ export class OrchestrationService extends TypertRemoteService {
 
   static Config = z.object({
     pool: z.array(routeSchema).default([]).volatile(),
+    // User-selected pool persisted through Settings; takes precedence over the
+    // configured `pool` default (which a shipped profile layer may own).
+    userPool: z.array(routeSchema).default([]).volatile(),
     routeCapabilities: z.array(z.object({
       provider: z.string(), model: z.string(), capabilities: z.array(specialtySchema),
     })).default([]),
@@ -157,8 +160,9 @@ export class OrchestrationService extends TypertRemoteService {
     maxEmptyOutputLimits: z.number().step(1).min(1).default(2),
   })
 
-  private readonly config: Required<Omit<OrchestrationConfig, 'pool'>>
+  private readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool'>>
   private readonly poolConfig: Volatile<readonly PoolRoute[]> | readonly PoolRoute[] | undefined
+  private readonly userPoolConfig: Volatile<readonly PoolRoute[]> | readonly PoolRoute[] | undefined
   private poolValue: readonly PoolRoute[]
   private projection: ProjectionHandle<OrchestrationUnitState> | undefined
   private readonly pendingAssignments = new Map<SessionId, PoolRoute>()
@@ -172,7 +176,8 @@ export class OrchestrationService extends TypertRemoteService {
   constructor(ctx: Context, config: OrchestrationConfig = {}) {
     super(ctx, 'orchestrations', { namespace: 'orchestrations' })
     this.poolConfig = config.pool
-    this.poolValue = [...this.poolOf()]
+    this.userPoolConfig = config.userPool
+    this.poolValue = [...this.effectivePool()]
     this.config = {
       routeCapabilities: config.routeCapabilities ?? [],
       contextOverheadTokens: config.contextOverheadTokens ?? 8192,
@@ -202,6 +207,17 @@ export class OrchestrationService extends TypertRemoteService {
   private poolOf(): readonly PoolRoute[] {
     const source = this.poolConfig
     return source === undefined ? [] : isVolatile(source) ? source.get() : source
+  }
+
+  private userPoolOf(): readonly PoolRoute[] {
+    const source = this.userPoolConfig
+    return source === undefined ? [] : isVolatile(source) ? source.get() : source
+  }
+
+  /** Effective pool: the user-selected pool persisted through Settings when set, else the configured default. */
+  private effectivePool(): readonly PoolRoute[] {
+    const userPool = this.userPoolOf()
+    return userPool.length > 0 ? userPool : this.poolOf()
   }
 
   protected async [Service.init](): Promise<void> {
@@ -255,7 +271,9 @@ export class OrchestrationService extends TypertRemoteService {
       return decision
     }, { prepend: true })
     this.ctx.on('loader/volatile-update', (paths) => {
-      if (paths.some(path => path.length === 1 && path[0] === 'pool')) this.setPool(this.poolOf())
+      if (paths.some(path => path.length === 1 && (path[0] === 'pool' || path[0] === 'userPool'))) {
+        this.setPool(this.effectivePool())
+      }
     })
     this.ctx.systemPrompt.context({
       name: 'orchestration',
@@ -454,7 +472,7 @@ export class OrchestrationService extends TypertRemoteService {
       return false
     }
     try {
-      await settings.update(POOL_SETTINGS_NS, { pool: this.getPool() })
+      await settings.update(POOL_SETTINGS_NS, { userPool: this.getPool() })
       return true
     } catch (error) {
       this.ctx.logger.warn('orchestration: the pool could not be persisted to settings; the applied selection is kept for this process only', error)

@@ -15,13 +15,13 @@ describe('Orchestration profile bundle', () => {
     const base = [{ id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' }]
     const warn = (message: string): never => { throw new Error(message) }
     const configured = applyPatches(base, patches, warn)
-    expect(configured.find(entry => entry.id === 'compaction-basic')?.config).toEqual({ modelPolicies: [
+    expect(configured.data.find(entry => entry.id === 'compaction-basic')?.config).toEqual({ modelPolicies: [
       { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash', headroomTokens: 8192, maxTokens: 8192 },
       { provider: 'uni-paderborn', model: 'hs-de.qwen3.8-27b', headroomTokens: 8192, maxTokens: 8192 },
     ] })
     const explicit = { headroomTokens: 4096, maxTokens: 2048, modelPolicies: [] }
     const overridden = applyPatches(base, [...patches, { id: 'compaction-basic', config: explicit }], warn)
-    expect(overridden.find(entry => entry.id === 'compaction-basic')?.config).toEqual(explicit)
+    expect(overridden.data.find(entry => entry.id === 'compaction-basic')?.config).toEqual(explicit)
   })
 
   it('declares a public parseable layer with normal subagent routing and the pool picker', () => {
