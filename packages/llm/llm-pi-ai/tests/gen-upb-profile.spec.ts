@@ -112,7 +112,7 @@ describe('gen-upb-profile: patch application', () => {
   it('replaces only the target route models and preserves deployment-only fields and other rows', () => {
     const { text, changed } = applyModelsToPatch(provider + otherRow, UPB_PROFILE_ROUTE, profileModels())
     expect(changed).toBe(true)
-    expect(text).toContain("preference: dark")
+    expect(text).toContain('preference: dark')
     expect(text).toContain('UNI_PADERBORN_API_KEY')
     expect(text).toContain('retryPolicy')
     // A sibling provider route is left untouched.

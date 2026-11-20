@@ -151,7 +151,7 @@ export function OrchestrationPanel({ pool, catalog, setPool, t }: OrchestrationP
         <div key={group.provider} className={css.group}>
           <h3 className={css.groupTitle}>{group.name}</h3>
           <ul className={css.list}>
-            {group.models.map(capability => {
+            {group.models.map((capability) => {
               const key = routeKey({ provider: capability.provider, model: capability.id })
               return (
                 <CatalogRow
