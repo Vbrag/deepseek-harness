@@ -52,14 +52,17 @@ async function fixture() {
 }
 
 describe('pool picker catalog', () => {
-  it('projects every registered provider/model from the live LLM registry', async () => {
+  it('scopes the catalog to providers present in the pool', async () => {
     const { ctx, service } = await fixture()
     const catalog = await service.getCatalog()
+    // The pool is provider-scoped: only models from a provider already in the
+    // pool are selectable for orchestration routing, so the picker lists only
+    // the pool provider's models rather than every registered provider.
     const providers = catalog.groups.map(group => group.provider).sort()
-    expect(providers).toEqual(['mock', POOL_PROVIDER].sort())
-    const mock = catalog.groups.find(group => group.provider === 'mock')
-    expect(mock?.models.map(model => model.id)).toContain('lead')
-    expect(mock?.models[0]?.offlineCurated).toBe(false)
+    expect(providers).toEqual([POOL_PROVIDER])
+    expect(catalog.groups.find(group => group.provider === 'mock')).toBeUndefined()
+    const pooled = catalog.groups.find(entry => entry.provider === POOL_PROVIDER)
+    expect(pooled?.models[0]?.offlineCurated).toBe(true)
     ctx.fiber.dispose()
   })
 

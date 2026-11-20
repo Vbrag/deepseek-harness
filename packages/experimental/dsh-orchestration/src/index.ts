@@ -390,7 +390,15 @@ export class OrchestrationService extends TypertRemoteService {
    */
   @Remote('getCatalog')
   async getCatalog(): Promise<OrchestrationCatalog> {
-    const providers = this.ctx.llm.listProviders()
+    const allProviders = this.ctx.llm.listProviders()
+    // The pool is provider-scoped: only models from a provider already in the
+    // effective pool can actually serve orchestration routing, so restrict the
+    // picker to those providers to match what is truly selectable. When no pool
+    // is configured yet, show every provider so the user can choose a first pool.
+    const poolProviders = new Set(this.getPool().map(route => route.provider))
+    const providers = poolProviders.size > 0
+      ? allProviders.filter(provider => poolProviders.has(provider.id))
+      : allProviders
     const groups = await Promise.all(providers.map(async (provider) => {
       let models: readonly LlmModelInfo[]
       try {
