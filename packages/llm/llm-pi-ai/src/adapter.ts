@@ -424,6 +424,7 @@ export class PiAiAdapter extends LlmAdapter {
         request.model,
         profile.modelRateLimits.get(request.model),
         request.inputTokens + this.outputAllowance(profile, model, request.maxTokens),
+        profile.rateLimitBudgetKey,
       )
     })
   }
@@ -519,6 +520,7 @@ export class PiAiAdapter extends LlmAdapter {
         estimateRequestInputTokens(request.messages, request.system, request.tools)
           + this.outputAllowance(profile, model, options.maxTokens),
         watchdog.signal,
+        profile.rateLimitBudgetKey,
       )
       const manualThinking = model.reasoning && reasoning !== undefined && reasoning !== 'off'
         && (model as Model<'anthropic-messages'>).compat?.forceAdaptiveThinking !== true

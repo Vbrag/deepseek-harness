@@ -1,5 +1,9 @@
 # Paderborn AI-Gateway model reference
 
+> **Superseded snapshot.** This document is the **30 October 2026** snapshot of the gateway's public catalog (35 entries) and is kept for its detailed human-readable tables, model→endpoint mappings, and usage examples. The **operative** gateway facts now live in the canonical, Git-tracked catalogue **`packages/llm/llm-pi-ai/src/upb-gateway-catalog.ts`** (snapshot **19 November 2026**, all 41 identifiers), which the DSH shipped route and orchestration routing read from. Update the catalogue first, then mirror factual changes into this reference. See [`paderborn-ai-gateway-dsh-context.md`](paderborn-ai-gateway-dsh-context.md) for the wiring and refresh procedure. Where the two snapshots differ, the 19 November catalogue wins; e.g. the Claude models below are marked "Upcoming" in this 30 October snapshot but are listed as available paid entries in the 19 November catalogue.
+>
+> **Output maxima are capabilities, not request sizes.** The gateway meters a request's declared `max_tokens` against its per-minute token budget (500,000 tokens per key and model), so the DSH shipped route asks for at most `floor(tpm / maxParallel)` = 50,000 output tokens per request, even where the table below publishes a larger output maximum. The published maximum stays recorded in the canonical catalogue.
+
 Snapshot: **30 October 2026 (Europe/Berlin)**. Scope: all **35 public catalog entries** returned by the data endpoint used by the requested page: 2 base aliases, 24 individual text/multimodal/image entries, 4 embedding models, and 5 routers.
 
 Source page: [Model information](<https://ai-gateway.uni-paderborn.de/api_hub/models-info>). Source data: [Public model catalog](<https://ai-gateway.uni-paderborn.de/api_hub/api/public-models/>). Usage templates were read from the page’s [application bundle](<https://ai-gateway.uni-paderborn.de/api_hub/static/assets/index-GDlPlZI-.js>).

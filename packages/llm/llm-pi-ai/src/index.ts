@@ -97,11 +97,26 @@ export { estimateInputTokens, estimateRequestInputTokens } from './rate-limit.ts
 export { recordKeyFor } from './auth.ts'
 export { supportedProtocols } from './provider.ts'
 export {
+  UPB_CHAT_MODELS,
+  UPB_GATEWAY_CATALOG,
+  UPB_REFERENCE_ONLY,
+  UPB_GATEWAY_SNAPSHOT,
+  upbEntryOf,
+} from './upb-gateway-catalog.ts'
+export type {
+  UpbApiInterface,
+  UpbCompatStatus,
+  UpbEntryKind,
+  UpbGatewayEntry,
+  UpbMode,
+} from './upb-gateway-catalog.ts'
+export {
   UPB_GATEWAY_API_KEY_ENV,
   UPB_GATEWAY_BASE_URL,
   UPB_GATEWAY_MODELS,
   UPB_GATEWAY_PROFILE,
   UPB_GATEWAY_PROVIDER,
+  UPB_GATEWAY_REQUEST_OUTPUT_TOKENS,
 } from './upb-gateway.ts'
 
 export const name = 'llm-pi-ai'

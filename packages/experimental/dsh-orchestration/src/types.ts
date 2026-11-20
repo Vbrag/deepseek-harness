@@ -13,12 +13,30 @@ export interface PoolRoute {
   readonly model: string
 }
 
-/** Curated gateway choices shown by the pool settings client. */
-export interface OrchestrationCatalog {
-  /** Exact registered provider associated with these gateway model ids. */
+/** A model row shown by the pool settings client, grouped by its registered provider. */
+export interface OrchestrationCatalogModel extends ModelCapability {
+  /** Exact registered LLM provider that serves this route; the route is `{provider, id}`. */
   readonly provider: string
-  /** Read-only model facts; exact adapter metadata takes precedence during routing. */
-  readonly models: readonly ModelCapability[]
+  /** Human provider display name for selectors. */
+  readonly providerName: string
+  /** True when specialties/capacity come from the curated catalogue rather than live adapter metadata. */
+  readonly offlineCurated: boolean
+}
+
+/** One provider group in the pool settings catalog. */
+export interface OrchestrationCatalogGroup {
+  /** Exact registered LLM provider id. */
+  readonly provider: string
+  /** Human provider display name. */
+  readonly name: string
+  /** Models this provider currently advertises. */
+  readonly models: readonly OrchestrationCatalogModel[]
+}
+
+/** Pool picker choices projected from the live LLM registry, with curated annotations. */
+export interface OrchestrationCatalog {
+  /** Non-empty provider groups with at least one advertised model. */
+  readonly groups: readonly OrchestrationCatalogGroup[]
 }
 
 /** Explicit specialty facts for a route, replacing its curated specialties. */

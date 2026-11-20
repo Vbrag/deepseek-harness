@@ -211,6 +211,15 @@ export interface PiAiProviderProfile {
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five hundred retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * Optional identity used for pacing when several provider routes share one
+   * upstream gateway budget. Pacing charges are otherwise keyed by route and
+   * model; giving two routes the same value (e.g. the shared gateway base URL)
+   * makes them charge the same ledger when the upstream quota is actually
+   * shared. Whether upstream sharing applies is not verifiable here; set it
+   * only when the deployment guarantees a common upstream budget.
+   */
+  rateLimitBudgetKey?: string
 }
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
@@ -238,6 +247,8 @@ export interface ResolvedPiAiProviderProfile
   requestImageMaxBytes: number
   /** Immutable retry policy captured with this provider route. */
   retryPolicy: ResolvedRetryPolicy
+  /** Optional shared-budget identity for pacing (see {@link PiAiProviderProfile.rateLimitBudgetKey}). */
+  rateLimitBudgetKey?: string
   /**
    * The pi-ai provider containing this route's serviceable models. Absent when
    * a stored route cannot be constructed; its configuration remains editable.
@@ -405,6 +416,7 @@ const profile = z.object({
   requestImagePixelBudget: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
   requestImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_MAX_BYTES),
   retryPolicy: RetryPolicySchema,
+  rateLimitBudgetKey: z.string(),
 })
 
 /** Runtime schema for {@link Config}. */

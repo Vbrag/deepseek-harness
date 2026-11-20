@@ -44,13 +44,13 @@ contextTokens 估算工作代理所需的完整输入，包括它稍后读取的
 
 ### 配置
 
-pool 字段列出精确的 provider/model 路由。routeCapabilities 为精确路由提供经过验证的专长，并替换精选专长列表；空列表清除这些专长。重复的精确路由声明会被拒绝。设置客户端通过 getCatalog 读取精选网关选项，不直接导入 Host 数据。
+pool 字段列出精确的 provider/model 路由。routeCapabilities 为精确路由提供经过验证的专长，并替换精选专长列表；空列表清除这些专长。重复的精确路由声明会被拒绝。设置客户端通过 getCatalog 读取模型池选择目录——它按提供方分组投影实时 LLM 注册表，使选择器与编辑器可选择模型一致；已知的 uni-paderborn 路由携带精选专长作为标注。
 
 对于 uni-paderborn，精选专长包含 gwdg.deepseek-v4-flash-0731 的 coding 和 gwdg.glm-5.3-flash 的 reasoning，已于 2026-11-17 根据 [DeepSeek 模型卡](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731)和 [GLM 模型卡](https://huggingface.co/zai-org/GLM-5.3-Flash)验证。任务专长描述适用性，独立于网关用于标明 API 支持情况的 reasoning 标志。已记录权限、精确 routeCapabilities 覆盖、传输设置及容量限制仍然适用。选择影响新建委派，包括全新 Ralph Round；运行中的工作代理仅通过获授权的阶段或恢复准入切换路由。
 
 contextOverheadTokens 默认为 8192 个令牌，用于子代理指令、工具及请求包装。输入估算取 contextTokens 与初始提示文本及图像估算的较大值，再增加此余量。实际内联图像即使未在评估中声明，也要求图像能力。评估省略 outputTokens 时，outputReserveTokens 默认为 4096；有效的显式或适配器默认生成上限也参与上下文与压缩准入。两项余量均是经过验证的部署设置。输入估算与输出余量之和必须适合模型的总上下文容量。路由保留子代理的实际输出上限；普通请求准备和提供方限制仍然适用。
 
-defaultToOrchestrator 默认为 false，仅为尚未记录选择的 Session 写入初始模式。getPool、setPool 和 persistPool 提供模型池选择。persistPool 先在内存应用选择，再尝试保存至配置档；设置写入被拒绝时会产生警告，并在当前进程中保留内存选择。
+defaultToOrchestrator 默认为 false，仅为尚未记录选择的 Session 写入初始模式。getPool、setPool 和 persistPool 提供模型池选择。persistPool 先在内存应用选择，并尝试将选择保存到配置档的 `orchestration` 条目；当该条目的 pool 归发货 bundle 层所有而非用户层所有时，配置编辑器会拒绝写入，persistPool 解析为 false，让选择器如实报告保存失败，而不是显示并未发生的保存成功。
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-orchestration)记录所有可接受设置。
 

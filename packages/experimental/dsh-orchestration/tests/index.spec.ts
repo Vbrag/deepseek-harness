@@ -798,10 +798,10 @@ describe('durable mode selections', () => {
 })
 
 describe('pool settings and configuration', () => {
-  it('applies defaults, replaces the pool, and warns when persistence is unavailable', async () => {
+  it('applies defaults, replaces the pool, and reports when persistence is unavailable', async () => {
     const f = await fixture()
     const warning = vi.spyOn(f.ctx.logger, 'warn')
-    await expect(f.service.persistPool([])).resolves.toBe(true)
+    await expect(f.service.persistPool([])).resolves.toBe(false)
     expect(f.service.getPool()).toEqual([])
     expect(warning).toHaveBeenCalled()
   })

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Select Default or Orchestration from the conversation composer and choose subagent models in the Orchestration Settings section. The composer reads the session's host projection and submits mode changes through the command service; it shows queued changes and reports failed selections without changing the displayed mode optimistically. The settings panel lists the Paderborn AI-Gateway catalog with capability badges and writes the shared host model pool. Enable both controls through the experimental Orchestration profile bundle.
+Select Default or Orchestration from the conversation composer and choose subagent models in the Orchestration Settings section. The composer reads the session's host projection and submits mode changes through the command service; it shows queued changes and reports failed selections without changing the displayed mode optimistically. The settings panel lists the live provider catalog grouped by provider, with capability badges, and writes the shared host model pool. Enable both controls through the experimental Orchestration profile bundle.
 
 ## Table of Contents
 
@@ -32,9 +32,9 @@ Use the composer's mode menu to choose Default or Orchestration. The selector ap
 
 ### Pick the model pool
 
-The panel shows every model the provider catalog reports for the Paderborn AI-Gateway (`provider: uni-paderborn`), each with capability badges derived from the catalog entry. Checking or unchecking a row, **Select all**, and **Clear** adjust a local selection; the explicit **Save model pool** button persists the whole pool to the Host through `setPool`. The pool read at mount time is seeded into the panel, so the current Host selection is the starting state; when nothing has been persisted yet, the panel defaults to every catalog model selected so the full pool is available immediately.
+The panel shows every model the live LLM registry reports, grouped by provider, each with capability badges derived from the catalog entry or live adapter metadata. Checking or unchecking a row, **Select all**, and **Clear** adjust a local selection; the explicit **Save model pool** button persists the whole pool to the Host through `setPool`. The pool read at mount time is seeded into the panel, so the current Host selection is the starting state; when nothing has been persisted yet, the panel defaults to every catalog model selected so the full pool is available immediately.
 
-The panel shows the applied selection count, a notice when the pool is empty, and a save failure notice if the Host refuses an update. Save reports success only after the Host applies the pool; a refused write shows a failure notice instead. The Host applies the selection in memory and persists it to the profile as a plain user-layer value, so the saved pool survives a restart.
+The panel shows the applied selection count, a notice when the pool is empty, and a save failure notice if the Host refuses an update. Save reports success only after the Host applies the pool; a refused write shows a failure notice instead of claiming a save that never happened. The Host applies the selection in memory and attempts to persist it to the profile; a profile that owns the `orchestration` entry in a shipped layer refuses the write, so only the in-memory selection survives (see the limitation below).
 
 ### Follow child model changes
 
@@ -48,7 +48,7 @@ Open the conversation's subagent catalog to see **Subagent models** below the ch
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel, an additive `conversation.input.left` composer control, and the subagent-catalog footer. The composer reads the `orchestration` session projection and submits `/orchestration on|off` through the session-bound command service. The footer reads published child `orchestrationRouting` and `modelSelection` projections; the existing catalog owns child refresh, and the footer neither opens Sessions nor scans logs. Disposing the plugin withdraws the controls before the Remote mount. The panel derives its catalog and capability badges from `PADERBORN_CATALOG`.
+The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel, an additive `conversation.input.left` composer control, and the subagent-catalog footer. The composer reads the `orchestration` session projection and submits `/orchestration on|off` through the session-bound command service. The footer reads published child `orchestrationRouting` and `modelSelection` projections; the existing catalog owns child refresh, and the footer neither opens Sessions nor scans logs. Disposing the plugin withdraws the controls before the Remote mount. The panel derives its catalog from the Host `getCatalog` Remote, which projects the live LLM registry grouped by provider; curated Paderborn facts are annotations on known routes.
 
 | File | Role |
 |---|---|
@@ -93,9 +93,9 @@ None. The panel adds no model context and retains no KV prefix; the pool is Host
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Single provider today** — the panel lists only the Paderborn AI-Gateway (`provider: uni-paderborn`); a multi-provider pool picker is deferred.
 - **Host service required** — the panel needs the `orchestrations` Remote namespace mounted by the Orchestration service; without it, reads and writes are refused and the panel shows the save-failure notice.
-- **Model availability** — a model appears only when the provider catalog reports it; catalog changes require the page to reload.
+- **Pool picker is catalog-scoped** — the panel lists providers the live LLM registry advertises; models appear only when their provider reports them, and catalog changes take effect on the next page load.
+- **Persistence requires a user-layer entry** — `persistPool` persists through the profile's `orchestration` plugin entry. When that entry's pool is owned by a shipped bundle layer, the config editor refuses the write and the save is reported as a failure; only the in-memory selection applies for the session. Persisting to a user-owned span is future work.
 - **No per-session override** — the selected pool is a single Shared Host value, not a per-session or per-run override.
 - **Experimental prototype with no stability promise** — the package is public, but its contracts can change freely while it incubates.
 
@@ -109,6 +109,6 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 
 #### Promotion
 
-Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). A multi-provider pool picker and per-session overrides are natural next steps.
+Promotion to a product-role group requires reviewing the public contract, limitations, test evidence, release payload, runtime dependents, and a named stable owner, per the [experimental subtree rules](../AGENTS.md). Per-session overrides are a natural next step.
 
 </details>

@@ -8,7 +8,7 @@ import { OrchestrationModeControl, type OrchestrationModeInjected } from '../src
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import type { PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { OrchestrationCatalog, PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
 import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
@@ -28,6 +28,23 @@ vi.mock('@deepseek-ai/dsh-orchestration/remote', () => ({
 }))
 
 const INITIAL: readonly PoolRoute[] = [{ provider: POOL_PROVIDER, model: 'gwdg.deepseek-v4-flash-0731' }]
+
+/** One Paderborn provider group carrying every catalogue model as a picker row. */
+const CATALOG: OrchestrationCatalog = {
+  groups: [{
+    provider: POOL_PROVIDER,
+    name: 'Paderborn Gateway',
+    models: PADERBORN_CATALOG.map(capability => ({
+      provider: POOL_PROVIDER,
+      providerName: 'Paderborn Gateway',
+      offlineCurated: true,
+      ...capability,
+      domains: [...capability.domains],
+      modalities: [...capability.modalities],
+      ...capability.rateLimits === undefined ? {} : { rateLimits: { ...capability.rateLimits } },
+    })),
+  }],
+}
 
 /** Narrow the erased registry payload before exercising the section's injected face. */
 function assertInjected(value: Record<string, unknown>): asserts value is Record<string, unknown> & OrchestrationInjected {
@@ -54,7 +71,7 @@ async function buildCtx(options: {
   const persistPool = (options.persistPool ?? vi.fn(async (_pool: readonly PoolRoute[]) =>
     ({ ok: true as const, value: true }))) as Mock<(pool: readonly PoolRoute[]) => Promise<RemoteResult<boolean>>>
   ctx.provide('remote.orchestrations', {
-    getCatalog: vi.fn(async () => ({ ok: true as const, value: { provider: POOL_PROVIDER, models: PADERBORN_CATALOG } })),
+    getCatalog: vi.fn(async () => ({ ok: true as const, value: CATALOG })),
     getPool: options.getPool ?? vi.fn(async () => ({ ok: true as const, value: INITIAL })),
     persistPool,
   })
@@ -152,7 +169,7 @@ it('registers the section through the client apply entry and withdraws it on dis
 it('seeds the face from getPool and persists a replacement through persistPool', async () => {
   const f = await mount()
   expect(f.injected().pool).toEqual(INITIAL)
-  expect(f.injected().catalog).toEqual({ provider: POOL_PROVIDER, models: PADERBORN_CATALOG })
+  expect(f.injected().catalog).toEqual(CATALOG)
   await expect(f.injected().setPool([])).resolves.toBe(true)
   expect(f.persistPool).toHaveBeenCalledWith([])
   await f.dispose()

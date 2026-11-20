@@ -68,12 +68,15 @@ function waitForChange(ledger: ModelLedger, ms: number, signal?: AbortSignal): P
 export class ModelRateLimiter {
   private readonly ledgers = new Map<string, ModelLedger>()
 
-  private key(provider: string, model: string): string {
-    return `${provider}\u0000${model}`
+  private key(provider: string, model: string, budgetKey?: string): string {
+    // An explicit shared-budget identity lets several route keys (which each
+    // otherwise get their own ledger) charge the same gateway model's quota
+    // together; without it the route key and model identify the ledger.
+    return budgetKey ?? `${provider}\u0000${model}`
   }
 
-  private ledger(provider: string, model: string): ModelLedger {
-    const key = this.key(provider, model)
+  private ledger(provider: string, model: string, budgetKey?: string): ModelLedger {
+    const key = this.key(provider, model, budgetKey)
     let ledger = this.ledgers.get(key)
     if (ledger === undefined) {
       ledger = { charges: new Set(), waiters: new Set() }
@@ -89,14 +92,15 @@ export class ModelRateLimiter {
    * @param model - exact model id.
    * @param limits - currently effective limits.
    * @param tokens - estimated input plus output allowance.
+   * @param budgetKey - optional shared-budget identity overriding the route+model ledger key.
    * @returns current advisory admission state.
    */
-  availability(provider: string, model: string, limits: ModelRateLimit | undefined, tokens: number): LlmQueueAvailability {
+  availability(provider: string, model: string, limits: ModelRateLimit | undefined, tokens: number, budgetKey?: string): LlmQueueAvailability {
     limits ??= {}
     if (limits.tpm !== undefined && tokens > limits.tpm) {
       return { kind: 'impossible', estimatedTokens: tokens, tokenLimit: limits.tpm }
     }
-    const ledger = this.ledger(provider, model)
+    const ledger = this.ledger(provider, model, budgetKey)
     const now = Date.now()
     let requests = 0
     let chargedTokens = 0
@@ -137,6 +141,7 @@ export class ModelRateLimiter {
    * @param limits - effective limits for this prepared request.
    * @param tokens - estimated input plus output allowance.
    * @param signal - cancellation before dispatch.
+   * @param budgetKey - optional shared-budget identity overriding the route+model ledger key.
    * @returns the exact request reservation; oversized requests reject immediately.
    */
   async acquire(
@@ -145,11 +150,12 @@ export class ModelRateLimiter {
     limits: ModelRateLimit | undefined,
     tokens: number,
     signal?: AbortSignal,
+    budgetKey?: string,
   ): Promise<ModelRateReservation> {
-    const ledger = this.ledger(provider, model)
+    const ledger = this.ledger(provider, model, budgetKey)
     for (;;) {
       signal?.throwIfAborted()
-      const availability = this.availability(provider, model, limits, tokens)
+      const availability = this.availability(provider, model, limits, tokens, budgetKey)
       if (availability.kind === 'impossible') {
         throw new LlmError(
           `provider "${provider}" model "${model}" needs an estimated ${tokens} tokens, exceeding its ${availability.tokenLimit} TPM limit; reduce the request or output allowance`,

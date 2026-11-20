@@ -161,6 +161,30 @@ describe('PiAiAdapter provider routing', () => {
       .toThrow('rateLimitOutputTokens must be a positive safe integer')
   })
 
+  it('reserves the shipped gateway request cap for pacing instead of the generic allowance', async () => {
+    // The gateway charges a request's declared output cap against its
+    // 500,000-token minute, so the shipped route must reserve that cap and hold
+    // a request it cannot fit instead of dispatching one the gateway throttles.
+    const route = LlmPiAi.UPB_GATEWAY_PROVIDER
+    const adapter = adapterOf({ [route]: LlmPiAi.UPB_GATEWAY_PROFILE })
+    const model = 'gwdg.deepseek-v4.1-flash-1017'
+    await expect(adapter.queueAvailability({ provider: route, model, inputTokens: 100_000 }))
+      .resolves.toEqual({ kind: 'ready' })
+    await expect(adapter.queueAvailability({ provider: route, model, inputTokens: 451_000 }))
+      .resolves.toEqual({
+        kind: 'impossible',
+        estimatedTokens: 501_000,
+        tokenLimit: 500_000,
+      })
+    // The generic 4,096-token allowance the route used to inherit admitted that
+    // same request, which is what let the gateway throttle it.
+    const generic = adapterOf({
+      [route]: { ...LlmPiAi.UPB_GATEWAY_PROFILE, rateLimitOutputTokens: 4096 },
+    })
+    await expect(generic.queueAvailability({ provider: route, model, inputTokens: 451_000 }))
+      .resolves.toEqual({ kind: 'ready' })
+  })
+
   it('reports output capacity independently of a configured request default', async () => {
     const adapter = adapterOf({
       acme: {

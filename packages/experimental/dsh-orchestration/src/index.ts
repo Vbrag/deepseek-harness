@@ -21,10 +21,11 @@ import { capabilityRoute, routeExclusions, selectReadyRoute } from './plan.ts'
 import type { CapabilityRoute, ReadyRoute } from './plan.ts'
 import { OrchestrationError } from './error.ts'
 import { AdaptiveRouting, type AdaptiveAdmission } from './adaptive.ts'
-import { PADERBORN_CATALOG, POOL_PROVIDER, TASK_DOMAINS } from './capabilities.ts'
+import { capabilityOf, POOL_PROVIDER, TASK_DOMAINS } from './capabilities.ts'
+import type { LlmModelInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type {
-  OrchestrationCatalog, OrchestrationConfig, OrchestrationProjection, OrchestrationRouteAlternative,
-  OrchestrationUnitState, PoolRoute,
+  OrchestrationCatalog, OrchestrationCatalogGroup, OrchestrationCatalogModel,
+  OrchestrationConfig, OrchestrationProjection, OrchestrationRouteAlternative, OrchestrationUnitState, PoolRoute,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -116,6 +117,12 @@ function validateAssessment(assessment: SubagentTaskAssessment): void {
 function routeKey(route: PoolRoute): string {
   return JSON.stringify([route.provider, route.model])
 }
+
+/** Profile entry id whose volatile `pool` config persists the orchestration pool.
+ * The shipped orchestration profile mounts the plugin under this id, so the stable
+ * constant avoids depending on `ctx.fiber` inside Remote handlers where no fiber is active.
+ */
+const POOL_SETTINGS_NS = 'orchestration'
 
 /** Cancel a queue-availability wait without leaving a timer or listener behind. */
 function waitForAvailability(waitMs: number, signal: AbortSignal): Promise<void> {
@@ -356,19 +363,66 @@ export class OrchestrationService extends TypertRemoteService {
     return this.poolValue.map(route => ({ ...route }))
   }
 
-  /** Read curated gateway choices without importing Host catalog values into the browser.
-   * @returns Detached provider identity and model facts used by the pool picker.
+  /** Project the pool picker catalog from the live LLM registry, not a static list.
+   * Providers and models are taken from `ctx.llm.listProviders()`/`listModels()`,
+   * so the picker matches the models the composer can actually select. Curated
+   * specialties/capacity from the Paderborn catalogue apply only to known
+   * `uni-paderborn` routes; everything else carries live adapter metadata.
+   * @returns Detached per-provider model facts used by the pool picker.
    */
   @Remote('getCatalog')
-  getCatalog(): OrchestrationCatalog {
+  async getCatalog(): Promise<OrchestrationCatalog> {
+    const providers = this.ctx.llm.listProviders()
+    const groups = await Promise.all(providers.map(async (provider) => {
+      let models: readonly LlmModelInfo[]
+      try {
+        models = await this.ctx.llm.listModels(provider.id)
+      } catch {
+        return null
+      }
+      const entries = await Promise.all(models.map(model => this.catalogModel(provider.id, provider.name, model)))
+      return { provider: provider.id, name: provider.name, models: entries }
+    }))
+    return { groups: groups.flatMap((group): OrchestrationCatalogGroup[] => group && group.models.length > 0 ? [group] : []) }
+  }
+
+  /** Render one live model as a pool-picker row, decorated with curated facts when catalogued.
+   * @param provider - Registered provider route.
+   * @param providerName - Human provider display name.
+   * @param model - Live LLM registry model entry.
+   * @returns Detached model facts for the picker, resolved against the adapter for capacity and reasoning.
+   */
+  private async catalogModel(provider: string, providerName: string, model: LlmModelInfo): Promise<OrchestrationCatalogModel> {
+    let resolved: LlmResolvedModelInfo | undefined
+    try {
+      resolved = await this.ctx.llm.resolveModelInfo(provider, model.id)
+    } catch {
+      resolved = undefined
+    }
+    const curated = provider === POOL_PROVIDER ? capabilityOf(model.id) : undefined
+    const modalities = (resolved?.inputModalities ?? model.inputModalities ?? curated?.modalities)
+      ?.filter((item): item is 'text' | 'image' => item === 'text' || item === 'image')
     return {
-      provider: POOL_PROVIDER,
-      models: PADERBORN_CATALOG.map(model => ({
-        ...model,
-        domains: [...model.domains],
-        modalities: [...model.modalities],
-        ...model.rateLimits === undefined ? {} : { rateLimits: { ...model.rateLimits } },
-      })),
+      id: model.id,
+      name: model.name,
+      provider,
+      providerName,
+      offlineCurated: curated !== undefined,
+      imageInput: modalities?.includes('image') ?? curated?.imageInput ?? false,
+      reasoning: resolved?.reasoning !== undefined ? resolved.reasoning.efforts.length > 0 : curated?.reasoning ?? false,
+      domains: [...(curated?.domains ?? [])],
+      modalities: [...(modalities ?? (model.inputModalities ?? ['text']))],
+      contextWindow: resolved?.context?.contextWindow ?? curated?.contextWindow ?? 0,
+      ...(resolved?.rateLimit !== undefined
+        ? {
+          rateLimits: {
+            ...(resolved.rateLimit.rpm === undefined ? {} : { rpm: resolved.rateLimit.rpm }),
+            ...(resolved.rateLimit.tpm === undefined ? {} : { tpm: resolved.rateLimit.tpm }),
+          },
+        }
+        : curated?.rateLimits !== undefined ? { rateLimits: { ...curated.rateLimits } } : {}),
+      health: curated?.health ?? 'routeable',
+      suggested: curated?.suggested ?? '',
     }
   }
 
@@ -382,9 +436,14 @@ export class OrchestrationService extends TypertRemoteService {
     for (const key of this.lastAssigned.keys()) if (!keys.has(key)) this.lastAssigned.delete(key)
   }
 
-  /** Apply the pool and attempt to persist it in this profile's settings.
+  /** Apply the pool and persist it in this profile's settings.
+   * The in-memory pool is replaced unconditionally; persistence is best-effort
+   * but reported honestly. A refused or failed settings write (for example, a
+   * profile that owns the `orchestration` entry in a shipped layer rather than a
+   * user layer) makes this resolve `false` so the picker can show a save failure
+   * instead of claiming a save that never happened.
    * @param pool - New default routes; existing Session authorization remains fixed.
-   * @returns True after memory apply; a failed settings write is reported as a warning.
+   * @returns True only when the pool was applied in memory AND persisted to settings.
    */
   @Remote('persistPool')
   async persistPool(pool: readonly PoolRoute[]): Promise<boolean> {
@@ -392,14 +451,15 @@ export class OrchestrationService extends TypertRemoteService {
     const settings = this.ctx.get('settings')
     if (settings === undefined) {
       this.ctx.logger.warn('orchestration: settings service is absent; the selected pool is applied for this process only')
-      return true
+      return false
     }
     try {
-      await settings.update(this.ctx.fiber.entry?.options.id ?? 'orchestration', { pool: this.getPool() })
+      await settings.update(POOL_SETTINGS_NS, { pool: this.getPool() })
+      return true
     } catch (error) {
-      this.ctx.logger.warn('orchestration: pool settings could not be saved; the selection is applied for this process only', error)
+      this.ctx.logger.warn('orchestration: the pool could not be persisted to settings; the applied selection is kept for this process only', error)
+      return false
     }
-    return true
   }
 
   private async resolveRoute(

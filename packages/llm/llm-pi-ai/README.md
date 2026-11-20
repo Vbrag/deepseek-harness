@@ -116,21 +116,23 @@ providers:
       - id: gwdg.deepseek-v4-flash-0731
         name: DeepSeek V4 Flash 0731
         contextWindow: 1000000
-        maxTokens: 384000
+        maxTokens: 50000  # per-request output cap and request default
         rpm: 10        # at most 10 requests/minute, paced across all chats
         tpm: 500000    # at most 500k tokens/minute, reconciled from real usage
         free: true
       - id: hs-de.qwen3.8-27b
         name: Qwen 3.8 27B
         contextWindow: 262000
-        maxTokens: 262000
+        maxTokens: 50000
         rpm: 10
         tpm: 500000
         input: [text, image]
         free: true
 ```
 
-This module ships a ready-to-use Uni Paderborn AI-Gateway route with its full chat-model catalog as [`UPB_GATEWAY_PROFILE`](src/upb-gateway.ts) (re-exported as `UPB_GATEWAY_MODELS`, `UPB_GATEWAY_PROVIDER`, `UPB_GATEWAY_BASE_URL`, `UPB_GATEWAY_API_KEY_ENV`). Activate it with only the API key exported as `UPB_AI_GATEWAY_KEY`; the shipped catalog already declares each model's `rpm` / `tpm` budget from the gateway's public model list.
+A configured `maxTokens` is the request default the adapter asks for, not only the model's output ceiling, and a gateway that meters a request's declared output against its token budget charges it as such. Declaring the published output maximum (up to 384,000 tokens for these models) would reserve most of a 500,000-token minute with a single request and throttle every concurrent request. The shipped Uni Paderborn route sets each model's `maxTokens` to the published output maximum lowered to the gateway's per-minute share (`tpm / maxParallel`, 50,000 tokens) and its `rateLimitOutputTokens` to the same value, so the local ledger reserves what the gateway charges; the published maximum stays in [`UPB_GATEWAY_CATALOG`](src/upb-gateway-catalog.ts) as the model's capability.
+
+This module ships a ready-to-use Uni Paderborn AI-Gateway route with its full chat-model catalog as [`UPB_GATEWAY_PROFILE`](src/upb-gateway.ts) (re-exported as `UPB_GATEWAY_MODELS`, `UPB_GATEWAY_PROVIDER`, `UPB_GATEWAY_BASE_URL`, `UPB_GATEWAY_API_KEY_ENV`, `UPB_GATEWAY_REQUEST_OUTPUT_TOKENS`). Activate it with only the API key exported as `UPB_AI_GATEWAY_KEY`; the shipped catalog already declares each model's `rpm` / `tpm` budget and gateway-admissible request cap from the gateway's public model list.
 
 
 One adapter instance shares a rolling 60-second ledger per provider/model across every session and step. Dispatch reserves one request plus estimated input tokens and the provider's `rateLimitOutputTokens` output allowance (default 4096), capped by the effective output ceiling. Exhausted budgets queue calls; an estimate exceeding the whole TPM budget fails immediately with `RATE_LIMIT_REQUEST_TOO_LARGE`. Cancellation before dispatch refunds the reservation. A dispatched call retains its estimate when usage is unknown; reported usage replaces the estimate, including any debt, and remains charged for 60 seconds after settlement. Active calls retain their token reservation until settlement. Configuration changes retain existing charges. Declare only `rpm` or only `tpm` to limit one dimension; models with neither limit dispatch without waiting. `ctx.llm.queueAvailability()` reads this same ledger without reserving capacity.

@@ -1,27 +1,42 @@
 /**
- * Uni Paderborn AI-Gateway: a ready-to-use openai-completions route and its
- * chat model catalog, with the gateway's per-model request/token budgets.
+ * Uni Paderborn AI-Gateway: a ready-to-use openai-completions route derived
+ * from the canonical gateway catalogue.
  *
  * The gateway exposes OpenAI-compatible endpoints over HTTPS at
- * `https://ai-gateway.uni-paderborn.de/v1`. It publishes a public model
- * catalog (`/api_hub/api/public-models/`) whose entries carry a `mode`
- * (`chat` / `responses` / `embedding` / `image_generation`) and per-model rate
- * caps. Only `chat`-mode models can be dispatched through this adapter (it
- * streams chat requests only), so this catalog ships the chat-capable models
- * with their declared `rpm` / `tpm` budgets. Declaring `rpm` / `tpm` activates
- * DSH's proactive pacing on those models, so concurrent chats sharing the
- * route never exceed the gateway's per-model caps.
+ * `https://ai-gateway.uni-paderborn.de/v1`. The shipped model set, budgets, and
+ * capabilities come from {@link UPB_GATEWAY_CATALOG} (single source of truth);
+ * this module only reshapes catalogue facts into the pi-ai profile model. It
+ * ships the chat-capable models, including the gateways `(Test)` listings,
+ * through {@link UPB_GATEWAY_MODELS}; the source-restricted test entries are
+ * shipped so they appear in pickers and are callable, but none is a default.
  *
- * References for the rate budgets (from the live public catalog at
- * `https://ai-gateway.uni-paderborn.de/api_hub/api/public-models/` on
- * 2026-11-11):
- * - GWDG-hosted models: 10 RPM, TPM 500 000.
- * - kiconnect-hosted models: 100 RPM, TPM 500 000.
- * - All models: maxParallel 10.
+ * Declaring `rpm` / `tpm` activates DSH's proactive pacing on those models, so
+ * concurrent chats sharing the route never exceed the gateway's per-model caps.
+ * Pacing values are a conservative local policy: a published RPM range (the
+ * Qwen 3.8 `10 - 100` rows) is pinned to its lower bound, and the published
+ * single value is used where the page lists one; the source's range is retained
+ * in the catalogue. The full inventory (embedding, image, responses-mode,
+ * router, alias entries) stays in the catalogue as reference and is not
+ * dispatched here. The `(Test)` chat listings (`testOnly`) are shipped with the
+ * production chat models; their source restriction is preserved in the
+ * catalogue and surfaced in the model name, but the harness does not otherwise
+ * special-case them here.
+ *
+ * Requests are sized to the gateway's own admission arithmetic. The gateway
+ * charges each request's declared output cap against its per-minute token
+ * budget, so shipping the published maximum output (128,000–384,000 tokens) as
+ * the model's `maxTokens` would make every request reserve most of the
+ * 500,000-token minute on its own and the next request would be throttled with
+ * HTTP 429. A model's `maxTokens` is also the per-request default DSH asks for
+ * (see {@link PiAiModelProfile.maxTokens}), so the shipped value is the
+ * published maximum output lowered to the gateway's per-minute share
+ * (`tpm / maxParallel`, 50,000 tokens) and the route's pacing allowance
+ * reserves the same amount that the gateway charges.
  *
  * @module dsh-llm-pi-ai/upb-gateway
  */
 import type { PiAiModelProfile, PiAiProviderProfile } from './config.ts'
+import { UPB_CHAT_MODELS, type UpbGatewayEntry } from './upb-gateway-catalog.ts'
 
 /** Route key for the Uni Paderborn AI-Gateway provider. */
 export const UPB_GATEWAY_PROVIDER = 'upb-ai-gateway'
@@ -32,43 +47,90 @@ export const UPB_GATEWAY_BASE_URL = 'https://ai-gateway.uni-paderborn.de/v1'
 /** Credential reference (environment-variable name) for the gateway API key. */
 export const UPB_GATEWAY_API_KEY_ENV = 'UPB_AI_GATEWAY_KEY'
 
-/** Rolling-minute token budget served by the German-hosted gateway models. */
-const UPB_GWDG_TPM = 500_000
-/** Rolling-minute token budget served by the kiconnect-hosted gateway models. */
-const UPB_KICONNECT_TPM = 500_000
-/** GWDG-hosted chat models allow 10 requests per minute. */
-const UPB_GWDG_RPM = 10
-/** kiconnect-hosted chat models allow 100 requests per minute. */
-const UPB_KICONNECT_RPM = 100
-
 /** Vision-capable chat models accept text and images. */
 const VISION: PiAiModelProfile['input'] = ['text', 'image']
 
 /**
- * The Uni Paderborn AI-Gateway's chat-capable models, with their declared
- * `rpm` / `tpm` budgets and known capacities. These are the ids sent to the
- * gateway's `/v1/chat/completions` endpoint on this route. The shipped
- * {@link UPB_GATEWAY_PROFILE} references this exact array, so the two stay a
- * single source of truth.
+ * The single pacing scalar for a published quota, from a conservative local
+ * policy. A one-element array uses the published value; a two-element range
+ * (the Qwen 3.8 rows) is pinned to its lower bound; unpublished quotas pace
+ * nothing. The source's full array and its uncertainty stay in the catalogue.
  */
-export const UPB_GATEWAY_MODELS: PiAiModelProfile[] = [
-  { id: 'gwdg.deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731', contextWindow: 1_000_000, maxTokens: 384_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true },
-  { id: 'gwdg.gemma-4-31b-it', name: 'Gemma 4 31B', contextWindow: 256_000, maxTokens: 256_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'gwdg.glm-5.3-flash', name: 'GLM 5.3 Flash', contextWindow: 200_000, maxTokens: 200_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true },
-  { id: 'hs-de.qwen3.8-27b', name: 'Qwen 3.8 27B', contextWindow: 262_000, maxTokens: 262_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'hs-de.qwen3.8-27b-no-think', name: 'Qwen 3.8 27B (No-Think)', contextWindow: 262_000, maxTokens: 262_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'gwdg.qwen3.6-35b-a3b', name: 'Qwen 3.6 35B A3B', contextWindow: 262_000, maxTokens: 262_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'gwdg.qwen3.6-35b-a3b-no-think', name: 'Qwen 3.6 35B A3B (No-Think)', contextWindow: 262_000, maxTokens: 262_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'gwdg.qwen3.5-397b-a17b', name: 'Qwen 3.5 397B A17B', contextWindow: 256_000, maxTokens: 256_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'gwdg.qwen3.5-397b-a17b-no-think', name: 'Qwen 3.5 397B A17B (No-Think)', contextWindow: 256_000, maxTokens: 256_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'gwdg.qwen3-30b-a3b-instruct-2507', name: 'Qwen 3 Instruct 30B A3B', contextWindow: 256_000, maxTokens: 256_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true },
-  { id: 'gwdg.qwen3-coder-next', name: 'Qwen 3 Coder Next', contextWindow: 256_000, maxTokens: 256_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true },
-  { id: 'gwdg.qwen3-omni-30b-a3b-instruct', name: 'Qwen 3 Omni 30B A3B', contextWindow: 256_000, maxTokens: 256_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true, input: VISION },
-  { id: 'hs-de.eurollm-22b-instruct-2512', name: 'EuroLLM 22B Instruct', contextWindow: 32_000, maxTokens: 32_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true },
-  { id: 'kiconnect.mistralai-mistral-small-4-119b-2603', name: 'Mistral Small 4 119B', contextWindow: 256_000, maxTokens: 256_000, rpm: UPB_KICONNECT_RPM, tpm: UPB_KICONNECT_TPM, free: true, input: VISION },
-  { id: 'gwdg.meta-llama-3.1-8b-instruct', name: 'Llama 3.1 8B Instruct', contextWindow: 128_000, maxTokens: 128_000, rpm: UPB_GWDG_RPM, tpm: UPB_GWDG_TPM, free: true },
-  { id: 'hs-de.openai-gpt-oss-120b', name: 'OpenAI GPT OSS 120B', contextWindow: 128_000, maxTokens: 128_000, rpm: UPB_KICONNECT_RPM, tpm: UPB_KICONNECT_TPM, free: true },
-]
+function pacedValue(quota: readonly number[] | 'none' | undefined): number | undefined {
+  if (quota === undefined || quota === 'none' || quota.length === 0) return undefined
+  return Math.min(...quota)
+}
+
+/** A catalogue entry publishing both ceilings this route has to size. */
+type ShippedEntry = UpbGatewayEntry & { maxInputTokens: number; maxOutputTokens: number }
+
+/**
+ * Whether a chat-executable entry publishes the input and output ceilings this
+ * route needs. An entry without them is refused rather than sized from a
+ * fallback.
+ * @param entry - any chat-executable catalogue entry.
+ * @returns whether both ceilings are published numbers.
+ */
+function hasPublishedCeilings(entry: UpbGatewayEntry): entry is ShippedEntry {
+  return entry.maxInputTokens !== undefined && entry.maxOutputTokens !== undefined
+}
+
+/**
+ * The per-request output cap this gateway admits for one model: the published
+ * output maximum lowered to the model's share of the gateway's per-minute token
+ * budget (`tpm / maxParallel`). A model that publishes no per-minute budget or
+ * no simultaneous-request ceiling keeps its published output maximum.
+ * @param entry - a catalogue entry with both published ceilings.
+ * @returns the output cap in tokens, never above the published maximum.
+ */
+function requestOutputCap(entry: ShippedEntry): number {
+  const tpm = pacedValue(entry.tpm)
+  const parallel = entry.maxParallel
+  if (tpm === undefined || parallel === undefined || parallel <= 0) return entry.maxOutputTokens
+  return Math.min(entry.maxOutputTokens, Math.floor(tpm / parallel))
+}
+
+/** The chat-executable catalogue entries this route ships, in catalogue order. */
+const SHIPPED_ENTRIES: readonly ShippedEntry[] = UPB_CHAT_MODELS.filter(hasPublishedCeilings)
+
+/**
+ * The Uni Paderborn AI-Gateway's shipped chat models, derived from
+ * {@link UPB_CHAT_MODELS}: every chat-executable entry, including the `(Test)`
+ * listings flagged `testOnly`. Capability and budget facts come from the
+ * canonical catalogue; only the scalar reshaping below is local. None of these
+ * entries is a default; the model used by default is chosen by the
+ * `agent-default-model` configuration layer, not by this route.
+ */
+export const UPB_GATEWAY_MODELS: PiAiModelProfile[] = SHIPPED_ENTRIES.map((entry) => {
+  const vision = entry.badges.includes('Vision')
+  const rpm = pacedValue(entry.rpm)
+  const tpm = pacedValue(entry.tpm)
+  return {
+    id: entry.id,
+    name: entry.name,
+    // Local policy: the published max-input value is carried as the scalar
+    // context capacity. The source publishes no combined-request+response
+    // window, so this is a capacity chosen for routing, not a verified
+    // combined budget; both limits stay separately in the catalogue.
+    contextWindow: entry.maxInputTokens,
+    // A configured `maxTokens` is the per-request output default DSH sends, so
+    // the shipped value is the gateway-admissible cap rather than the published
+    // maximum output, which stays in the catalogue as the model's capability.
+    maxTokens: requestOutputCap(entry),
+    ...rpm === undefined ? {} : { rpm },
+    ...tpm === undefined ? {} : { tpm },
+    ...vision ? { input: VISION } : {},
+  }
+})
+
+/**
+ * Output-token allowance for proactive pacing on the shipped route: the largest
+ * per-request cap the shipped models publish. `ModelRateLimiter` reserves
+ * `input + allowance` for a request, which is what the gateway charges, so a
+ * request waits for the rolling-minute budget instead of being throttled.
+ */
+export const UPB_GATEWAY_REQUEST_OUTPUT_TOKENS = SHIPPED_ENTRIES.reduce(
+  (max, entry) => Math.max(max, requestOutputCap(entry)), 0)
 
 /**
  * A ready-to-use openai-completions route for the Uni Paderborn AI-Gateway.
@@ -80,5 +142,8 @@ export const UPB_GATEWAY_PROFILE: PiAiProviderProfile = {
   displayName: 'Uni Paderborn AI-Gateway',
   api: 'openai-completions',
   baseURL: UPB_GATEWAY_BASE_URL,
+  ...UPB_GATEWAY_REQUEST_OUTPUT_TOKENS === 0
+    ? {}
+    : { rateLimitOutputTokens: UPB_GATEWAY_REQUEST_OUTPUT_TOKENS },
   models: UPB_GATEWAY_MODELS,
 }
