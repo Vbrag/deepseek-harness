@@ -39,36 +39,37 @@ export const UPB_PROFILE_PLUGIN = 'llm-pi-ai'
 export interface UpbProfileModel {
   readonly id: string
   readonly name: string
-  readonly contextWindow: number
-  /** Per-request output cap, already lowered to the gateway's per-minute token share. */
-  readonly maxTokens: number
+  /** Context capacity; omitted for entries the gateway publishes no ceiling for (routers). */
+  readonly contextWindow?: number
+  /** Per-request output cap, already lowered to the gateway's per-minute token share; omitted when unpublished. */
+  readonly maxTokens?: number
   readonly rpm?: number
   readonly tpm?: number
-  readonly free: true
+  readonly free: boolean
+  /** Published per-million-token rates; omitted when the catalogue publishes none. */
+  readonly pricing?: { readonly input?: number; readonly output?: number }
   readonly input?: readonly string[]
 }
 
 /**
- * The shipped chat models as profile `models` entries, in catalogue order. The
- * shipped route always spells out the name and both ceilings (its profile type
- * leaves them optional); an entry missing one is refused rather than written
- * with a fabricated value. `maxTokens` is the shipped request cap, so a synced
+ * The shipped models as profile `models` entries, in catalogue order. An entry
+ * carries the ceilings, quotas, cost and modalities the catalogue publishes; the
+ * routers publish no token ceilings, so those keys are omitted and the route's
+ * defaults size them. `maxTokens` is the shipped request cap, so a synced
  * profile never asks the gateway for more output than one request may reserve.
  */
 export function profileModels(): UpbProfileModel[] {
-  return UPB_GATEWAY_MODELS.flatMap((model) => {
-    if (model.name === undefined || model.contextWindow === undefined || model.maxTokens === undefined) return []
-    return [{
-      id: model.id,
-      name: model.name,
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
-      ...model.rpm === undefined ? {} : { rpm: model.rpm },
-      ...model.tpm === undefined ? {} : { tpm: model.tpm },
-      free: true as const,
-      ...model.input === undefined ? {} : { input: [...model.input] },
-    }]
-  })
+  return UPB_GATEWAY_MODELS.map(model => ({
+    id: model.id,
+    name: model.name ?? model.id,
+    ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
+    ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+    ...model.rpm === undefined ? {} : { rpm: model.rpm },
+    ...model.tpm === undefined ? {} : { tpm: model.tpm },
+    free: model.free ?? true,
+    ...model.pricing === undefined ? {} : { pricing: { ...model.pricing } },
+    ...model.input === undefined ? {} : { input: [...model.input] },
+  }))
 }
 
 /** Per-model fields the catalogue owns; every other key on an entry is deployment-owned. */

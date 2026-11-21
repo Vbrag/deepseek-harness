@@ -25,7 +25,7 @@ Enable Orchestration mode to encourage useful parallel delegation and assign nor
 <a id="use-this-package"></a>
 ## Use this package
 
-Apply this bundle after `dsh-base` in an opted-in profile. Its [patch](cordis.patch.yml) mounts the orchestration service with a seed model pool and the optional Web controls. Replace the service's `pool` through profile configuration or the Orchestration settings panel.
+Apply this bundle after `dsh-base` in an opted-in profile. Its [patch](cordis.patch.yml) mounts the orchestration service with a seed model pool of the full Uni Paderborn chat set and the optional Web controls. Replace the service's `pool` through profile configuration or the Orchestration settings panel.
 
 The profile supplies exact `uni-paderborn` compaction defaults for `gwdg.glm-5.3-flash` and `hs-de.qwen3.8-27b`: `headroomTokens: 8192` and summary `maxTokens: 8192`. The global patch covers the base provider; its effect-owned runtime plugin fills absent fields in later scoped Web providers. Explicit top-level or exact-route Loader configuration takes priority. These summary limits do not set worker generation caps or task-assessment estimates.
 

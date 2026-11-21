@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  UPB_CHAT_MODELS,
+  UPB_CHAT_ROUTE_MODELS,
   UPB_GATEWAY_API_KEY_ENV,
   UPB_GATEWAY_BASE_URL,
   UPB_GATEWAY_CATALOG,
@@ -78,30 +78,50 @@ describe('UPB AI-Gateway model catalog', () => {
     expect(ids.filter(id => id.includes('.gpt-image-')).length).toBe(0)
   })
 
-  it('derives the shipped set from the canonical chat-executable catalogue, excluding reference-only entries', () => {
-    // The shipped route is exactly the chat-executable catalogue subset,
-    // including the gateway's `(Test)` chat listings. It is a derivation, not a
-    // restated copy.
-    const chatExecutable = UPB_CHAT_MODELS
-    const expectedIds = new Set(chatExecutable.map(m => m.id))
+  it('derives the shipped set from the canonical chat-route catalogue, excluding other interfaces', () => {
+    // The shipped route is exactly the catalogue's chat-interface subset: the
+    // free HS-DE and GWDG models, the `(Test)` listings, the paid direct
+    // Anthropic models, and the two chat base-model aliases. It is a derivation,
+    // not a restated copy.
+    const routeIds = new Set(UPB_CHAT_ROUTE_MODELS.map(m => m.id))
     const shippedIds = UPB_GATEWAY_MODELS.map(m => m.id)
-    expect(expectedIds.size).toBe(chatExecutable.length)
-    expect(shippedIds).toHaveLength(chatExecutable.length)
+    expect(routeIds.size).toBe(UPB_CHAT_ROUTE_MODELS.length)
+    expect(shippedIds).toHaveLength(UPB_CHAT_ROUTE_MODELS.length)
     for (const id of shippedIds) {
-      expect(expectedIds.has(id), id).toBe(true)
+      expect(routeIds.has(id), id).toBe(true)
     }
     // Every shipped id exists in the full catalogue.
     for (const model of UPB_GATEWAY_MODELS) {
       const entry = upbEntryOf(model.id)
       expect(entry, model.id).toBeDefined()
     }
-    // Reference-only entries (embedding / image / responses / router / alias)
-    // are never shipped by the chat route, even though the test `(Test)` chat
-    // listings are.
-    const referenceIds = new Set(UPB_GATEWAY_CATALOG.filter(m => m.mode !== 'chat').map(m => m.id))
-    for (const id of referenceIds) {
-      expect(shippedIds, `reference-only "${id}" must not be shipped`).not.toContain(id)
+    // Entries on another wire protocol, and the ones that do not answer with
+    // text, are never shipped by this route.
+    for (const entry of UPB_GATEWAY_CATALOG) {
+      if (entry.apiInterface === 'chat' && entry.kind !== 'router') continue
+      expect(shippedIds, `non-chat-route "${entry.id}" must not be shipped`).not.toContain(entry.id)
     }
+  })
+
+  it('ships the paid direct Anthropic models and the two chat base-model aliases', () => {
+    for (const id of [
+      'anthropic.claude-fable-5-2',
+      'anthropic.claude-opus-5-5',
+      'anthropic.claude-sonnet-5-5',
+      'anthropic.claude-haiku-5-5',
+      'hs-de.latest-basemodel',
+      'anthropic.latest-basemodel',
+    ]) {
+      const model = UPB_GATEWAY_MODELS.find(m => m.id === id)
+      expect(model, id).toBeDefined()
+      expect(model?.contextWindow, id).toBeGreaterThan(0)
+      expect(model?.rpm, id).toBeGreaterThan(0)
+    }
+    // Paid models declare their catalogue rates rather than the free default.
+    expect(UPB_GATEWAY_MODELS.find(m => m.id === 'anthropic.claude-opus-5-5')?.free).toBe(false)
+    expect(UPB_GATEWAY_MODELS.find(m => m.id === 'anthropic.claude-opus-5-5')?.pricing)
+      .toEqual({ input: 4, output: 20 })
+    expect(UPB_GATEWAY_MODELS.find(m => m.id === 'hs-de.latest-basemodel')?.free).toBe(true)
   })
 
   it('ships the gateway `(Test)` chat listings as callable, non-excluded models', () => {
@@ -125,10 +145,16 @@ describe('UPB AI-Gateway model catalog', () => {
     // catalogue fact. The shipped `maxTokens` is the part of the per-minute
     // token budget one request may declare, so the gateway keeps admitting the
     // next request instead of throttling it with HTTP 429.
-    expect(UPB_GATEWAY_REQUEST_OUTPUT_TOKENS).toBe(50_000)
+    expect(UPB_GATEWAY_REQUEST_OUTPUT_TOKENS).toBe(128_000)
     for (const model of UPB_GATEWAY_MODELS) {
       const entry = upbEntryOf(model.id)
       expect(entry, model.id).toBeDefined()
+      if (entry?.maxOutputTokens === undefined) {
+        // Routers publish no token ceilings, so the route's own defaults size
+        // them and the catalogue keeps the absence.
+        expect(model.maxTokens, model.id).toBeUndefined()
+        continue
+      }
       const share = Math.floor((model.tpm ?? 0) / (entry?.maxParallel ?? 1))
       expect(model.maxTokens, model.id).toBeGreaterThan(0)
       expect(model.maxTokens, model.id).toBeLessThanOrEqual(share)

@@ -12,6 +12,7 @@
  * @module dsh-orchestration/tests/capabilities.gate
  */
 import { describe, expect, it } from 'vitest'
+import { UPB_CHAT_ROUTE_MODELS } from '@deepseek-ai/dsh-llm-pi-ai/src/upb-gateway-catalog.ts'
 import { upbEntryOf } from '@deepseek-ai/dsh-llm-pi-ai/src/upb-gateway-catalog.ts'
 import { PADERBORN_CATALOG } from '../src/capabilities.ts'
 
@@ -22,6 +23,13 @@ function paced(quota: readonly number[] | 'none' | undefined): number | undefine
 }
 
 describe('PADERBORN_CATALOG matches the canonical gateway catalogue', () => {
+  it('covers every shipped chat-route model', () => {
+    const curated = new Set(PADERBORN_CATALOG.map(row => row.id))
+    for (const entry of UPB_CHAT_ROUTE_MODELS) {
+      expect(curated.has(entry.id), `chat-route model "${entry.id}" has no curated capability row`).toBe(true)
+    }
+  })
+
   it('every orchestration model id exists in the canonical catalogue', () => {
     for (const row of PADERBORN_CATALOG) {
       expect(upbEntryOf(row.id), `orchestration row "${row.id}" is not in UPB_GATEWAY_CATALOG`).toBeDefined()

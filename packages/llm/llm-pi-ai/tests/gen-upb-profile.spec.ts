@@ -43,9 +43,9 @@ const TEST_IDS = [
 ]
 
 describe('gen-upb-profile: catalogue derivation', () => {
-  it('derives the 19 shipped chat models, including all three (Test) listings', () => {
+  it('derives the 25 chat-route models, including all three (Test) listings', () => {
     const models = profileModels()
-    expect(models).toHaveLength(19)
+    expect(models).toHaveLength(25)
     expect(new Set(models.map(m => m.id)).size).toBe(models.length)
     for (const id of TEST_IDS) {
       expect(models.map(m => m.id), id).toContain(id)
@@ -57,12 +57,17 @@ describe('gen-upb-profile: catalogue derivation', () => {
       const entry = upbEntryOf(model.id)
       expect(entry, model.id).toBeDefined()
       expect(model.name).toBe(entry!.name)
+      // Routers publish no ceilings; every other shipped entry carries them.
       expect(model.contextWindow).toBe(entry!.maxInputTokens)
-      expect(model.maxTokens).toBe(requestCap(entry!))
-      expect(model.maxTokens).toBeLessThanOrEqual(entry!.maxOutputTokens ?? 0)
+      expect(model.maxTokens).toBe(entry!.maxOutputTokens === undefined ? undefined : requestCap(entry!))
       expect(model.rpm).toBe(paced(entry!.rpm))
       expect(model.tpm).toBe(paced(entry!.tpm))
-      expect(model.free).toBe(true)
+      expect(model.free).toBe(entry!.free)
+      expect(model.pricing).toEqual(
+        entry!.inputPrice === undefined || entry!.outputPrice === undefined
+          ? undefined
+          : { input: entry!.inputPrice, output: entry!.outputPrice },
+      )
     }
   })
 

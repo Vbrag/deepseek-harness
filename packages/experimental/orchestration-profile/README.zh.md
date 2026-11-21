@@ -25,7 +25,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在主动启用的配置中，将此组合包放在 `dsh-base` 之后。其[补丁](cordis.patch.yml)挂载带初始模型池的编排服务及可选 Web 控件。通过配置文件或编排设置面板替换服务的 `pool`。
+在主动启用的配置中，将此组合包放在 `dsh-base` 之后。其[补丁](cordis.patch.yml)挂载带完整帕德博恩聊天模型集作为初始模型池的编排服务及可选 Web 控件。通过配置文件或编排设置面板替换服务的 `pool`。
 
 此配置为 `uni-paderborn` 的确切路由 `gwdg.glm-5.3-flash` 与 `hs-de.qwen3.8-27b` 提供压缩默认值：`headroomTokens: 8192` 和摘要 `maxTokens: 8192`。全局补丁覆盖基础提供方；由 effect 持有的运行时插件为之后的 Web 作用域提供方补齐缺失字段。显式的顶层或确切路由 Loader 配置优先。这些摘要限制不设置工作代理的生成上限或任务评估估计。
 

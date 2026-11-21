@@ -129,8 +129,7 @@ export const UPB_GATEWAY_CATALOG: readonly UpbGatewayEntry[] = [
     badges: ['Text', 'Vision', 'Reasoning', 'Function Calling'],
     settings: 'temperature: 1; top_p: 0.95',
     reasoning: { default: 'high', efforts: ['low', 'medium', 'high', 'xhigh'] },
-    compatStatus: 'chat-unsupported',
-    compatReason: 'alias entry; target resolution left to the gateway service',
+    compatStatus: 'chat-executable',
     apiInterface: 'chat',
     aliasTarget: 'hs-de.qwen3.8-27b',
     source: { url: SRC, snapshot: UPB_GATEWAY_SNAPSHOT.date },
@@ -177,15 +176,14 @@ export const UPB_GATEWAY_CATALOG: readonly UpbGatewayEntry[] = [
     outputPrice: 10,
     badges: ['Text', 'Vision', 'Reasoning', 'Function Calling'],
     settings: 'Keine',
-    compatStatus: 'chat-unsupported',
-    compatReason: 'alias entry; target resolution left to the gateway service',
+    compatStatus: 'chat-executable',
     apiInterface: 'chat',
     aliasTarget: 'anthropic.claude-sonnet-5-5',
     source: { url: SRC, snapshot: UPB_GATEWAY_SNAPSHOT.date },
     discrepancies: ['Alias target fragment #table-azure_ai.claude-sonnet-5-5 is stale; the equivalent listed row uses anthropic.claude-sonnet-5-5'],
   },
 
-  // --- Direct Anthropic models (M01-M04): chat interface, not in the shipped route ---
+  // --- Direct Anthropic models (M01-M04): chat interface, paid, shipped ---
   {
     id: 'anthropic.claude-fable-5-2',
     name: 'Claude Fable 5.2',
@@ -203,8 +201,7 @@ export const UPB_GATEWAY_CATALOG: readonly UpbGatewayEntry[] = [
     outputPrice: 40,
     badges: ['Text', 'Vision', 'Reasoning', 'Function Calling'],
     settings: 'Keine',
-    compatStatus: 'chat-unsupported',
-    compatReason: 'paid direct Anthropic model; not part of the shipped upb-ai-gateway chat route, retained for reference',
+    compatStatus: 'chat-executable',
     apiInterface: 'chat',
     source: { url: SRC, snapshot: UPB_GATEWAY_SNAPSHOT.date },
   },
@@ -225,8 +222,7 @@ export const UPB_GATEWAY_CATALOG: readonly UpbGatewayEntry[] = [
     outputPrice: 20,
     badges: ['Text', 'Vision', 'Reasoning', 'Function Calling'],
     settings: 'Keine',
-    compatStatus: 'chat-unsupported',
-    compatReason: 'paid direct Anthropic model; not part of the shipped upb-ai-gateway chat route, retained for reference',
+    compatStatus: 'chat-executable',
     apiInterface: 'chat',
     source: { url: SRC, snapshot: UPB_GATEWAY_SNAPSHOT.date },
   },
@@ -247,8 +243,7 @@ export const UPB_GATEWAY_CATALOG: readonly UpbGatewayEntry[] = [
     outputPrice: 10,
     badges: ['Text', 'Vision', 'Reasoning', 'Function Calling'],
     settings: 'Keine',
-    compatStatus: 'chat-unsupported',
-    compatReason: 'paid direct Anthropic model; not part of the shipped upb-ai-gateway chat route, retained for reference',
+    compatStatus: 'chat-executable',
     apiInterface: 'chat',
     source: { url: SRC, snapshot: UPB_GATEWAY_SNAPSHOT.date },
   },
@@ -269,8 +264,7 @@ export const UPB_GATEWAY_CATALOG: readonly UpbGatewayEntry[] = [
     outputPrice: 0.5,
     badges: ['Text', 'Vision', 'Reasoning', 'Function Calling'],
     settings: 'Keine',
-    compatStatus: 'chat-unsupported',
-    compatReason: 'paid direct Anthropic model; not part of the shipped upb-ai-gateway chat route, retained for reference',
+    compatStatus: 'chat-executable',
     apiInterface: 'chat',
     source: { url: SRC, snapshot: UPB_GATEWAY_SNAPSHOT.date },
   },
@@ -1032,6 +1026,35 @@ export const UPB_CHAT_MODELS: readonly UpbGatewayEntry[] =
 /** Every catalogue entry the chat adapter cannot dispatch, retained for reference. */
 export const UPB_REFERENCE_ONLY: readonly UpbGatewayEntry[] =
   UPB_GATEWAY_CATALOG.filter(entry => !isChatExecutable(entry))
+
+/**
+ * Whether the chat route can dispatch this entry: its page example uses the
+ * chat interface, and it is a language, multimodal, or base-model alias entry.
+ * The routers are excluded by kind even when their example is a chat call,
+ * because their routing decision belongs to the gateway and this deployment
+ * exposes them over the Responses route instead.
+ * @param entry - any catalogue entry.
+ * @returns whether the openai-completions chat route ships the entry.
+ */
+function isChatRouteEntry(entry: UpbGatewayEntry): boolean {
+  return (entry.kind === 'llm' || entry.kind === 'multimodal' || entry.kind === 'alias')
+    && entry.apiInterface === 'chat'
+    && entry.compatStatus === 'chat-executable'
+}
+
+/**
+ * The catalogue entries the chat (`openai-completions`) route ships, in
+ * catalogue order: every chat-interface language, multimodal, and alias entry —
+ * the free HS-DE and GWDG models, the `(Test)` listings, the paid direct
+ * Anthropic models, and the two chat base-model aliases.
+ *
+ * The Responses-interface entries (the OpenAI models, the OpenAI alias, and the
+ * routers) and the four embedding models and the image-generation model are not
+ * here: a deployment that offers them routes them separately, because they do
+ * not share this route's wire protocol or do not answer with text.
+ */
+export const UPB_CHAT_ROUTE_MODELS: readonly UpbGatewayEntry[] =
+  UPB_GATEWAY_CATALOG.filter(isChatRouteEntry)
 
 /** Look up one catalogue entry by its exact gateway API id.
  * @param id - Exact gateway model id.

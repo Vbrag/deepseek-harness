@@ -100,6 +100,7 @@ export { recordKeyFor } from './auth.ts'
 export { supportedProtocols } from './provider.ts'
 export {
   UPB_CHAT_MODELS,
+  UPB_CHAT_ROUTE_MODELS,
   UPB_GATEWAY_CATALOG,
   UPB_REFERENCE_ONLY,
   UPB_GATEWAY_SNAPSHOT,
