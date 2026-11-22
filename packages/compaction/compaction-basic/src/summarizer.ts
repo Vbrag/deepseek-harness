@@ -5,7 +5,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { contentHasImage, BlockAssembler, LlmError } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, BlockAssembler, HarnessError, LlmError } from '@deepseek-ai/dsh-llm'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
   ContentBlock, FinishReason, GenerateOptions, Message, RequestMessage, TokenUsage, ToolSchema,
@@ -129,35 +129,8 @@ export async function summarizeWithLlm(
   conversation: SummaryRoute | undefined,
   signal?: AbortSignal,
 ): Promise<SummaryResult> {
-  const configured = config.summarizationProvider.length === 0
-    ? undefined
-    : { provider: config.summarizationProvider, model: config.summarizationModel }
-  const target = configured ?? conversation
-  if (target === undefined) {
-    throw new Error(
-      'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',
-    )
-  }
-
+  const options = buildSummarizationRequest(config, input, agent, conversation, signal)
   const assembler = new BlockAssembler()
-  const messages: RequestMessage[] = [
-    ...input.messages,
-    deepFreeze({
-      role: 'user',
-      content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
-    }),
-  ]
-  const options: GenerateOptions = {
-    provider: target.provider,
-    model: target.model,
-    messages,
-    toolHistory: agent.session.toolHistory(),
-    ...input.tools === undefined ? {} : { tools: [...input.tools] },
-    maxTokens: config.maxTokens,
-    sessionId: agent.session.id,
-    purpose: 'compaction',
-    ...signal === undefined ? {} : { signal },
-  }
   for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
   const error = finishError(assembler.finish)
   if (error !== undefined) throw error
@@ -165,7 +138,7 @@ export async function summarizeWithLlm(
   const rawOutput = assembler.blocks()
   const summary = summaryText(rawOutput)
   if (!summary.some(block => block.text.trim().length > 0)) {
-    throw new Error('summarization produced no text summary content')
+    throw new LlmError('summarization produced no text summary content', 'COMPACTION_EMPTY_SUMMARY')
   }
   return {
     summary,
@@ -175,6 +148,52 @@ export async function summarizeWithLlm(
     model: options.model,
     maxTokens: config.maxTokens,
     ...(assembler.usage === undefined ? {} : { usage: assembler.usage }),
+  }
+}
+
+/** Build the exact auxiliary request used for budget inspection and summarization.
+ * @param config - resolved summary target and output cap.
+ * @param input - system prefix, selected history, and tools.
+ * @param agent - session and tool-history owner.
+ * @param conversation - fallback route when no summary route is configured.
+ * @param signal - optional cancellation.
+ * @returns The auxiliary model request.
+ */
+export function buildSummarizationRequest(
+  config: SummaryConfig,
+  input: SummarizationInput,
+  agent: Agent,
+  conversation: SummaryRoute | undefined,
+  signal?: AbortSignal,
+): GenerateOptions {
+  const configured = config.summarizationProvider.length === 0
+    ? undefined
+    : { provider: config.summarizationProvider, model: config.summarizationModel }
+  const target = configured ?? conversation
+  if (target === undefined) {
+    throw new LlmError(
+      'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',
+      'COMPACTION_CONTEXT_UNAVAILABLE',
+    )
+  }
+
+  const messages: RequestMessage[] = [
+    ...input.messages,
+    deepFreeze({
+      role: 'user',
+      content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
+    }),
+  ]
+  return {
+    provider: target.provider,
+    model: target.model,
+    messages,
+    toolHistory: agent.session.toolHistory(),
+    ...input.tools === undefined ? {} : { tools: [...input.tools] },
+    maxTokens: config.maxTokens,
+    sessionId: agent.session.id,
+    purpose: 'compaction',
+    ...signal === undefined ? {} : { signal },
   }
 }
 
@@ -199,9 +218,7 @@ function finishError(finish: FinishReason): Error | undefined {
       return LlmError.fromFailure(finish.failure)
     }
     case 'max-tokens': {
-      const error = new Error('summarization truncated at the token cap (incomplete checkpoint)') as Error & { code?: string }
-      error.code = 'MAX_TOKENS'
-      return error
+      return new HarnessError('summarization truncated at the token cap (incomplete checkpoint)', 'MAX_TOKENS')
     }
     default:
       return undefined

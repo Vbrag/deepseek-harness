@@ -23,6 +23,7 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmRateLimit,
+  LlmRequestTokenBudget,
   LlmResolvedModelInfo,
   ModelModality,
   StreamChunk,
@@ -166,6 +167,11 @@ export interface PreparedLlmCall {
   readonly toolUpdate?: ToolUpdate
   /** Config fields materialized by the captured adapter rather than proposed by the caller. */
   readonly adapterDefaults: LlmCallConfigAdapterDefaults
+  /** Estimate this prepared request's per-minute reservation without reserving capacity.
+   * @param options - fully assembled request carrying this call's config.
+   * @returns Adapter-owned token budget, or undefined when no limit is known.
+   */
+  requestTokenBudget(options: GenerateOptions): LlmRequestTokenBudget | undefined
   /**
    * Dispatch this call once through the registration captured during
    * preparation. The request's call-config fields must match {@link config};
@@ -180,6 +186,11 @@ export interface PreparedLlmCall {
 export interface PreparedAdapterCall {
   /** Exact model metadata from the same adapter generation as {@link stream}. */
   readonly model: LlmResolvedModelInfo
+  /** Estimate the projected adapter request without reserving capacity.
+   * @param options - request after Harness content projection.
+   * @returns The request's token budget, or undefined when unavailable.
+   */
+  requestTokenBudget?(options: GenerateOptions): LlmRequestTokenBudget | undefined
   /** Dispatch through that generation without re-reading dynamic connection facts. */
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 }
@@ -191,6 +202,14 @@ export interface PreparedAdapterCall {
  * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
  */
 export abstract class LlmAdapter {
+  /** Inspect the fixed per-request token budget without reserving capacity.
+   * @param _request - estimated input and effective output cap for one route.
+   * @returns The provider's token reservation, or undefined when unavailable.
+   */
+  requestTokenBudget(_request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined> {
+    return Promise.resolve(undefined)
+  }
+
   /**
    * Inspect shared request capacity without reserving it or performing provider I/O.
    * @param _request - estimated request work for an exact model route.
@@ -942,6 +961,14 @@ export class LlmRuntime extends TypertRemoteService {
     return this.registration(request.provider).adapter.queueAvailability(request)
   }
 
+  /** Inspect one route's estimated per-request token reservation.
+   * @param request - exact route, estimated input, and optional output cap.
+   * @returns A fixed budget or undefined when the adapter does not declare one.
+   */
+  requestTokenBudget(request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined> {
+    return this.registration(request.provider).adapter.requestTokenBudget(request)
+  }
+
   private async resolveCallFor(
     registration: AdapterRegistration,
     config: LlmCallConfig,
@@ -1039,6 +1066,14 @@ export class LlmRuntime extends TypertRemoteService {
         : { inputModalities: Object.freeze([...modelInfo.inputModalities]) },
       ...modelInfo.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: modelInfo.systemPromptUpdate },
       ...modelInfo.toolUpdate === undefined ? {} : { toolUpdate: modelInfo.toolUpdate },
+      requestTokenBudget: (options: GenerateOptions): LlmRequestTokenBudget | undefined => {
+        if (!callConfigEquals(options, resolvedConfig)) {
+          throw new LlmError('prepared LLM call config changed before budget inspection', 'INVALID_PREPARED_CALL')
+        }
+        const projected = this.projectRequest(options, resolvedConfig, modelInfo, registration.adapter)
+        const budget = adapterCall.requestTokenBudget?.(projected)
+        return budget === undefined ? undefined : Object.freeze({ ...budget })
+      },
       stream: (options: GenerateOptions): AsyncIterable<StreamChunk> => {
         if (dispatched) {
           throw new LlmError('a prepared LLM call can only be dispatched once', 'INVALID_PREPARED_CALL')
@@ -1103,6 +1138,37 @@ export class LlmRuntime extends TypertRemoteService {
     return fs?.processPathFromHostPath(hostPath)
   }
 
+  /** Project the same request content for pacing inspection and adapter dispatch. */
+  private projectRequest(options: GenerateOptions, resolvedConfig: LlmCallConfig,
+    modelInfo: LlmResolvedModelInfo, adapter: LlmAdapter): GenerateOptions {
+    const resolvedOptions = callConfigEquals(options, resolvedConfig)
+      ? options
+      : Object.isFrozen(options)
+        ? deepFreeze({ ...options, ...resolvedConfig })
+        : { ...options, ...resolvedConfig }
+    let projectedMessages: readonly RequestMessage[] = resolvedOptions.messages
+    if (projectedMessages.some(message => contentHasFile(message.content))) {
+      projectedMessages = projectFilesToText(projectedMessages, ref => this.fileReadPath(ref))
+    }
+    if (modelInfo.inputModalities !== undefined
+      && !modelInfo.inputModalities.includes('image')
+      && projectedMessages.some(message => contentHasImage(message.content))) {
+      projectedMessages = projectImagesForTextModel(projectedMessages)
+    }
+    const projectedTools = projectToolUpdates(projectedMessages, resolvedOptions.tools, modelInfo.toolUpdate, resolvedOptions.toolHistory)
+    projectedMessages = projectedTools.messages
+    let projectedOptions = resolvedOptions
+    if (projectedMessages !== resolvedOptions.messages || projectedTools.tools !== resolvedOptions.tools) {
+      projectedOptions = {
+        ...resolvedOptions,
+        messages: projectedMessages as RequestMessage[],
+        ...projectedTools.tools === undefined ? {} : { tools: projectedTools.tools as ToolSchema[] },
+      }
+      if (Object.isFrozen(resolvedOptions)) deepFreeze(projectedOptions)
+    }
+    return this.forAdapter(projectedOptions, adapter)
+  }
+
   /**
    * Final adapter boundary. Adapter selection, dispatch, iterator construction,
    * and iteration failures become one terminal failure chunk. Middleware and
@@ -1135,34 +1201,7 @@ export class LlmRuntime extends TypertRemoteService {
           'INVALID_PREPARED_CALL',
         )
       }
-      const resolvedOptions = callConfigEquals(options, resolvedConfig)
-        ? options
-        : Object.isFrozen(options)
-          ? deepFreeze({ ...options, ...resolvedConfig })
-          : { ...options, ...resolvedConfig }
-      // Files are never dispatched natively: every route receives handle text.
-      let projectedMessages: readonly RequestMessage[] = resolvedOptions.messages
-      if (projectedMessages.some(message => contentHasFile(message.content))) {
-        projectedMessages = projectFilesToText(projectedMessages, ref => this.fileReadPath(ref))
-      }
-      if (modelInfo.inputModalities !== undefined
-        && !modelInfo.inputModalities.includes('image')
-        && projectedMessages.some(message => contentHasImage(message.content))) {
-        projectedMessages = projectImagesForTextModel(projectedMessages)
-      }
-      // Tool changes are logged on every route; the route's declared mode selects what it receives.
-      const projectedTools = projectToolUpdates(projectedMessages, resolvedOptions.tools, modelInfo.toolUpdate, resolvedOptions.toolHistory)
-      projectedMessages = projectedTools.messages
-      let projectedOptions = resolvedOptions
-      if (projectedMessages !== resolvedOptions.messages || projectedTools.tools !== resolvedOptions.tools) {
-        projectedOptions = {
-          ...resolvedOptions,
-          messages: projectedMessages as RequestMessage[],
-          ...projectedTools.tools === undefined ? {} : { tools: projectedTools.tools as ToolSchema[] },
-        }
-        if (Object.isFrozen(resolvedOptions)) deepFreeze(projectedOptions)
-      }
-      const stream = dispatch(this.forAdapter(projectedOptions, adapter))
+      const stream = dispatch(this.projectRequest(options, resolvedConfig, modelInfo, adapter))
       iterator = stream[Symbol.asyncIterator]()
     } catch (error: unknown) {
       yield adapterFailureChunk(error, options.signal)

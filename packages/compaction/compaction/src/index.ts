@@ -10,6 +10,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { EpochHeader, Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { CommandId } from '@deepseek-ai/dsh-commands/types'
+import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { CompactionPressureBudget, CompactionResult } from './types.ts'
 import type { CompactionCheckpointSource } from './checkpoint.ts'
 
@@ -117,6 +118,15 @@ declare module '@deepseek-ai/cordis' {
  * one implementation per context as `ctx.compaction`.
  */
 export abstract class CompactionEngine extends Service {
+  /** Inspect the enabled automatic TPM trigger for one route.
+   * @param _config - effective model route and controls.
+   * @param _tokenLimit - fixed per-minute budget for one request.
+   * @returns Trigger tokens, or undefined when this backend does not own TPM pressure.
+   */
+  tpmThreshold(_config: LlmCallConfig, _tokenLimit: number): number | undefined {
+    return undefined
+  }
+
   constructor(ctx: Context) {
     super(ctx, 'compaction')
   }

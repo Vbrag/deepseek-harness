@@ -317,6 +317,8 @@ describe('compact configuration and defaults', () => {
 
     expect(resolved).toEqual({
       thresholdRatio: 0.8,
+      tpmThresholdRatio: 0.9,
+      tpmTargetRatio: 0.8,
       headroomTokens: 65_536,
       retainRatio: 0.16,
       summarizationProvider: '',
@@ -345,6 +347,14 @@ describe('compact configuration and defaults', () => {
       maxTokens: 512,
       modelPolicies: [{ ...target, headroomTokens: 0, maxTokens: 32 }],
     }), target).maxTokens).toBe(32)
+  })
+
+  it('exposes the enabled TPM threshold and exact-model overrides', () => {
+    const compact = service({ auto: true, tpmThresholdRatio: 0.9, tpmTargetRatio: 0.8,
+      modelPolicies: [{ provider: MODEL, model: 'early', tpmThresholdRatio: 0.85 }] })
+    expect(compact.tpmThreshold({ provider: MODEL, model: MODEL }, 1000)).toBe(900)
+    expect(compact.tpmThreshold({ provider: MODEL, model: 'early' }, 1000)).toBe(850)
+    expect(service({ auto: false }).tpmThreshold({ provider: MODEL, model: MODEL }, 1000)).toBeUndefined()
   })
 
   it('rejects a zero summary cap inherited from headroom', () => {
@@ -526,6 +536,10 @@ describe('compact configuration and defaults', () => {
       [{ summarizationModel: '' }, /must be set together/],
       [{ thresholdRatio: 0 }, /number in \(0, 1\]/],
       [{ thresholdRatio: 1.1 }, /number in \(0, 1\]/],
+      [{ tpmThresholdRatio: 0 }, /tpmThresholdRatio/],
+      [{ tpmTargetRatio: 1.1 }, /tpmTargetRatio/],
+      [{ tpmThresholdRatio: 0.8, tpmTargetRatio: 0.8 }, /tpmTargetRatio must be less/],
+      [{ modelPolicies: [{ provider: MODEL, model: MODEL, tpmThresholdRatio: 0.7 }] }, /tpmTargetRatio must be less/],
       [{ retainRatio: 0.9 }, /retainRatio \(0.9\) must be less than the resolved thresholdRatio \(0.8\)/],
       [{ thresholdRatio: 0.1 }, /retainRatio \(0.16\) must be less than the resolved thresholdRatio \(0.1\)/],
       [{ retainTokens: -1 }, /non-negative integer/],

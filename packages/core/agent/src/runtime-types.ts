@@ -8,8 +8,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type {
-  ContentBlock, FinishReason, LlmAttemptId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId,
-  ResolvedRetryPolicy, StreamChunk, TokenUsage,
+  ContentBlock, FinishReason, GenerateOptions, LlmAttemptId, LlmCallConfig, LlmFailure, MessageId, PreparedLlmCall,
+  ReasoningEffortId, ResolvedRetryPolicy, StreamChunk, TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import type { AgentCancelCause, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
@@ -154,6 +154,9 @@ export type PreStepDecision =
 
 /** Action returned by a listener that owns model-request recovery. */
 export type RequestErrorAction = { kind: 'retry' } | { kind: 'reprepare' } | undefined
+
+/** Request admission may rebuild its inputs after a durable surface change. */
+export type RequestReadyAction = { kind: 'reprepare' } | undefined
 
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
 export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
@@ -398,6 +401,19 @@ declare module '@deepseek-ai/cordis' {
      * @mode waterfall
     */
     'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
+    /**
+     * Inspect the frozen, logged request before the adapter starts. A listener
+     * that durably changes its inputs returns reprepare; otherwise it calls next().
+     * @param payload.agent - Agent owning the request.
+     * @param payload.turn - open turn number.
+     * @param payload.step - current step number.
+     * @param payload.request - frozen request derived from the session log.
+     * @param payload.preparedCall - captured adapter generation, when available.
+     * @param payload.signal - request cancellation signal.
+     * @param next - continue request admission.
+     * @mode waterfall
+     */
+    'agent/request-ready'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; request: GenerateOptions; preparedCall: PreparedLlmCall | undefined; signal: AbortSignal }, next: () => Promise<RequestReadyAction>): Promise<RequestReadyAction>
     /**
      * Handle one failed model-request attempt before the loop retries or closes
      * its step. A listener returns `{ kind: 'retry' }` without calling `next()`

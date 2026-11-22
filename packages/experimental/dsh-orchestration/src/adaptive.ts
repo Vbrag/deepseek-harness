@@ -376,9 +376,13 @@ export class AdaptiveRouting {
     const budget = await agent.ctx.get('compaction')?.pressureBudget(agent, { config }, operationSignal)
     const input = this.inputTokens(agent, state.assessment, messages)
     const capacity = info.context?.contextWindow
-    const queue = await this.ctx.llm.queueAvailability({ ...route, inputTokens: input,
-      maxTokens: config.maxTokens ?? state.assessment.outputTokens ?? this.host.config.outputReserveTokens })
+    const query = { ...route, inputTokens: input,
+      maxTokens: config.maxTokens ?? state.assessment.outputTokens ?? this.host.config.outputReserveTokens }
+    const queue = await this.ctx.llm.queueAvailability(query)
     if (queue.kind === 'wait' || queue.kind === 'impossible') {
+      const pacing = await this.ctx.llm.requestTokenBudget(query)
+      const trigger = pacing === undefined ? undefined : agent.ctx.get('compaction')?.tpmThreshold(config, pacing.tokenLimit)
+      if (pacing !== undefined && trigger !== undefined && pacing.estimatedTokens >= trigger) return
       try {
         if (await this.choose(agent, operationSignal, 'quota-pressure', { automatic: true, readyOnly: true, messages })) return
       } catch (error: unknown) {
@@ -453,7 +457,7 @@ export class AdaptiveRouting {
       let state = this.state(agent)
       if (failure.code === 'REQUEST_INTERRUPTED' && state.request !== null) return { kind: 'reprepare' }
       if (!['CONTEXT_WINDOW_EXCEEDED', 'COMPACTION_INVALID_BUDGET',
-        'MODEL_SWITCH_COMPACTION_FAILED', 'RATE_LIMIT', 'QUOTA', 'ACCOUNT_QUOTA', 'BILLING_EXHAUSTED',
+        'MODEL_SWITCH_COMPACTION_FAILED', 'RATE_LIMIT', 'RATE_LIMIT_REQUEST_TOO_LARGE', 'QUOTA', 'ACCOUNT_QUOTA', 'BILLING_EXHAUSTED',
         'TIMEOUT', 'SERVER', 'TRANSPORT', 'MODEL_UNSUPPORTED', 'UNKNOWN_MODEL', 'NO_ADAPTER', 'AUTH',
         'INVALID_CREDENTIAL', 'MISSING_CREDENTIAL'].includes(failure.code)) return next()
       this.initializeLead(agent, messages)

@@ -6,11 +6,12 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import { CompactionEngine, ManualCompactionError, toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
 import type { CompactionAgentContext, CompactionPressureBudget, CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { EpochHeader, Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
-import { CONTEXT_WINDOW_EXCEEDED_CODE, LlmError } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, HarnessError, LlmError } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, LlmRequestTokenBudget } from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { CommandId } from '@deepseek-ai/dsh-commands/types'
@@ -26,10 +27,11 @@ import {
 } from './config.ts'
 import {
   assertNoActiveCompaction,
+  buildSummarizationInput,
   compactSurfaceRegion,
   selectCompactableRange,
 } from './region.ts'
-import { summarizeWithLlm } from './summarizer.ts'
+import { buildSummarizationRequest, summarizeWithLlm } from './summarizer.ts'
 import type { SummarizationInput, SummaryResult, SummaryRoute } from './summarizer.ts'
 import type {
   BasicCompactionConfig,
@@ -85,7 +87,17 @@ function conversationTarget(
   return completeRoute(answered ?? undefined) ?? routedTarget(agent.session) ?? completeRoute(agent.options)
 }
 
+interface TpmEpisode {
+  readonly key: string
+  readonly limit: number
+  attempts: number
+  active: boolean
+  retryAt: number
+}
+
 const thresholdRatioSchema = z.number()
+const tpmThresholdRatioSchema = z.number()
+const tpmTargetRatioSchema = z.number()
 const headroomTokensSchema = z.number().step(1).min(0)
 const retainRatioSchema = z.number()
 const retainTokensSchema = z.number().step(1).min(0)
@@ -99,6 +111,8 @@ const modelPolicy: z<ModelCompactPolicyConfig> = z.object({
   provider: z.string().required(),
   model: z.string().required(),
   thresholdRatio: thresholdRatioSchema,
+  tpmThresholdRatio: tpmThresholdRatioSchema,
+  tpmTargetRatio: tpmTargetRatioSchema,
   headroomTokens: headroomTokensSchema,
   retainRatio: retainRatioSchema,
   retainTokens: retainTokensSchema,
@@ -122,6 +136,8 @@ export class BasicCompactionEngine extends CompactionEngine {
 
   static Config: z<BasicCompactionConfig> = z.object({
     thresholdRatio: thresholdRatioSchema,
+    tpmThresholdRatio: tpmThresholdRatioSchema,
+    tpmTargetRatio: tpmTargetRatioSchema,
     headroomTokens: headroomTokensSchema,
     retainRatio: retainRatioSchema,
     retainTokens: retainTokensSchema,
@@ -140,6 +156,9 @@ export class BasicCompactionEngine extends CompactionEngine {
   private readonly warnedUnavailableContexts = new Set<string>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
+  private readonly tpmEpisodes = new WeakMap<Agent, TpmEpisode>()
+  private readonly tpmSummaryCaps = new WeakMap<Agent, number>()
+  private readonly tpmRecoveryBounds = new WeakMap<Agent, { episode: TpmEpisode; maxAttempts: number }>()
   /** Registered at construction; `summarize()` awaits it, so no read precedes readiness. */
   private readonly answeredRoute: Promise<ProjectionHandle<AnsweredRoute>>
 
@@ -153,6 +172,11 @@ export class BasicCompactionEngine extends CompactionEngine {
   /** Fail plugin activation when the answered-route projection cannot register. */
   protected async [Service.init](): Promise<void> {
     await this.answeredRoute
+  }
+
+  override tpmThreshold(config: LlmCallConfig, tokenLimit: number): number | undefined {
+    if (!this.config.auto) return undefined
+    return Math.floor(tokenLimit * resolveTargetPolicy(this.config, config).tpmThresholdRatio)
   }
 
   /**
@@ -193,6 +217,14 @@ export class BasicCompactionEngine extends CompactionEngine {
 
     ctx.on('agent/status', ({ agent, status }) => {
       if (status === 'idle') this.overflowRetries.delete(agent)
+    })
+
+    ctx.on('agent/request-ready', async ({ agent, request, preparedCall, signal }, next) => {
+      if (signal.aborted || preparedCall === undefined) return next()
+      const budget = preparedCall.requestTokenBudget(request)
+      if (budget === undefined) return next()
+      if (await this.compactTpm(agent, request, budget, signal)) return { kind: 'reprepare' as const }
+      return next()
     })
 
     // Prepend wraps routing listeners: await their final selection while the
@@ -298,7 +330,8 @@ export class BasicCompactionEngine extends CompactionEngine {
     const config = target === undefined
       ? this.config
       : resolveTargetPolicy(this.config, target)
-    return summarizeWithLlm(this.ctx, config, input, agent, target, signal)
+    const maxTokens = this.tpmSummaryCaps.get(agent)
+    return summarizeWithLlm(this.ctx, maxTokens === undefined ? config : { ...config, maxTokens }, input, agent, target, signal)
   }
 
   /**
@@ -366,6 +399,138 @@ export class BasicCompactionEngine extends CompactionEngine {
       info.context.contextWindow,
       reservedCompletionTokens(header, info.defaultMaxTokens),
     )
+  }
+
+  /** Reduce one prepared request before it consumes a provider reservation. */
+  private async compactTpm(agent: Agent, request: GenerateOptions, budget: LlmRequestTokenBudget,
+    signal: AbortSignal): Promise<boolean> {
+    const policy = resolveTargetPolicy(this.config, request)
+    const threshold = Math.floor(budget.tokenLimit * policy.tpmThresholdRatio)
+    const target = Math.floor(budget.tokenLimit * policy.tpmTargetRatio)
+    const gap = Math.max(1, threshold - target)
+    const key = JSON.stringify([request.provider, request.model, policy.tpmThresholdRatio, policy.tpmTargetRatio])
+    const previous = this.tpmEpisodes.get(agent)
+    const episode: TpmEpisode = previous === undefined || previous.key !== key || previous.limit !== budget.tokenLimit
+      ? { key, limit: budget.tokenLimit, attempts: 0, active: false, retryAt: 0 } : previous
+    if (episode !== previous) this.tpmEpisodes.set(agent, episode)
+    if (budget.estimatedTokens <= target) {
+      this.tpmEpisodes.delete(agent)
+      return false
+    }
+    if (!episode.active) {
+      if (budget.estimatedTokens < threshold
+        || (budget.estimatedTokens < episode.retryAt && budget.estimatedTokens <= budget.tokenLimit)) return false
+      episode.active = true
+      episode.attempts = 0
+    }
+    const stop = (cause?: unknown): false => {
+      episode.active = false
+      episode.retryAt = budget.estimatedTokens + gap
+      if (budget.estimatedTokens > budget.tokenLimit) {
+        throw new LlmError(
+          `The request needs an estimated ${budget.estimatedTokens} tokens, above the ${budget.tokenLimit} TPM limit; `
+          + 'select an eligible model with a larger budget or reduce the input or output allowance.',
+          'RATE_LIMIT_REQUEST_TOO_LARGE', cause === undefined ? undefined : { cause },
+        )
+      }
+      if (cause !== undefined) this.ctx.logger.warn('TPM compaction could not reduce the request; admitting the request within its limit', cause)
+      return false
+    }
+    signal.throwIfAborted()
+    if (budget.outputTokens >= budget.tokenLimit) return stop()
+    assertNoActiveCompaction(agent.session, 'TPM compaction')
+    const generation = agent.session.surface.replaceGeneration
+    this.ctx.get('toolResultPruner')?.pruneSession(agent.session)
+    if (agent.session.surface.replaceGeneration > generation) {
+      await this.flushTpmChange(agent, signal)
+      return true
+    }
+    if (episode.attempts > policy.compactionRetries) return stop()
+    const messageBudget = Math.max(0, target - budget.outputTokens)
+    const contextBudget = request.maxTokens === undefined ? Infinity
+      : Math.max(0, (agent.session.requestContext()?.contextWindow ?? Infinity) - request.maxTokens)
+    const retained = policy.retainTokens === undefined
+      ? Math.floor(Math.min(messageBudget, contextBudget) * policy.retainRatio) : policy.retainTokens
+    const range = selectCompactableRange(agent.session, this.ctx.tokenMeter.measure(agent.session), retained)
+    if (range === null) return stop()
+    try {
+      const fitting = await this.selectTpmRange(agent, range, signal)
+      if (fitting === null) return stop()
+      episode.attempts++
+      if (fitting.maxTokens !== undefined) this.tpmSummaryCaps.set(agent, fitting.maxTokens)
+      this.tpmRecoveryBounds.set(agent, { episode, maxAttempts: policy.compactionRetries + 1 })
+      try {
+        await this.compactRegion(fitting.start, fitting.end, agent, signal)
+      } finally {
+        this.tpmSummaryCaps.delete(agent)
+        this.tpmRecoveryBounds.delete(agent)
+      }
+    } catch (error: unknown) {
+      signal.throwIfAborted()
+      if (!(error instanceof HarnessError)) throw error
+      if (agent.session.surface.replaceGeneration > generation) {
+        await this.flushTpmChange(agent, signal)
+        return true
+      }
+      return stop(error)
+    }
+    signal.throwIfAborted()
+    if (agent.session.surface.replaceGeneration <= generation) return stop()
+    await this.flushTpmChange(agent, signal)
+    return true
+  }
+
+  /** Select a balanced prefix that the configured summary route can itself admit. */
+  private async selectTpmRange(agent: Agent, range: { start: SessionSeq; end: SessionSeq },
+    signal: AbortSignal): Promise<{ start: SessionSeq; end: SessionSeq; maxTokens?: number } | null> {
+    const nodes = agent.session.surface.nodes
+    const first = nodes.indexOf(range.start)
+    const end = nodes.indexOf(range.end)
+    let last = end
+    if (first < 0 || last < first) return null
+    const conversation = conversationTarget(agent, (await this.answeredRoute).stateOf(agent.session))
+    const config = conversation === undefined ? this.config : resolveTargetPolicy(this.config, conversation)
+    const input = buildSummarizationInput(agent.session, nodes.slice(first, last + 1))
+    const initial = buildSummarizationRequest(config, input, agent, conversation, signal)
+    let prepared = await this.ctx.llm.prepareCall({ provider: initial.provider, model: initial.model,
+      ...initial.maxTokens === undefined ? {} : { maxTokens: initial.maxTokens } }, signal)
+    let maxTokens: number | undefined
+    for (;;) {
+      signal.throwIfAborted()
+      const selected = buildSummarizationInput(agent.session, nodes.slice(first, last + 1))
+      const proposed = buildSummarizationRequest(maxTokens === undefined ? config : { ...config, maxTokens },
+        selected, agent, conversation, signal)
+      const budget = prepared.requestTokenBudget({ ...proposed, ...prepared.config })
+      if (budget === undefined || budget.estimatedTokens <= budget.tokenLimit) {
+        return { start: range.start, end: nodes[last]!, ...maxTokens === undefined ? {} : { maxTokens } }
+      }
+      let next = first + Math.floor((last - first - 1) / 2)
+      while (next >= first && !toolPairingBalancedAfter(agent.session, nodes[next]!)) next--
+      if (next >= first) {
+        last = next
+        continue
+      }
+      if (maxTokens !== undefined || config.maxTokens <= 1) return null
+      const summaryPolicy = resolveTargetPolicy(this.config, initial)
+      maxTokens = Math.min(config.maxTokens - 1, Math.max(1,
+        Math.floor(budget.tokenLimit * (1 - summaryPolicy.tpmTargetRatio))))
+      prepared = await this.ctx.llm.prepareCall({ provider: initial.provider, model: initial.model, maxTokens }, signal)
+      last = end
+    }
+  }
+
+  /** A continuation is admitted only after the replacement reaches session storage. */
+  private async flushTpmChange(agent: Agent, signal: AbortSignal): Promise<void> {
+    try {
+      if (!await this.ctx.sessions.flush(agent.session)) {
+        throw new LlmError('TPM compaction requires durable session storage.', 'COMPACTION_DURABILITY_REQUIRED')
+      }
+    } catch (cause: unknown) {
+      if (cause instanceof LlmError && cause.code === 'COMPACTION_DURABILITY_REQUIRED') throw cause
+      throw new LlmError('The compacted session could not be saved; request admission stopped.',
+        'COMPACTION_DURABILITY_REQUIRED', { cause })
+    }
+    signal.throwIfAborted()
   }
 
   /** Price the proposed header; switch checks require history below its threshold. */
@@ -504,12 +669,18 @@ export class BasicCompactionEngine extends CompactionEngine {
     return {
       meter: this.ctx.tokenMeter,
       summarize: (input, owner, abort) => this.summarize(input, owner, abort),
-      recover: (error, agent, sourceEventSeqs, signal) => this.ctx.waterfall('compaction/summary-error', {
-        session: agent.session,
-        sourceEventSeqs,
-        error,
-        ...signal === undefined ? {} : { signal },
-      }, () => false),
+      recover: (error, agent, sourceEventSeqs, signal) => {
+        const bound = this.tpmRecoveryBounds.get(agent)
+        if (bound !== undefined && bound.episode.attempts >= bound.maxAttempts) return false
+        const retry = this.ctx.waterfall('compaction/summary-error', {
+          session: agent.session,
+          sourceEventSeqs,
+          error,
+          ...signal === undefined ? {} : { signal },
+        }, () => false)
+        if (retry && bound !== undefined) bound.episode.attempts++
+        return retry
+      },
     }
   }
 }

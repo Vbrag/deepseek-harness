@@ -161,6 +161,37 @@ describe('PiAiAdapter provider routing', () => {
       .toThrow('rateLimitOutputTokens must be a positive safe integer')
   })
 
+  it('inspects a prepared request using its captured TPM limit and pacing allowance', async () => {
+    const adapter = adapterOf({
+      acme: { api: 'openai-completions', baseURL: 'https://acme.test/v1', rateLimitOutputTokens: 25,
+        models: [{ id: 'limited', maxTokens: 100, tpm: 150 }, { id: 'unlimited', maxTokens: 100 }] },
+    })
+    const message = createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'x'.repeat(200) }] })
+    const call = await adapter.prepareCall('acme', 'limited')
+    const request = { provider: 'acme', model: 'limited', messages: [message] }
+    expect(call.requestTokenBudget?.(request)).toEqual({ tokenLimit: 150, inputTokens: 50, outputTokens: 25, estimatedTokens: 75 })
+    expect(call.requestTokenBudget?.({ ...request, maxTokens: 10 })).toMatchObject({ outputTokens: 10, estimatedTokens: 60 })
+    await expect(adapter.requestTokenBudget({ provider: 'acme', model: 'limited', inputTokens: 50 })).resolves
+      .toEqual({ tokenLimit: 150, inputTokens: 50, outputTokens: 25, estimatedTokens: 75 })
+    const unlimited = await adapter.prepareCall('acme', 'unlimited')
+    expect(unlimited.requestTokenBudget?.({ ...request, model: 'unlimited' })).toBeUndefined()
+  })
+
+  it('retains the prepared pacing budget when provider settings change', async () => {
+    const profile = (tpm: number, rateLimitOutputTokens: number) => resolveProfiles({
+      acme: { api: 'openai-completions', baseURL: 'https://acme.test/v1', rateLimitOutputTokens,
+        models: [{ id: 'model', maxTokens: 100, tpm }] },
+    })
+    let current = profile(150, 25)
+    const adapter = new PiAiAdapter({ profiles: () => current, resolveApiKey: () => Promise.resolve('test-key'), auth: memoryAuth() })
+    const first = await adapter.prepareCall('acme', 'model')
+    current = profile(300, 40)
+    const second = await adapter.prepareCall('acme', 'model')
+    const request = { provider: 'acme', model: 'model', messages: [] }
+    expect(first.requestTokenBudget?.(request)).toMatchObject({ tokenLimit: 150, outputTokens: 25 })
+    expect(second.requestTokenBudget?.(request)).toMatchObject({ tokenLimit: 300, outputTokens: 40 })
+  })
+
   it('reserves the shipped gateway request cap for pacing instead of the generic allowance', async () => {
     // The gateway charges a request's declared output cap against its
     // 500,000-token minute, so the shipped route must reserve that cap and hold

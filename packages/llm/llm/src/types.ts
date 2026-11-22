@@ -403,6 +403,18 @@ export interface LlmQueueRequest {
   readonly maxTokens?: number
 }
 
+/** One request's provider-owned token reservation against its per-minute limit. */
+export interface LlmRequestTokenBudget {
+  /** Configured tokens per minute available to a single request. */
+  readonly tokenLimit: number
+  /** Estimated input tokens used by the adapter's pacing policy. */
+  readonly inputTokens: number
+  /** Output tokens reserved for pacing; this does not change the output cap. */
+  readonly outputTokens: number
+  /** Sum of the input estimate and pacing output reservation. */
+  readonly estimatedTokens: number
+}
+
 /** Advisory admission state; actual dispatch must independently reserve capacity. */
 export type LlmQueueAvailability =
   | { readonly kind: 'ready' }

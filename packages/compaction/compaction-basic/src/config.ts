@@ -21,10 +21,14 @@ const DEFAULT_THRESHOLD_RATIO = 0.8
 
 /** Default verbatim-tail fraction for every routed model. */
 const DEFAULT_RETAIN_RATIO = 0.16
+const DEFAULT_TPM_THRESHOLD_RATIO = 0.9
+const DEFAULT_TPM_TARGET_RATIO = 0.8
 
 /** Fields shared by top-level defaults and exact-target overrides. */
 const POLICY_CONFIG_KEYS = [
   'thresholdRatio',
+  'tpmThresholdRatio',
+  'tpmTargetRatio',
   'headroomTokens',
   'retainRatio',
   'retainTokens',
@@ -78,6 +82,9 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
   const maxTokens = config.maxTokens ?? headroomTokens
   assertPositiveInteger('BasicCompactionConfig.maxTokens (explicit or from headroomTokens)', maxTokens)
   const thresholdRatio = config.thresholdRatio ?? DEFAULT_THRESHOLD_RATIO
+  const tpmThresholdRatio = config.tpmThresholdRatio ?? DEFAULT_TPM_THRESHOLD_RATIO
+  const tpmTargetRatio = config.tpmTargetRatio ?? DEFAULT_TPM_TARGET_RATIO
+  validateTpmRatios(tpmThresholdRatio, tpmTargetRatio, 'BasicCompactionConfig')
   const retention = resolveRetention(config, { retainRatio: DEFAULT_RETAIN_RATIO })
   validateRatioRetention(thresholdRatio, retention, 'BasicCompactionConfig')
   const modelPolicies = resolveModelPolicies(config.modelPolicies)
@@ -95,10 +102,14 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
       resolveRetention(policy, retention),
       `BasicCompactionConfig: modelPolicies[${index}]`,
     )
+    validateTpmRatios(policy.tpmThresholdRatio ?? tpmThresholdRatio, policy.tpmTargetRatio ?? tpmTargetRatio,
+      `BasicCompactionConfig: modelPolicies[${index}]`)
   }
 
   return deepFreeze({
     thresholdRatio,
+    tpmThresholdRatio,
+    tpmTargetRatio,
     headroomTokens,
     ...retention,
     summarizationProvider: config.summarizationProvider ?? '',
@@ -130,6 +141,8 @@ export function resolveTargetPolicy(
   return deepFreeze({
     target: { provider: target.provider, model: target.model },
     thresholdRatio: override?.thresholdRatio ?? config.thresholdRatio,
+    tpmThresholdRatio: override?.tpmThresholdRatio ?? config.tpmThresholdRatio,
+    tpmTargetRatio: override?.tpmTargetRatio ?? config.tpmTargetRatio,
     headroomTokens: override?.headroomTokens ?? config.headroomTokens,
     ...resolveRetention(override ?? {}, inheritedRetention),
     summarizationProvider: override?.summarizationProvider ?? config.summarizationProvider,
@@ -208,6 +221,8 @@ export function resolveCompactSpec(
     target: { ...policy.target },
     contextWindow,
     thresholdRatio: policy.thresholdRatio,
+    tpmThresholdRatio: policy.tpmThresholdRatio,
+    tpmTargetRatio: policy.tpmTargetRatio,
     thresholdTokens,
     retainTokens,
     summarizationProvider: policy.summarizationProvider,
@@ -240,6 +255,11 @@ function validateRatioRetention(
       + `the resolved thresholdRatio (${thresholdRatio})`,
     )
   }
+}
+
+/** The target must leave room below the trigger for subsequent growth. */
+function validateTpmRatios(threshold: number, target: number, name: string): void {
+  if (target >= threshold) throw new Error(`${name}: tpmTargetRatio must be less than tpmThresholdRatio`)
 }
 
 /** Validate, detach, and reject duplicate exact-target policies. */
@@ -281,6 +301,8 @@ function validatePolicy(
   name: string,
 ): void {
   const thresholdRatio = config.thresholdRatio
+  const tpmThresholdRatio = config.tpmThresholdRatio
+  const tpmTargetRatio = config.tpmTargetRatio
   const headroomTokens = config.headroomTokens
   const retainRatio = config.retainRatio
   const retainTokens = config.retainTokens
@@ -288,6 +310,8 @@ function validatePolicy(
   const compactionRetries = config.compactionRetries
   const maxOverflowRetries = config.maxOverflowRetries
   if (thresholdRatio !== undefined) assertRatio(`${name}.thresholdRatio`, thresholdRatio)
+  if (tpmThresholdRatio !== undefined) assertRatio(`${name}.tpmThresholdRatio`, tpmThresholdRatio)
+  if (tpmTargetRatio !== undefined) assertRatio(`${name}.tpmTargetRatio`, tpmTargetRatio)
   if (headroomTokens !== undefined) assertNonNegativeInteger(`${name}.headroomTokens`, headroomTokens)
   if (retainRatio !== undefined) assertRatio(`${name}.retainRatio`, retainRatio)
   if (retainTokens !== undefined) assertNonNegativeInteger(`${name}.retainTokens`, retainTokens)

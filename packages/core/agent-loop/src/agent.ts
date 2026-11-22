@@ -17,6 +17,7 @@ import type {
   InboxState,
   PreStepDecision,
   RequestErrorAction,
+  RequestReadyAction,
   TurnStoppingCause,
 } from '@deepseek-ai/dsh-agent'
 import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
@@ -552,6 +553,11 @@ export class ReactLoopAgent implements Agent {
       admissions.firstAttempt = false
       admissions.offerMessages = false
       request = this.buildRequest(prepared.config, preparedCall, assembly.tools, position, startsRequestSeries, signal)
+      const ready = await this.dispatch.waterfall('agent/request-ready', {
+        ...position, request, preparedCall, signal,
+      }, () => Promise.resolve<RequestReadyAction>(undefined))
+      signal.throwIfAborted()
+      if (ready !== undefined) return { kind: 'recover', action: ready }
       live = new AssistantStreamAttempt(this.session.id, ++this.assistantAttemptCounter,
         () => ++this.assistantStreamRevision, position.turn, position.step,
         (frame) => { this.dispatch.emit('agent/assistant-stream', { frame }) })

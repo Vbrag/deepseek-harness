@@ -50,6 +50,7 @@ import type {
   LlmBillingBudgetId,
   LlmQueueRequest,
   LlmQueueAvailability,
+  LlmRequestTokenBudget,
   LlmProviderInfo,
   LlmResolvedModelInfo,
   PreparedAdapterCall,
@@ -80,6 +81,16 @@ const ANTHROPIC_TOOL_UPDATE_PLACEHOLDER: ToolSchema = {
   name: 'DeferredToolPlaceholder',
   description: 'Reserved placeholder that keeps deferred tool loading active; never call this tool.',
   parameters: { type: 'object', properties: {} },
+}
+
+/** Include the same required placeholder in pacing and transport requests. */
+function pacingRequest(options: GenerateOptions, model: Model<Api>): GenerateOptions {
+  const tools = options.tools ?? []
+  const needsPlaceholder = model.api === 'anthropic-messages' && conversationUpdates(model).toolUpdate === 'in-history'
+    && tools.every(tool => tool.deferLoading === true)
+    && options.messages.some(message => message.role === 'developer'
+      && message.content.some(block => block.type === 'tool-addition' || block.type === 'tool-removal'))
+  return needsPlaceholder ? { ...options, tools: [ANTHROPIC_TOOL_UPDATE_PLACEHOLDER, ...tools] } : options
 }
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
@@ -417,7 +428,31 @@ export class PiAiAdapter extends LlmAdapter {
     const snapshot = this.current()
     return Promise.resolve({
       model: this.modelInfo(snapshot, provider, model),
+      requestTokenBudget: options => this.requestTokenBudgetFor(snapshot, options),
       stream: options => this.streamWithSnapshot(options, snapshot),
+    })
+  }
+
+  private requestTokenBudgetFor(snapshot: PiAiSnapshot, options: GenerateOptions): LlmRequestTokenBudget | undefined {
+    const profile = this.profileOf(snapshot, options.provider)
+    const model = this.modelOf(snapshot, options.provider, options.model)
+    const tokenLimit = profile.modelRateLimits.get(options.model)?.tpm
+    if (tokenLimit === undefined) return undefined
+    const request = pacingRequest(options, model)
+    const inputTokens = estimateRequestInputTokens(request.messages, request.system, request.tools)
+    const outputTokens = this.outputAllowance(profile, model, options.maxTokens)
+    return { tokenLimit, inputTokens, outputTokens, estimatedTokens: inputTokens + outputTokens }
+  }
+
+  override requestTokenBudget(request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined> {
+    return Promise.resolve().then(() => {
+      const snapshot = this.current()
+      const profile = this.profileOf(snapshot, request.provider)
+      const model = this.modelOf(snapshot, request.provider, request.model)
+      const tokenLimit = profile.modelRateLimits.get(request.model)?.tpm
+      if (tokenLimit === undefined) return undefined
+      const outputTokens = this.outputAllowance(profile, model, request.maxTokens)
+      return { tokenLimit, inputTokens: request.inputTokens, outputTokens, estimatedTokens: request.inputTokens + outputTokens }
     })
   }
 
@@ -464,15 +499,7 @@ export class PiAiAdapter extends LlmAdapter {
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
     const updates = conversationUpdates(model)
-    // pi-ai collapses Anthropic tool updates without an initially active declaration.
-    const tools = options.tools ?? []
-    const needsPlaceholder = model.api === 'anthropic-messages' && updates.toolUpdate === 'in-history'
-      && tools.every(tool => tool.deferLoading === true)
-      && options.messages.some(message => message.role === 'developer'
-        && message.content.some(block => block.type === 'tool-addition' || block.type === 'tool-removal'))
-    const request = needsPlaceholder
-      ? { ...options, tools: [ANTHROPIC_TOOL_UPDATE_PLACEHOLDER, ...tools] }
-      : options
+    const request = pacingRequest(options, model)
     const reasoning = resolveReasoningLevel(
       model,
       options.reasoningEffort ?? profile.reasoning,

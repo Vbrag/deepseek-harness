@@ -100,6 +100,7 @@ turn/start
      append entered messages as user/message; reconcile retained runtime context
      log request/header and request/context as needed
      derive and freeze model history from the log
+     agent/request-ready -> dispatch | reprepare after durable input change
      stream the bound prepared call -> llm/stream -> agent/assistant-stream start
        agent/assistant-stream chunk*
        agent/request-finished -> assistant/message | assistant/attempt -> agent/assistant-stream end
@@ -111,7 +112,7 @@ turn/start
 turn/end
 ```
 
-`turn/*`, `step/*`, `system/message`, `user/message`, `assistant/message`, `assistant/attempt`, and `tool/*` are durable session events; the rest are live extension points across three domains. `agent/assistant-stream` publishes process-local start, transient chunk, and end frames. The loop commits the complete compact stream as one message or log-only attempt before a committed end frame, and the Web Session-follow adapter is the live event's only remote consumer. `agent/pre-step`, `agent/request`, `llm/stream`, and the three `tools/*` events are waterfalls, whose listeners must call `next()` to delegate; `agent/turn-stopping` is serial and has no `next()`.
+`turn/*`, `step/*`, `system/message`, `user/message`, `assistant/message`, `assistant/attempt`, and `tool/*` are durable session events; the rest are live extension points across three domains. `agent/assistant-stream` publishes process-local start, transient chunk, and end frames. The loop commits the complete compact stream as one message or log-only attempt before a committed end frame, and the Web Session-follow adapter is the live event's only remote consumer. `agent/pre-step`, `agent/request`, `agent/request-ready`, `llm/stream`, and the three `tools/*` events are waterfalls, whose listeners must call `next()` to delegate; `agent/turn-stopping` is serial and has no `next()`.
 
 Fork creation stores the caller-supplied history; a sharing backend persists the parent prefix first ([lifecycle](../packages/core/agent-loop/README.md#understand-the-implementation)). Factory setup follows SessionStore entry and `session/created`, preceding `agent/created`; closing events commit before removal.
 
@@ -119,7 +120,7 @@ Fork creation stores the caller-supplied history; a sharing backend persists the
 
 One inbox feeds the driver; injected context waits for a waking message. AgentLoop’s durable `inbox` projection exposes pending input without live Agents.
 
-Serial `agent/step-preparing` listeners may select a route before prompt assembly. Structured preparation failures reach `agent/request-error` with the claimed input so recovery can assess the pending request before it is committed. `agent/pre-step` accepts, rewrites, or rejects input; `prepareCall()` binds the adapter before system or user messages commit. Each attempt writes the assembly’s `systemUpdates()`, refreshes runtime facts, and freezes the request. `retry` retains the assembly; `reprepare` captures the route and assembles again in the same step without repeating committed input or tools. `agent/request-finished` precedes response commitment and tool execution; `interruptRequest()` stops only the active model request. [Agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) owns request timing.
+Serial `agent/step-preparing` listeners may select a route before prompt assembly. Structured preparation failures reach `agent/request-error` with the claimed input so recovery can assess the pending request before it is committed. `agent/pre-step` accepts, rewrites, or rejects input; `prepareCall()` binds the adapter before system or user messages commit. Each attempt writes the assembly’s `systemUpdates()`, refreshes runtime facts, and freezes the request. `agent/request-ready` can inspect that logged request and its captured adapter before dispatch; a durable input change requests repreparation. `retry` retains the assembly; `reprepare` captures the route and assembles again in the same step without repeating committed input or tools. `agent/request-finished` precedes response commitment and tool execution; `interruptRequest()` stops only the active model request. [Agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) owns request timing.
 
 The loop sends immutable requests with live cancellation and reuses freeze evidence for frozen identities; [agent-loop](../packages/core/agent-loop/README.md) owns construction and cancellation causes.
 

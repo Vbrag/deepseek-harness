@@ -79,6 +79,8 @@ The contract is three abstract operations a backend implements: `compactIfNeeded
 
 `pressureBudget(agent, proposedHeader, signal)` inspects a proposed route without changing history or making a summary request. It returns `{ thresholdTokens, retainTokens }`, or `undefined` when the provider declares no pressure policy or model capacity is unknown. The basic provider rejects an invalid configured budget with `LlmError` code `COMPACTION_INVALID_BUDGET`, allowing routing policy to choose another permitted route before compaction.
 
+`tpmThreshold(config, tokenLimit)` exposes the automatic per-request TPM trigger without changing history. It returns `undefined` when the backend does not enable that policy, so routing can retain its ordinary queue behavior.
+
 A backend that summarizes through `ctx.llm.stream()` must forward the abort signal into the call's `GenerateOptions.signal`, so an abort or fiber dispose tears down the in-flight summarization. Automatic and explicit-region brackets recover their numeric owner from the open turn; manual brackets require no open turn and stamp `turn: null`.
 
 ### Manual failure taxonomy

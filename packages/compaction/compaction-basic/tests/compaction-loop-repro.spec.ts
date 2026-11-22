@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage, createSystemMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, resolveRetryPolicy , createMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, LlmResolvedModelInfo, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, LlmQueueAvailability, LlmQueueRequest, LlmRequestTokenBudget, LlmResolvedModelInfo, PreparedAdapterCall, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { estimateRequestInputTokens } from '@deepseek-ai/dsh-llm/input-estimate'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { type ToolCallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
@@ -174,9 +175,9 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
   })
 }
 
-function overflowHistorySeed(): readonly SessionEvent[] {
+function overflowHistorySeed(turns = 2): readonly SessionEvent[] {
   const session = Session.create(brandString<SessionId>('overflow-history-seed'))
-  for (let turn = 1; turn <= 2; turn += 1) {
+  for (let turn = 1; turn <= turns; turn += 1) {
     const sentinel = turn === 1 ? 'OLD HISTORY SENTINEL' : 'RECENT HISTORY'
     session.append('turn/start', {
       turn,
@@ -610,6 +611,221 @@ describe('summary route after a switch to a model that undercounts in the estima
       expect(agent.model.current()).toMatchObject({ provider: 'other', model: 'other' })
     } finally {
       await ctx.fiber.dispose()
+    }
+  })
+})
+
+/** Adapter whose request cap is separate from its much larger context window. */
+class TpmAdapter extends LlmAdapter {
+  readonly requests: Array<{ request: GenerateOptions; budget: LlmRequestTokenBudget | undefined }> = []
+  outputAllowance = 64
+  summaryOutputAllowance = 64
+  queue: LlmQueueAvailability = { kind: 'unknown' }
+  holdSummary: ((request: GenerateOptions) => Promise<void>) | undefined
+  toolFirst = false
+  private conversationCalls = 0
+  constructor(private readonly limit: number | undefined) { super() }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({ provider, id: model, name: model, context: { contextWindow: 1_000_000 } })
+  }
+
+  override async prepareCall(provider: string, model: string): Promise<PreparedAdapterCall> {
+    const info = await this.resolveModel(provider, model)
+    return { model: info, requestTokenBudget: request => this.budget(request), stream: request => this.stream(request) }
+  }
+
+  override queueAvailability(_request: LlmQueueRequest): Promise<LlmQueueAvailability> {
+    return Promise.resolve(this.queue)
+  }
+
+  private budget(request: GenerateOptions): LlmRequestTokenBudget | undefined {
+    if (this.limit === undefined) return undefined
+    const inputTokens = estimateRequestInputTokens(request.messages, request.system, request.tools)
+    const allowance = request.purpose === 'compaction' ? this.summaryOutputAllowance : this.outputAllowance
+    const outputTokens = Math.min(request.maxTokens ?? allowance, allowance)
+    return { tokenLimit: this.limit, inputTokens, outputTokens, estimatedTokens: inputTokens + outputTokens }
+  }
+
+  override async * stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
+    const budget = this.budget(request)
+    this.requests.push({ request, budget })
+    if (budget !== undefined && budget.estimatedTokens > budget.tokenLimit) {
+      throw new LlmError('request exceeds the TPM limit', 'RATE_LIMIT_REQUEST_TOO_LARGE')
+    }
+    if (request.purpose === 'compaction') await this.holdSummary?.(request)
+    if (request.purpose !== 'compaction' && this.toolFirst && this.conversationCalls++ === 0) {
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: brandString<ToolCallId>('once'),
+        name: 'write_once', arguments: '{}' } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    const text = request.purpose === 'compaction' ? 'Retained checkpoint.' : 'Task completed.'
+    yield { type: 'block-start', index: 0, blockType: 'text' }
+    yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+}
+
+describe('TPM-aware compaction before dispatch', () => {
+  async function fixture(limit: number | undefined, turns: number, compactionRetries = 1, summaryMaxTokens = 64) {
+    const ctx = new Context()
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(TokenMeter)
+    const flush = vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(true)
+    const adapter = new TpmAdapter(limit)
+    ctx.llm.registerAdapter(['mock'], adapter)
+    await ctx.plugin(BasicCompactionEngine, { headroomTokens: 0, maxTokens: summaryMaxTokens,
+      thresholdRatio: 1, retainTokens: 100, compactionRetries })
+    const { agent } = await ctx.agentLoop.createAgent(ctx, {
+      sessionId: brandString<SessionId>(`tpm-${limit ?? 'unknown'}-${turns}`),
+      seed: turns === 0 ? [] : overflowHistorySeed(turns),
+      agentOptions: { provider: 'mock', model: 'mock' },
+    })
+    return { ctx, adapter, agent, flush }
+  }
+
+  it('compacts and reprepares once without dispatching the oversized original request', async () => {
+    const test = await fixture(2_000, 2)
+    try {
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue the task.' }] }))
+      await test.agent.whenIdle()
+      const summaries = test.adapter.requests.filter(item => item.request.purpose === 'compaction')
+      const conversations = test.adapter.requests.filter(item => item.request.purpose !== 'compaction')
+      expect(summaries.length).toBeGreaterThan(0)
+      expect(conversations).toHaveLength(1)
+      expect(conversations[0]?.budget?.estimatedTokens).toBeLessThanOrEqual(2_000)
+      expect(test.agent.session.snapshotEvents().filter(event => event.type === 'user/message'
+        && event.data.source.kind === 'user' && event.data.content.some(block => block.type === 'text' && block.text === 'Continue the task.')))
+        .toHaveLength(1)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason.kind).toBe('completed')
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('fits each summary chunk into the summarizer budget before dispatch', async () => {
+    const test = await fixture(3_000, 6, 5)
+    try {
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await test.agent.whenIdle()
+      const summaries = test.adapter.requests.filter(item => item.request.purpose === 'compaction')
+      expect(summaries.length).toBeGreaterThan(1)
+      for (const item of summaries) expect(item.budget!.estimatedTokens).toBeLessThanOrEqual(item.budget!.tokenLimit)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason.kind).toBe('completed')
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('bounds a summary output cap that cannot fit the summarizer TPM budget', async () => {
+    const test = await fixture(2_000, 2, 2, 10_000)
+    try {
+      test.adapter.summaryOutputAllowance = 10_000
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await test.agent.whenIdle()
+      const summary = test.adapter.requests.find(item => item.request.purpose === 'compaction')
+      expect(summary?.request.model).toBe('mock')
+      expect(summary?.request.maxTokens).toBeLessThan(10_000)
+      expect(summary!.budget!.estimatedTokens).toBeLessThanOrEqual(2_000)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason.kind).toBe('completed')
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('keeps a completed tool result without replaying the tool during TPM recovery', async () => {
+    const test = await fixture(3_000, 2, 3)
+    try {
+      test.adapter.toolFirst = true
+      const effect = vi.fn(async () => [{ type: 'text' as const, text: 'tool output '.repeat(700) }])
+      test.ctx.tools.register(defineContentToolFixture({ name: 'write_once', description: 'Complete one effect',
+        parameters: {}, execute: effect }))
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await test.agent.whenIdle()
+      expect(effect).toHaveBeenCalledOnce()
+      expect(test.agent.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+      expect(test.adapter.requests.some(item => item.request.purpose === 'compaction')).toBe(true)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason.kind).toBe('completed')
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it.each([undefined, 10_000])('does not compact below a known limit or with no limit (%s)', async (limit) => {
+    const test = await fixture(limit, 2)
+    try {
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await test.agent.whenIdle()
+      expect(test.adapter.requests.filter(item => item.request.purpose === 'compaction')).toHaveLength(0)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason.kind).toBe('completed')
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('does not compact merely because the shared rolling-minute ledger is busy', async () => {
+    const test = await fixture(10_000, 2)
+    try {
+      test.adapter.queue = { kind: 'wait', waitMs: 60_000 }
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await test.agent.whenIdle()
+      expect(test.adapter.requests.filter(item => item.request.purpose === 'compaction')).toHaveLength(0)
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('reports an indivisible oversized user message without dispatching or truncating it', async () => {
+    const test = await fixture(3_000, 0)
+    try {
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'x'.repeat(20_000) }] }))
+      await test.agent.whenIdle()
+      expect(test.adapter.requests).toHaveLength(0)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+        data: { reason: { kind: 'error', error: { code: 'RATE_LIMIT_REQUEST_TOO_LARGE' } } },
+      })
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('does not summarize when the reserved output alone exceeds the budget', async () => {
+    const test = await fixture(3_000, 2)
+    try {
+      test.adapter.outputAllowance = 4_000
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await test.agent.whenIdle()
+      expect(test.adapter.requests).toHaveLength(0)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+        data: { reason: { kind: 'error', error: { code: 'RATE_LIMIT_REQUEST_TOO_LARGE' } } },
+      })
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('stops admission when a committed reduction cannot be flushed', async () => {
+    const test = await fixture(2_000, 2)
+    try {
+      test.flush.mockResolvedValue(false)
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await test.agent.whenIdle()
+      expect(test.adapter.requests.some(item => item.request.purpose === 'compaction')).toBe(true)
+      expect(test.adapter.requests.some(item => item.request.purpose !== 'compaction')).toBe(false)
+      expect(test.agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+        data: { reason: { kind: 'error', error: { code: 'COMPACTION_DURABILITY_REQUIRED' } } },
+      })
+    } finally { await test.ctx.fiber.dispose() }
+  })
+
+  it('cancels an in-flight TPM summary without starting the conversation request', async () => {
+    const test = await fixture(2_000, 2)
+    const entered = Promise.withResolvers<undefined>()
+    test.adapter.holdSummary = request => new Promise<void>((_resolve, reject) => {
+      const signal = request.signal
+      if (signal === undefined) throw new Error('Expected summary cancellation')
+      const abort = (): void => { reject(signal.reason) }
+      if (signal.aborted) { abort(); return }
+      signal.addEventListener('abort', abort, { once: true })
+      entered.resolve(undefined)
+    })
+    try {
+      test.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue.' }] }))
+      await entered.promise
+      test.agent.cancel({ kind: 'user' })
+      await test.agent.whenIdle()
+      expect(test.adapter.requests.some(item => item.request.purpose !== 'compaction')).toBe(false)
+      expect(test.agent.session.snapshotEvents().some(event => event.type === 'compaction/end')).toBe(true)
+    } finally {
+      test.agent.cancel({ kind: 'user' })
+      await test.ctx.fiber.dispose()
     }
   })
 })

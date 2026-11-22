@@ -99,6 +99,25 @@ it('reprepares a failed request with new tools and a switch notice without dupli
   expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('session continues with reasoning')
 })
 
+it('reprepares a logged request before dispatch without duplicating the user input', async () => {
+  const adapter = new MockAdapter([textResponse('solved')])
+  const test = await fixture(adapter)
+  const admitted: string[] = []
+  test.ctx.on('agent/request-ready', ({ agent, request, preparedCall }, next) => {
+    admitted.push(request.model)
+    expect(Object.isFrozen(request)).toBe(true)
+    expect(preparedCall?.config.model).toBe(request.model)
+    if (request.model !== 'vision') return next()
+    agent.model.select({ provider: 'models', model: 'reasoning' })
+    return Promise.resolve({ kind: 'reprepare' as const })
+  })
+  await test.run()
+  expect(admitted).toEqual(['vision', 'reasoning'])
+  expect(adapter.requests.map(request => request.model)).toEqual(['reasoning'])
+  expect(userInputs(test.agent)).toHaveLength(1)
+  expect(test.agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+})
+
 it('keeps ordinary retry on its captured route even when a future selection changes', async () => {
   const adapter = new MockAdapter([fail(), textResponse('retried')])
   const test = await fixture(adapter)

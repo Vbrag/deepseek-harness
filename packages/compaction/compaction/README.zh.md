@@ -79,6 +79,8 @@ kind: "package-reference"
 
 `pressureBudget(agent, proposedHeader, signal)` 检查拟用路由，不修改历史或发起摘要请求。它返回 `{ thresholdTokens, retainTokens }`；提供方未声明压力策略或模型容量未知时返回 `undefined`。基础提供方对无效配置预算抛出 code 为 `COMPACTION_INVALID_BUDGET` 的 `LlmError`，允许路由策略在压缩前选择其他获准路由。
 
+`tpmThreshold(config, tokenLimit)` 在不更改历史的情况下提供自动单次请求 TPM 触发阈值。后端未启用此策略时返回 `undefined`，因此路由可继续采用原有排队行为。
+
 通过 `ctx.llm.stream()` 摘要的后端必须将 signal 转发到调用的 `GenerateOptions.signal`，因此 abort 或 fiber dispose（资源释放）会停止进行中的摘要。自动和显式范围标记对会从打开的轮次恢复其数字形式归属；手动标记对不要求存在打开的轮次，并标记 `turn: null`。
 
 ### 手动失败分类

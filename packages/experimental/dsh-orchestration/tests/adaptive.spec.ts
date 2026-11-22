@@ -9,8 +9,8 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createUserMessage, LlmAdapter, ToolCallId, type GenerateOptions, type ImageBlock, type LlmBillingBudgetId, type LlmQueueAvailability,
-  type LlmQueueRequest, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmAdapter, ToolCallId, type GenerateOptions, type ImageBlock, type LlmBillingBudgetId, type LlmCallConfig, type LlmQueueAvailability,
+  type LlmQueueRequest, type LlmRequestTokenBudget, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { appendPluginRecord, pluginRecordOf, Session, SessionId, SessionLogOffset, type EpochHeader, type SessionSeq } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents, { type SubagentActivationSpec, type SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
@@ -46,6 +46,7 @@ class Adapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
   readonly facts = new Map<string, Partial<LlmResolvedModelInfo>>()
   readonly queues = new Map<string, LlmQueueAvailability>()
+  readonly tokenLimits = new Map<string, number>()
   constructor(private readonly script: Script[]) { super() }
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     return { provider, id: model, name: model, inputModalities: ['text', 'image'],
@@ -53,6 +54,12 @@ class Adapter extends LlmAdapter {
   }
   override queueAvailability(request: LlmQueueRequest): Promise<LlmQueueAvailability> {
     return Promise.resolve(this.queues.get(request.model) ?? { kind: 'unknown' })
+  }
+  override requestTokenBudget(request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined> {
+    const tokenLimit = this.tokenLimits.get(request.model)
+    if (tokenLimit === undefined) return Promise.resolve(undefined)
+    const outputTokens = request.maxTokens ?? 0
+    return Promise.resolve({ tokenLimit, inputTokens: request.inputTokens, outputTokens, estimatedTokens: request.inputTokens + outputTokens })
   }
   override async * stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(request)
@@ -227,6 +234,40 @@ it('changes a queued current route before dispatching the next request and prese
     expect(changes(child).findLast(state => state.reason === 'quota-pressure')).toMatchObject({ route: pool[1] })
     expect(child.session.snapshotEvents().filter(event => event.type === 'assistant/attempt')).toHaveLength(0)
     expect(child.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+  } finally { await activation.dispose() }
+})
+
+it('offers TPM pressure to compaction before switching after a completed tool', async () => {
+  class TpmCompaction extends CompactionEngine {
+    override tpmThreshold(_config: LlmCallConfig, limit: number): number { return Math.floor(limit * 0.9) }
+    override compactIfNeeded(_agent: CompactionAgentContext, _trigger: CompactionTrigger,
+      _signal: AbortSignal): Promise<CompactionResult | null> { return Promise.resolve(null) }
+    override compactNow(_agent: ManualCompactAgentContext, _signal: AbortSignal): Promise<CompactionResult | null> {
+      return Promise.resolve(null)
+    }
+    override compactRegion(_start: SessionSeq, _end: SessionSeq, _agent: CompactionAgentContext,
+      _signal?: AbortSignal): Promise<CompactionResult> { return Promise.reject(new Error('Unexpected summary')) }
+  }
+  const failure: StreamChunk[] = [{ type: 'finish', reason: { kind: 'error', failure: {
+    code: 'RATE_LIMIT_REQUEST_TOO_LARGE', message: 'The compacted request cannot fit.',
+  } } }]
+  const test = await fixture([tool('exhaust_tpm'), failure, text('recovered on another route')])
+  test.adapter.queues.set('visual', { kind: 'ready' })
+  test.adapter.queues.set('solver', { kind: 'ready' })
+  test.adapter.tokenLimits.set('visual', 150_000)
+  await test.ctx.plugin(TpmCompaction)
+  const effect = vi.fn(async () => {
+    test.adapter.queues.set('visual', { kind: 'impossible', estimatedTokens: 160_000, tokenLimit: 150_000 })
+    return []
+  })
+  test.ctx.tools.register(defineContentToolFixture({ name: 'exhaust_tpm', description: 'Exhaust the current request budget',
+    parameters: {}, execute: effect }))
+  const activation = await test.start()
+  try {
+    expect((await activation.result).stopReason).toBe('completed')
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['visual', 'visual', 'solver'])
+    expect(effect).toHaveBeenCalledOnce()
+    expect(test.children[0]?.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
   } finally { await activation.dispose() }
 })
 

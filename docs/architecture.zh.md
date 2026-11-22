@@ -100,6 +100,7 @@ turn/start
      append entered messages as user/message; reconcile retained runtime context
      log request/header and request/context as needed
      derive and freeze model history from the log
+     agent/request-ready -> dispatch | reprepare after durable input change
      stream the bound prepared call -> llm/stream -> agent/assistant-stream start
        agent/assistant-stream chunk*
        agent/request-finished -> assistant/message | assistant/attempt -> agent/assistant-stream end
@@ -111,7 +112,7 @@ turn/start
 turn/end
 ```
 
-`turn/*`、`step/*`、`system/message`、`user/message`、`assistant/message`、`assistant/attempt` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/assistant-stream` 发布进程本地 start、瞬态 chunk 与 end frame。loop 会在 committed end frame 前把完整紧凑 stream 提交为一个 message 或仅日志 attempt；Web Session-follow adapter 是该 live event 唯一的远程消费方。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
+`turn/*`、`step/*`、`system/message`、`user/message`、`assistant/message`、`assistant/attempt` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/assistant-stream` 发布进程本地 start、瞬态 chunk 与 end frame。loop 会在 committed end frame 前把完整紧凑 stream 提交为一个 message 或仅日志 attempt；Web Session-follow adapter 是该 live event 唯一的远程消费方。`agent/pre-step`、`agent/request`、`agent/request-ready`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
 
 fork 创建存储调用方提供的历史；共享前缀的后端先持久化父前缀（[生命周期](../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。工厂 setup 在 Session 进入 SessionStore 并完成 `session/created` 之后、`agent/created` 之前运行；收尾事件在移除之前提交。
 
@@ -119,7 +120,7 @@ fork 创建存储调用方提供的历史；共享前缀的后端先持久化父
 
 输入通过同一个 inbox 到达驱动器；注入的上下文等待一条唤醒消息。AgentLoop 的持久 `inbox` 投影使待处理输入在没有活跃 Agent 时仍可读取。
 
-串行 `agent/step-preparing` 监听器可在提示词组装前选择路由。结构化准备失败会连同已领取的输入交给 `agent/request-error`，以便恢复过程在提交前评估待处理请求。`agent/pre-step` 接受、改写或拒绝输入；`prepareCall()` 在提交系统消息和用户消息前绑定适配器。每次尝试使用组装的 `systemUpdates()` 写入系统段落，刷新运行时事实并冻结请求。`retry` 复用组装结果；`reprepare` 在同一步骤重新捕获路由并组装，不重复已提交的输入或工具。`agent/request-finished` 在响应提交和工具执行前运行；`interruptRequest()` 只中断当前模型请求。详见 [Agent-loop](../packages/core/agent-loop/README.zh.md#understand-the-implementation)。
+串行 `agent/step-preparing` 监听器可在提示词组装前选择路由。结构化准备失败会连同已领取的输入交给 `agent/request-error`，以便恢复过程在提交前评估待处理请求。`agent/pre-step` 接受、改写或拒绝输入；`prepareCall()` 在提交系统消息和用户消息前绑定适配器。每次尝试使用组装的 `systemUpdates()` 写入系统段落，刷新运行时事实并冻结请求。`agent/request-ready` 可在分派前检查已记录的请求及其捕获的适配器；持久输入发生变更时可请求重新准备。`retry` 复用组装结果；`reprepare` 在同一步骤重新捕获路由并组装，不重复已提交的输入或工具。`agent/request-finished` 在响应提交和工具执行前运行；`interruptRequest()` 只中断当前模型请求。详见 [Agent-loop](../packages/core/agent-loop/README.zh.md#understand-the-implementation)。
 
 循环发送不可变请求，同时保持取消有效，仅对完全冻结的对象复用冻结证据；[agent-loop](../packages/core/agent-loop/README.zh.md) 负责请求构建与取消原因。
 
