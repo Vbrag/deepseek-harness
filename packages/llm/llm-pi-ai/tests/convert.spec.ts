@@ -88,7 +88,7 @@ describe('toPiContext', () => {
     expect(context).toEqual({
       systemPrompt: 'be helpful',
       tools: [{ name: 'f', description: 'F', parameters: { type: 'object', properties: {} } }],
-      messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }], timestamp: 0 }],
     })
   })
 
@@ -119,7 +119,7 @@ describe('toPiContext', () => {
 
     expect(readImageRequest).toHaveBeenCalledWith(
       attachment,
-      { width: 1, height: 1, maxBytes: 1024 * 1024 },
+      { width: 1, height: 1, maxImageBytes: 1024 * 1024, imageTargetBytes: 1024 * 1024 },
       undefined,
     )
     expect(context.messages[0]).toEqual({
@@ -297,7 +297,7 @@ describe('toPiContext', () => {
       role: 'toolResult',
       toolCallId: 'c1',
       toolName: 'get_weather',
-      content: [{ type: 'text', text: 'Sunny!' }],
+      content: [{ type: 'text', text: 'Sunny' }, { type: 'text', text: '!' }],
       isError: false,
       timestamp: 0,
     })
@@ -940,6 +940,16 @@ describe('mapStopReason / mapUsage', () => {
     }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
   })
 
+  it('recognizes the gateway billing budget without treating every 422 as exhaustion', () => {
+    const exhausted = '422: {"message":"Monatliches Verbrauchsbudget erreicht","type":"budget_exceeded","code":"422"}'
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: exhausted })))
+      .toEqual({ kind: 'error', failure: { message: exhausted, code: 'BILLING_EXHAUSTED', status: 422 } })
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: '422: {"type":"invalid_request"}' })))
+      .toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR', status: 422 } })
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: 'insufficient funds' })))
+      .toMatchObject({ kind: 'error', failure: { code: 'BILLING_EXHAUSTED' } })
+  })
+
   it.each([
     // The gateway body as the Anthropic SDK renders it: the gateway's own 500 leads.
     ['a gateway 500 relaying an upstream 401', '500 {"error":{"origin":"upstream","message":"upstream returned an error response: User not found.","type":"upstream_error","code":"upstream_response_error","upstream":{"provider":"custom","status":401,"body":{"error":{"type":"<nil>","message":"User not found."},"type":"error"}}}}', 'SERVER'],
@@ -950,7 +960,7 @@ describe('mapStopReason / mapUsage', () => {
     ['a leading 429', '429 Too Many Requests: slow down', 'RATE_LIMIT'],
   ] as const)('classifies %s by its leading response status', (_label, errorMessage, code) => {
     expect(mapStopReason(assistant({ stopReason: 'error', errorMessage })))
-      .toEqual({ kind: 'error', failure: { message: errorMessage, code } })
+      .toEqual({ kind: 'error', failure: { message: errorMessage, code, status: Number(errorMessage.slice(0, 3)) } })
   })
 
   it.each([

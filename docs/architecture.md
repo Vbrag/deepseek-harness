@@ -64,6 +64,8 @@ Electron starts the private Desktop Host in Electron Node mode. The Host invokes
 | [`core/scope`](subsystems/scope.md) | The per-agent scoped-registration primitive | library, no key |
 | [`llm/llm`](subsystems/llm-streaming.md) | Message and stream vocabulary plus the adapter seam | `ctx.llm` |
 
+<a id="events"></a>
+
 ## Events
 
 Events provide extension points in three domains.
@@ -77,6 +79,8 @@ Subagent Activations own runtime tree membership.
 AgentLoop rolls back failed initialization and awaits serial `agent/created` before queued work; shutdown cancels and awaits active work despite queue-cleanup failures before releasing resources ([ordering](../packages/core/agent-loop/README.md#understand-the-implementation)).
 
 [Event producers and consumers](event-producer-consumer.md).
+
+<a id="turn-flow"></a>
 
 ## Turn flow
 
@@ -92,7 +96,7 @@ turn/start
      reject, or a first enter rewritten empty -> close the turn with no step
      step/start
      agent/request -> prepareCall (cancellation commits neither system nor users)
-     reconcile system/message using the prepared call capability
+     commit system/message updates; rebuild the system head after compaction
      append entered messages as user/message; reconcile retained runtime context
      log request/header and request/context as needed
      derive and freeze model history from the log
@@ -115,7 +119,7 @@ Fork creation stores the caller-supplied history; a sharing backend persists the
 
 One inbox feeds the driver; injected context waits for a waking message. AgentLoop’s durable `inbox` projection exposes pending input without live Agents.
 
-Serial `agent/step-preparing` listeners may select a route before the loop captures Session model selection for tools, prompt assembly, and `agent/pre-step`. Pre-step accepts, rewrites, or rejects claimed messages; a rejected or empty initial claim closes the turn without a step. Its `startsRequestSeries` declaration starts a logged message series. After `step/start`, `agent/request` adjusts controls within the captured route; `prepareCall()` binds the adapter before committing system or user messages. Earlier cancellation commits neither. Each attempt refreshes runtime facts, reconciles the prompt, admits users once, logs header/context, and freezes the request. `retry` retains assembly; `reprepare` repeats route capture and assembly within the same step without repeating committed input or tools. `agent/request-finished` precedes response commitment and tool execution. `interruptRequest()` stops only active model preparation or streaming, preserving the turn and inbox. Surface replacement or image offload starts a message series; unchanged resume continues one. Prepared capabilities decide prompt appending or consolidation; empty text clears it. [Agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) owns admission and replacement details.
+Serial `agent/step-preparing` listeners may select a route before prompt assembly. Structured preparation failures reach `agent/request-error` with the claimed input so recovery can assess the pending request before it is committed. `agent/pre-step` accepts, rewrites, or rejects input; `prepareCall()` binds the adapter before system or user messages commit. Each attempt writes the assembly’s `systemUpdates()`, refreshes runtime facts, and freezes the request. `retry` retains the assembly; `reprepare` captures the route and assembles again in the same step without repeating committed input or tools. `agent/request-finished` precedes response commitment and tool execution; `interruptRequest()` stops only the active model request. [Agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) owns request timing.
 
 The loop sends immutable requests with live cancellation and reuses freeze evidence for frozen identities; [agent-loop](../packages/core/agent-loop/README.md) owns construction and cancellation causes.
 

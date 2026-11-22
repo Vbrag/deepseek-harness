@@ -1,10 +1,10 @@
-/** Safe-boundary phase routing and bounded request recovery for local children. */
+/** Safe-boundary phase routing and bounded request recovery for the lead and local children. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-work-handoff'
 import type {} from '@deepseek-ai/dsh-compaction'
-import type { LlmCallConfig, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { LlmBillingBudgetId, LlmCallConfig, LlmResolvedModelInfo, UserMessage } from '@deepseek-ai/dsh-llm'
 import { estimateRequestInputTokens } from '@deepseek-ai/dsh-llm/input-estimate'
 import { offloadOldestImages } from '@deepseek-ai/dsh-compaction-image-offload'
 import { appendPluginRecord, type Session, type SessionId } from '@deepseek-ai/dsh-session'
@@ -31,9 +31,10 @@ export interface AdaptiveAdmission {
 }
 
 interface RoutingHost {
-  readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool'>>
+  readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool' | 'userPoolConfigured'>>
   modeOf(agent: Agent): boolean
   preparingEnabled(agent: Agent): boolean
+  pool(): readonly PoolRoute[]
   modeOfSession(session: Session): boolean
   validate(assessment: SubagentTaskAssessment): void
   resolve(request: SubagentModelRoutingContext, admission: AdaptiveAdmission): Promise<SubagentModelRouting>
@@ -49,6 +50,10 @@ export class AdaptiveRouting {
   private readonly pending = new Set<Promise<unknown>>()
   private readonly locks = new Map<SessionId, Promise<void>>()
   private readonly cooldowns = new Map<string, number>()
+  private readonly exhaustedBudgets = new Set<LlmBillingBudgetId>()
+  private unscopedBillingFailure = false
+  private pendingBillingChecks = 0
+  private billingGeneration = 0
 
   private constructor(private ctx: Context, private host: RoutingHost,
     private projection: ProjectionHandle<AdaptiveProjectionState>) {}
@@ -85,6 +90,46 @@ export class AdaptiveRouting {
     const remaining = Math.max(0, (this.cooldowns.get(key) ?? 0) - Date.now())
     if (remaining === 0) this.cooldowns.delete(key)
     return remaining
+  }
+
+  /** Whether known billing failures permit dispatch to these provider facts.
+   * @param billing - Exact-route billing metadata, when supplied.
+   * @returns False when independence from an exhausted budget is unknown.
+   */
+  billingAvailable(billing: LlmResolvedModelInfo['billing']): boolean {
+    if (billing?.free === true) return true
+    if (this.unscopedBillingFailure || this.pendingBillingChecks > 0) return false
+    if (this.exhaustedBudgets.size === 0) return true
+    return billing?.budgetId !== undefined && !this.exhaustedBudgets.has(billing.budgetId)
+  }
+
+  private hasBillingRestrictions(): boolean {
+    return this.unscopedBillingFailure || this.pendingBillingChecks > 0 || this.exhaustedBudgets.size > 0
+  }
+
+  /** Allow a user to retry billing routes after correcting the account. */
+  resetBillingHealth(): void {
+    this.billingGeneration++
+    this.pendingBillingChecks = 0
+    this.unscopedBillingFailure = false
+    this.exhaustedBudgets.clear()
+  }
+
+  private async noteBillingFailure(route: PoolRoute, signal: AbortSignal): Promise<void> {
+    const generation = this.billingGeneration
+    this.pendingBillingChecks++
+    try {
+      const info = await this.ctx.llm.resolveModelInfo(route.provider, route.model, signal)
+      if (generation !== this.billingGeneration) return
+      if (info.billing?.budgetId === undefined) this.unscopedBillingFailure = true
+      else this.exhaustedBudgets.add(info.billing.budgetId)
+    } catch (error: unknown) {
+      signal.throwIfAborted()
+      if (generation === this.billingGeneration) this.unscopedBillingFailure = true
+      this.ctx.logger.warn('orchestration: billing scope could not be resolved', error)
+    } finally {
+      if (generation === this.billingGeneration) this.pendingBillingChecks--
+    }
   }
 
   private write(agent: Agent, patch: Partial<OrchestrationRoutingState>): void {
@@ -198,7 +243,8 @@ export class AdaptiveRouting {
     if (current === undefined) return false
     const automatic = options.automatic === true
     if (automatic && before.automaticChanges >= this.host.config.maxAutomaticReassignments) return false
-    const allowed = this.ctx.subagents.runningModelPolicyOf(agent.session)
+    const allowed = agent.session.header.origin === 'subagent'
+      ? this.ctx.subagents.runningModelPolicyOf(agent.session) : this.host.pool()
     const exclude = automatic ? [...before.tried, current] : []
     for (const route of allowed) {
       if (this.providerWaitMs(route) > 0) exclude.push(route)
@@ -239,6 +285,13 @@ export class AdaptiveRouting {
       signal.throwIfAborted()
       if (!this.host.preparingEnabled(agent)) return false
       if (this.state(agent).request?.revision !== before.request?.revision) return this.state(agent).request !== null
+      const selectedInfo = await this.ctx.llm.resolveModelInfo(route.provider, route.model, signal)
+      if (!this.billingAvailable(selectedInfo.billing)) {
+        routing.release?.()
+        this.write(agent, { status: 'idle', route: { provider: current.provider, model: current.model } })
+        await this.flush(agent)
+        return this.choose(agent, signal, reason, options)
+      }
       agent.model.select({ ...route, ...selected.reasoningEffort === undefined ? {} : { reasoningEffort: selected.reasoningEffort } })
       this.write(agent, { assessment, request: null, route, previous: changed ? current : before.previous,
         status: 'idle', reason, checkpoint: before.request?.checkpoint ?? before.checkpoint,
@@ -285,10 +338,12 @@ export class AdaptiveRouting {
   }
 
   private async beforeStep(agent: Agent, signal: AbortSignal, messages: readonly UserMessage[]): Promise<void> {
-    if (agent.session.header.origin !== 'subagent' || !this.host.preparingEnabled(agent)) return
+    if (!this.host.preparingEnabled(agent)) return
+    const child = agent.session.header.origin === 'subagent'
+    if (!child && !this.hasBillingRestrictions()) return
     const operationSignal = AbortSignal.any([signal, this.lifetime.signal])
     const state = this.state(agent)
-    if (state.request !== null) {
+    if (child && state.request !== null) {
       const assessment = state.request.assessment
       if (!assessment.requiredCapabilities.includes('vision') && !assessment.requiredModalities?.includes('image')) {
         // The explicit phase checkpoint preserves completed visual findings before the recorded image omission.
@@ -299,15 +354,25 @@ export class AdaptiveRouting {
       await this.choose(agent, operationSignal, state.request.reason, { messages })
       return
     }
-    if (state.assessment === null) return
+    if (child && state.assessment === null && !this.hasBillingRestrictions()) return
     const route = agent.model.current()
     if (route === undefined) return
-    if (!this.ctx.subagents.runningModelPolicyOf(agent.session).some(allowed => same(allowed, route))) {
+    if (child && !this.ctx.subagents.runningModelPolicyOf(agent.session).some(allowed => same(allowed, route))) {
       throw new OrchestrationError('The selected child model is outside its recorded running-model permissions.',
         'ORCHESTRATION_NO_CAPABLE_ROUTE')
     }
-    const config = await this.ctx.llm.resolveCallConfig(this.options(agent), operationSignal)
     const info = await this.ctx.llm.resolveModelInfo(route.provider, route.model, operationSignal)
+    if (!this.billingAvailable(info.billing)) {
+      this.initializeLead(agent, messages)
+      try {
+        if (await this.choose(agent, operationSignal, 'shared-billing-exhaustion', { automatic: true, readyOnly: true, messages })) return
+      } catch (error: unknown) {
+        if (!(error instanceof OrchestrationError) || !['ORCHESTRATION_NO_CAPABLE_ROUTE', 'ORCHESTRATION_CAPACITY_BUSY'].includes(error.code)) throw error
+      }
+      throw new OrchestrationError('No eligible model has an available billing budget.', 'ORCHESTRATION_NO_CAPABLE_ROUTE')
+    }
+    if (!child || state.assessment === null) return
+    const config = await this.ctx.llm.resolveCallConfig(this.options(agent), operationSignal)
     const budget = await agent.ctx.get('compaction')?.pressureBudget(agent, { config }, operationSignal)
     const input = this.inputTokens(agent, state.assessment, messages)
     const capacity = info.context?.contextWindow
@@ -343,6 +408,24 @@ export class AdaptiveRouting {
     }
   }
 
+  private initializeLead(agent: Agent, pending: readonly UserMessage[] = []): void {
+    if (agent.session.header.origin === 'subagent') return
+    const messages = [...agent.session.deriveMessages(), ...pending]
+    const hasImage = messages.some(message => message.content.some(block => block.type === 'image' && block.offloaded !== true))
+    const current = agent.model.current()
+    const assessment: SubagentTaskAssessment = { requiredCapabilities: [],
+      requiredModalities: hasImage ? ['text', 'image'] : ['text'], contextTokens: estimateRequestInputTokens(messages),
+      ...agent.options.maxTokens === undefined ? {} : { outputTokens: agent.options.maxTokens } }
+    const state = this.state(agent)
+    if (JSON.stringify(state.assessment) === JSON.stringify(assessment)
+      && (current === undefined ? state.route === null : state.route !== null && same(state.route, current))) return
+    this.write(agent, {
+      assessment,
+      route: current === undefined ? null : { provider: current.provider, model: current.model },
+      maxTokens: agent.options.maxTokens ?? null,
+    })
+  }
+
   private install(): void {
     this.ctx.effect(() => async () => {
       this.lifetime.abort(new DOMException('adaptive routing unloaded', 'AbortError'))
@@ -361,35 +444,44 @@ export class AdaptiveRouting {
         if (agent === undefined || !this.host.modeOf(agent)) return ''
         const state = this.state(agent)
         const checkpoint = state.request?.checkpoint ?? state.checkpoint
-        const guidance = 'Use reassign_subagent for a new phase in an existing local child. Supply the phase\'s full task_assessment, a checkpoint of completed work and remaining actions, and max_tokens when an explicit generation cap is needed. outputTokens is only an estimate. Omit target only inside a child; the lead keeps its session model. Changes apply between steps; interrupt_current_request explicitly cancels only model generation, never tools.'
+        const guidance = 'Use reassign_subagent for a new phase in an existing local child. Supply the phase\'s full task_assessment, a checkpoint of completed work and remaining actions, and max_tokens when an explicit generation cap is needed. outputTokens is only an estimate. Omit target only inside a child. Changes apply between steps; interrupt_current_request explicitly cancels only model generation, never tools.'
         return checkpoint === '' ? guidance : `${guidance}\nCurrent delegated phase: ${state.request?.reason ?? state.reason}\n${checkpoint}`
       },
     })
-    this.ctx.on('agent/request-error', ({ agent, failure, signal }, next): Promise<RequestErrorAction> => this.tracked((async (): Promise<RequestErrorAction> => {
-      if (signal.aborted || agent.session.header.origin !== 'subagent' || !this.host.modeOf(agent)) return next()
-      const state = this.state(agent)
+    this.ctx.on('agent/request-error', ({ agent, failure, signal, retryPolicy, provider, model, messages }, next): Promise<RequestErrorAction> => this.tracked((async (): Promise<RequestErrorAction> => {
+      if (signal.aborted || !this.host.modeOf(agent)) return next()
+      let state = this.state(agent)
       if (failure.code === 'REQUEST_INTERRUPTED' && state.request !== null) return { kind: 'reprepare' }
-      if (state.assessment === null || !['CONTEXT_WINDOW_EXCEEDED', 'COMPACTION_INVALID_BUDGET',
-        'MODEL_SWITCH_COMPACTION_FAILED', 'RATE_LIMIT', 'QUOTA', 'TIMEOUT'].includes(failure.code)) return next()
-      if (failure.code === 'RATE_LIMIT' || failure.code === 'QUOTA') {
+      if (!['CONTEXT_WINDOW_EXCEEDED', 'COMPACTION_INVALID_BUDGET',
+        'MODEL_SWITCH_COMPACTION_FAILED', 'RATE_LIMIT', 'QUOTA', 'ACCOUNT_QUOTA', 'BILLING_EXHAUSTED',
+        'TIMEOUT', 'SERVER', 'TRANSPORT', 'MODEL_UNSUPPORTED', 'UNKNOWN_MODEL', 'NO_ADAPTER', 'AUTH',
+        'INVALID_CREDENTIAL', 'MISSING_CREDENTIAL'].includes(failure.code)) return next()
+      this.initializeLead(agent, messages)
+      state = this.state(agent)
+      if (state.assessment === null) return next()
+      const billingFailure = ['QUOTA', 'ACCOUNT_QUOTA', 'BILLING_EXHAUSTED'].includes(failure.code)
+      if (billingFailure) await this.noteBillingFailure({ provider, model }, signal)
+      if (failure.code === 'RATE_LIMIT') {
         const route = agent.model.current()
         if (route !== undefined) this.cooldowns.set(JSON.stringify([route.provider, route.model]),
           Date.now() + (failure.providerRetryAfterMs ?? this.host.config.availabilityPollMs))
       }
       try {
-        if (await this.choose(agent, AbortSignal.any([signal, this.lifetime.signal]), failure.code, { automatic: true })) return { kind: 'reprepare' }
+        if (await this.choose(agent, AbortSignal.any([signal, this.lifetime.signal]), failure.code,
+          { automatic: true, readyOnly: true, ...messages === undefined ? {} : { messages } })) return { kind: 'reprepare' }
       } catch (error: unknown) {
         if (error instanceof OrchestrationError && error.code === 'ORCHESTRATION_REASSIGNMENT_STALE') return { kind: 'reprepare' }
-        if (!(error instanceof OrchestrationError) || error.code !== 'ORCHESTRATION_NO_CAPABLE_ROUTE') throw error
+        if (!(error instanceof OrchestrationError) || !['ORCHESTRATION_NO_CAPABLE_ROUTE', 'ORCHESTRATION_CAPACITY_BUSY'].includes(error.code)) throw error
       }
-      const action = await next()
+      const action = !billingFailure && retryPolicy?.mode === 'normal' ? await next() : undefined
       if (action !== undefined) return action
       await this.blocked(agent, `No safe model recovery remains: ${failure.code}`, signal)
       return undefined
     })()), { prepend: true })
     this.ctx.on('agent/request-finished', ({ agent, finish, content, usage, signal }, next): Promise<RequestErrorAction> => this.tracked((async (): Promise<RequestErrorAction> => {
-      if (signal.aborted || agent.session.header.origin !== 'subagent' || !this.host.modeOf(agent)) return next()
+      if (signal.aborted || !this.host.modeOf(agent)) return next()
       const useful = content.some(block => block.type === 'text' && block.text.trim() !== '')
+      if (!useful && finish.kind === 'max-tokens') this.initializeLead(agent)
       const state = this.state(agent)
       if (useful || finish.kind !== 'max-tokens' || state.assessment === null) return next()
       this.write(agent, { emptyLimits: state.emptyLimits + 1,

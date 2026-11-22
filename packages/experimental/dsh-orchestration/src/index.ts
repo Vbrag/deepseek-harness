@@ -23,9 +23,11 @@ import { OrchestrationError } from './error.ts'
 import { AdaptiveRouting, type AdaptiveAdmission } from './adaptive.ts'
 import { capabilityOf, POOL_PROVIDER, TASK_DOMAINS } from './capabilities.ts'
 import type { LlmModelInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
+import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type {
   OrchestrationCatalog, OrchestrationCatalogGroup, OrchestrationCatalogModel,
   OrchestrationConfig, OrchestrationProjection, OrchestrationRouteAlternative, OrchestrationUnitState, PoolRoute,
+  PoolSettingsState, PoolSaveResult,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -149,6 +151,7 @@ export class OrchestrationService extends TypertRemoteService {
     // User-selected pool persisted through Settings; takes precedence over the
     // configured `pool` default (which a shipped profile layer may own).
     userPool: z.array(routeSchema).default([]).volatile(),
+    userPoolConfigured: z.boolean().default(false).volatile(),
     routeCapabilities: z.array(z.object({
       provider: z.string(), model: z.string(), capabilities: z.array(specialtySchema),
     })).default([]),
@@ -160,9 +163,10 @@ export class OrchestrationService extends TypertRemoteService {
     maxEmptyOutputLimits: z.number().step(1).min(1).default(2),
   })
 
-  private readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool'>>
+  private readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool' | 'userPoolConfigured'>>
   private readonly poolConfig: Volatile<readonly PoolRoute[]> | readonly PoolRoute[] | undefined
   private readonly userPoolConfig: Volatile<readonly PoolRoute[]> | readonly PoolRoute[] | undefined
+  private readonly userPoolConfigured: Volatile<boolean> | boolean | undefined
   private poolValue: readonly PoolRoute[]
   private projection: ProjectionHandle<OrchestrationUnitState> | undefined
   private readonly pendingAssignments = new Map<SessionId, PoolRoute>()
@@ -177,6 +181,7 @@ export class OrchestrationService extends TypertRemoteService {
     super(ctx, 'orchestrations', { namespace: 'orchestrations' })
     this.poolConfig = config.pool
     this.userPoolConfig = config.userPool
+    this.userPoolConfigured = config.userPoolConfigured
     this.poolValue = [...this.effectivePool()]
     this.config = {
       routeCapabilities: config.routeCapabilities ?? [],
@@ -217,13 +222,15 @@ export class OrchestrationService extends TypertRemoteService {
   /** Effective pool: the user-selected pool persisted through Settings when set, else the configured default. */
   private effectivePool(): readonly PoolRoute[] {
     const userPool = this.userPoolOf()
-    return userPool.length > 0 ? userPool : this.poolOf()
+    const configured = isVolatile(this.userPoolConfigured) ? this.userPoolConfigured.get() : this.userPoolConfigured
+    return configured === true || userPool.length > 0 ? userPool : this.poolOf()
   }
 
   protected async [Service.init](): Promise<void> {
     this.projection = await this.ctx.sessionProjections.register(orchestrationProjectionDefinition)
     this.adaptive = await AdaptiveRouting.create(this.ctx, {
       modeOf: agent => this.modeOf(agent),
+      pool: () => this.getPool(),
       preparingEnabled: (agent) => {
         const state = this.stateOf(agent.session)
         return state.active && state.wanted !== false
@@ -257,6 +264,7 @@ export class OrchestrationService extends TypertRemoteService {
     })
     this.ctx.on('subagent/end', (run) => { this.pendingAssignments.delete(run.id) })
     this.ctx.on('session/event', (session, event) => {
+      if (event.type === 'turn/end') this.pendingAssignments.delete(session.id)
       if (event.type === 'request/header' && this.pendingAssignments.has(session.id)) {
         this.pendingAssignments.set(session.id, { provider: event.data.header.config.provider, model: event.data.header.config.model })
       }
@@ -271,7 +279,7 @@ export class OrchestrationService extends TypertRemoteService {
       return decision
     }, { prepend: true })
     this.ctx.on('loader/volatile-update', (paths) => {
-      if (paths.some(path => path.length === 1 && (path[0] === 'pool' || path[0] === 'userPool'))) {
+      if (paths.some(path => path.length === 1 && (path[0] === 'pool' || path[0] === 'userPool' || path[0] === 'userPoolConfigured'))) {
         this.setPool(this.effectivePool())
       }
     })
@@ -328,7 +336,6 @@ export class OrchestrationService extends TypertRemoteService {
     const counts = new Map<string, number>()
     const assignments = new Map(this.pendingAssignments)
     for (const agent of this.ctx.agents.list()) {
-      if (agent.session.header.origin !== 'subagent') continue
       const open = this.ctx.agents.turnBoundaryOf(agent.session).openTurnStartSeq !== null
       if (!open && agent.inbox.nextStep.length === 0 && agent.inbox.nextTurn.length === 0) continue
       const route = agent.session.requestHeader()?.config
@@ -381,6 +388,22 @@ export class OrchestrationService extends TypertRemoteService {
     return this.poolValue.map(route => ({ ...route }))
   }
 
+  /** Read the effective pool and its current settings revision.
+   * @returns The current pool and null when settings are unavailable.
+   */
+  @Remote('getPoolSettingsState')
+  getPoolSettingsState(): PoolSettingsState {
+    const settings = this.ctx.get('settings')
+    const descriptor = settings?.describe().find(item => item.ns === POOL_SETTINGS_NS)
+    return { pool: this.getPool(), revision: descriptor?.revision ?? null }
+  }
+
+  /** Permit a user to retry models after correcting an exhausted billing account. */
+  @Remote('resetBillingHealth')
+  resetBillingHealth(): void {
+    this.adaptiveRouting().resetBillingHealth()
+  }
+
   /** Project the pool picker catalog from the live LLM registry, not a static list.
    * Providers and models are taken from `ctx.llm.listProviders()`/`listModels()`,
    * so the picker matches the models the composer can actually select. Curated
@@ -391,11 +414,8 @@ export class OrchestrationService extends TypertRemoteService {
   @Remote('getCatalog')
   async getCatalog(): Promise<OrchestrationCatalog> {
     const allProviders = this.ctx.llm.listProviders()
-    // The pool is provider-scoped: only models from a provider already in the
-    // effective pool can actually serve orchestration routing, so restrict the
-    // picker to those providers to match what is truly selectable. When no pool
-    // is configured yet, show every provider so the user can choose a first pool.
-    const poolProviders = new Set(this.getPool().map(route => route.provider))
+    // Keep shipped providers visible when the user's effective pool is empty.
+    const poolProviders = new Set([...this.poolOf(), ...this.getPool()].map(route => route.provider))
     const providers = poolProviders.size > 0
       ? allProviders.filter(provider => poolProviders.has(provider.id))
       : allProviders
@@ -462,29 +482,33 @@ export class OrchestrationService extends TypertRemoteService {
     for (const key of this.lastAssigned.keys()) if (!keys.has(key)) this.lastAssigned.delete(key)
   }
 
-  /** Apply the pool and persist it in this profile's settings.
-   * The in-memory pool is replaced unconditionally; persistence is best-effort
-   * but reported honestly. A refused or failed settings write (for example, a
-   * profile that owns the `orchestration` entry in a shipped layer rather than a
-   * user layer) makes this resolve `false` so the picker can show a save failure
-   * instead of claiming a save that never happened.
+  /** Persist a pool against the revision read by the caller.
    * @param pool - New default routes; existing Session authorization remains fixed.
-   * @returns True only when the pool was applied in memory AND persisted to settings.
+   * @param revision - Settings revision from the most recent read.
+   * @returns The applied pool or an actionable failure.
    */
   @Remote('persistPool')
-  async persistPool(pool: readonly PoolRoute[]): Promise<boolean> {
-    this.setPool(pool)
+  async persistPool(pool: readonly PoolRoute[], revision: number): Promise<PoolSaveResult> {
     const settings = this.ctx.get('settings')
     if (settings === undefined) {
-      this.ctx.logger.warn('orchestration: settings service is absent; the selected pool is applied for this process only')
-      return false
+      return { status: 'failed', message: 'Settings are unavailable.' }
     }
     try {
-      await settings.update(POOL_SETTINGS_NS, { userPool: this.getPool() })
-      return true
+      const keys = pool.map(routeKey)
+      if (pool.some(route => route.provider.length === 0 || route.model.length === 0) || new Set(keys).size !== keys.length) {
+        return { status: 'failed', message: 'The model pool contains an invalid or repeated route.' }
+      }
+      await settings.update(POOL_SETTINGS_NS, { userPool: pool, userPoolConfigured: true }, revision)
+      const current = this.getPoolSettingsState()
+      if (current.revision === null || JSON.stringify(current.pool) !== JSON.stringify(pool)) {
+        return { status: 'failed', message: 'The saved pool is not the active configuration. Reload settings.' }
+      }
+      return { status: 'saved', pool: current.pool, revision: current.revision }
     } catch (error) {
-      this.ctx.logger.warn('orchestration: the pool could not be persisted to settings; the applied selection is kept for this process only', error)
-      return false
+      this.ctx.logger.warn('orchestration: the pool could not be persisted to settings', error)
+      const stale = error instanceof Error && 'code' in error && error.code === 'SETTINGS_CONFLICT'
+      return { status: stale ? 'stale' : 'failed', message: stale
+        ? 'The settings changed. Reload them before saving.' : 'The model pool could not be saved.' }
     }
   }
 
@@ -519,12 +543,18 @@ export class OrchestrationService extends TypertRemoteService {
     const configuredPool = this.getPool()
     const pool = configuredPool.filter(route =>
       allowed.some(item => item.provider === route.provider && item.model === route.model))
-    const inspected = await Promise.allSettled(pool.map(async (route): Promise<CapabilityRoute> => {
+    const unavailable = new Set<string>()
+    const inspected = await Promise.allSettled(pool.map(async (route): Promise<CapabilityRoute | undefined> => {
       try {
         const info = await this.ctx.llm.resolveModelInfo(route.provider, route.model, signal)
         return capabilityRoute(route, info, this.config.routeCapabilities)
       } catch (cause) {
         signal.throwIfAborted()
+        if (cause instanceof HarnessError && ['UNKNOWN_MODEL', 'MODEL_UNSUPPORTED', 'NO_ADAPTER', 'MISSING_CREDENTIAL',
+          'INVALID_CREDENTIAL', 'AUTH'].includes(cause.code)) {
+          unavailable.add(routeKey(route))
+          return undefined
+        }
         throw new OrchestrationError('cannot inspect orchestration route ' + route.provider + '/' + route.model,
           'ORCHESTRATION_ROUTE_METADATA_FAILED', { cause })
       }
@@ -533,7 +563,7 @@ export class OrchestrationService extends TypertRemoteService {
     const candidates: CapabilityRoute[] = []
     for (const result of inspected) {
       if (result.status === 'rejected') throw result.reason
-      candidates.push(result.value)
+      if (result.value !== undefined) candidates.push(result.value)
     }
     const caps = new Map<string, number>()
     const exclusions = new Map<string, OrchestrationRouteAlternative['exclusions']>()
@@ -541,12 +571,26 @@ export class OrchestrationService extends TypertRemoteService {
       const same = route.provider === request.agentOptions.provider && route.model === request.agentOptions.model
       const effective = await this.ctx.llm.resolveCallConfig({ provider: route.provider, model: route.model,
         ...request.agentOptions.maxTokens === undefined ? {} : { maxTokens: request.agentOptions.maxTokens },
-        ...!same || request.agentOptions.reasoningEffort === undefined ? {} : { reasoningEffort: request.agentOptions.reasoningEffort },
-      }, signal)
+        ...(!same && admission === undefined) || request.agentOptions.reasoningEffort === undefined
+          ? {} : { reasoningEffort: request.agentOptions.reasoningEffort },
+      }, signal).catch((cause: unknown) => {
+        signal.throwIfAborted()
+        if (cause instanceof HarnessError && ['UNKNOWN_MODEL', 'MODEL_UNSUPPORTED', 'NO_ADAPTER',
+          'MISSING_CREDENTIAL', 'INVALID_CREDENTIAL', 'AUTH', 'INVALID_MODEL_MAX_TOKENS',
+          'UNSUPPORTED_REASONING_EFFORT'].includes(cause.code)) return undefined
+        throw cause
+      })
+      if (effective === undefined) {
+        exclusions.set(routeKey(route), ['route-unavailable'])
+        continue
+      }
       const cap = effective.maxTokens ?? assessment.outputTokens ?? this.config.outputReserveTokens
       caps.set(routeKey(route), cap)
       const reasons = routeExclusions(route, assessment, inputTokens,
         Math.max(cap, assessment.outputTokens ?? this.config.outputReserveTokens))
+      if (!this.adaptiveRouting().billingAvailable(route.billing)) reasons.push('billing-exhausted')
+      if (admission !== undefined && request.agentOptions.reasoningEffort !== undefined
+        && route.reasoningEfforts?.includes(request.agentOptions.reasoningEffort) !== true) reasons.push('unsupported-reasoning')
       if (admission?.excludeRoutes?.some(item => routeKey(item) === routeKey(route))) reasons.push('recovery-attempted')
       if (admission?.minimumContextWindow !== undefined && (route.contextWindow ?? 0) < admission.minimumContextWindow) reasons.push('context-capacity')
       if (reasons.length === 0) {
@@ -587,6 +631,7 @@ export class OrchestrationService extends TypertRemoteService {
         load.set(oldKey, Math.max(0, (load.get(oldKey) ?? 0) - 1))
       }
       const ready: ReadyRoute[] = availability.flatMap(({ route, queue }) =>
+        !this.adaptiveRouting().billingAvailable(route.billing) ? [] :
         queue.kind === 'ready' || queue.kind === 'unknown' ? [{ route, readiness: queue.kind,
           active: load.get(routeKey(route)) ?? 0, lastAssigned: this.lastAssigned.get(routeKey(route)) ?? 0 }] : [])
       const preferred = admission?.preferredRoute
@@ -603,7 +648,7 @@ export class OrchestrationService extends TypertRemoteService {
           return {
             ...route,
             activeAssignments: load.get(id) ?? 0,
-            exclusions: metadata === undefined ? ['unauthorized'] : [...exclusions.get(id) ?? [],
+            exclusions: metadata === undefined ? [unavailable.has(id) ? 'route-unavailable' : 'unauthorized'] : [...exclusions.get(id) ?? [],
               ...queue?.kind === 'wait' ? ['rate-limit' as const]
                 : queue?.kind === 'impossible' ? ['request-token-capacity' as const] : []],
             ...queue === undefined ? {} : { availability: queue },
@@ -633,10 +678,9 @@ export class OrchestrationService extends TypertRemoteService {
             ...request.agentOptions,
             provider: selected.route.provider,
             model: selected.route.model,
-            // Effort ids can be retained only for the same exact selected route.
-            reasoningEffort: selected.route.provider === request.agentOptions.provider
+            reasoningEffort: admission !== undefined || (selected.route.provider === request.agentOptions.provider
               && selected.route.model === request.agentOptions.model
-              ? request.agentOptions.reasoningEffort : undefined,
+            ) ? request.agentOptions.reasoningEffort : undefined,
           },
           setup,
           release: () => {

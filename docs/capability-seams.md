@@ -16,6 +16,8 @@ flowchart LR
   pkg_work_handoff["work-handoff"]
   svc_workHandoffs["ctx.workHandoffs<br/>Unfinished-work handoffs"]
   pkg_goal_round_driver["goal-round-driver"]
+  pkg_client_remote_connection["client-remote-connection"]
+  svc_remoteConnection["ctx.remoteConnection<br/>Remote browser login"]
   pkg_action_cards["action-cards"]
   svc_actionCards["ctx.actionCards<br/>Optional action cards"]
   pkg_creation_recommendations["creation-recommendations"]
@@ -386,6 +388,7 @@ flowchart LR
   pkg_client_modules --> svc_clientModules
   pkg_client_modules --> svc_config
   pkg_client_product_analytics --> svc_productAnalytics
+  pkg_client_remote_connection --> svc_remoteConnection
   pkg_client_ui_connector_account --> svc_connectorAccounts
   pkg_client_ui_plugin_manager --> svc_pluginRegistryProbe
   pkg_client_ui_session_status --> svc_sessionStatus
@@ -742,9 +745,10 @@ flowchart LR
 | `ctx.projectContext` | `service` | [`project-context`](../packages/context/project-context) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | Owns logged turn-end documentation assessment and guarded project-guide updates. |
 | `ctx.todoPolicy` | `service` | [`tool-todo`](../packages/todo/tool-todo) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`work-handoff`](../packages/goal/work-handoff) | - | Owns list purpose, suspension, completion high-water marks and repair accounting. |
 | `ctx.workHandoffs` | `service` | [`work-handoff`](../packages/goal/work-handoff) | - | [`goal-round-driver`](../packages/goal/goal-round-driver), [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | Saves checkpoints and host observations; explicit continuation retains source restrictions. |
-| `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | Owns card state, user actions and status notices; card kinds register their actions and handlers. |
+| `ctx.actionCards` | `service` | [`action-cards`](../packages/interaction/action-cards) | - | [`creation-recommendations`](../packages/extensions/creation-recommendations), [`client-ui-action-cards`](../packages/client/ui-action-cards) | - | Owns card state, user actions and status notices; card kinds register their actions and handlers. |
 | `ctx.orchestrations` | `service` | [`orchestration`](../packages/experimental/dsh-orchestration) | - | [`client-ui-orchestration`](../packages/experimental/client-ui-orchestration) | - | Owns logged session mode and pool settings; registers a model router on the subagent service, which retains child activation and teardown ownership. |
-| `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/experimental/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/experimental/client-ui-plugin-recommendations) | - | Reads the current catalog text of an official plugin card and enables the plugin through the profile plugin manager after a click. |
+| `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/extensions/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/client/ui-plugin-recommendations) | - | Reads the current catalog text of an official plugin card and enables the plugin through the profile plugin manager after a click. |
+| `ctx.remoteConnection` | `service` | [`client-remote-connection`](../packages/client/remote-connection) | - | - | - | Owns QR invitations, approved pairing requests, Remote browser credentials and the anonymous login document; its Client provides approval controls and an independent Token-link shortcut. |
 | `ctx.deepseekChatImport` | `service` | [`deepseek-chat-import`](../packages/experimental/deepseek-chat-import) | - | - | - | Serves the owner-only upload route that imports each conversation of a DeepSeek chat export as a Session, and the upload limits the browser checks first. |
 | `ctx.headlessStartup` | `core` | [`headless`](../packages/bundle/headless) | - | [`headless`](../packages/bundle/headless) | - | Supplies parsed task and run options to the headless runner and its sandbox-policy configuration. |
 | `ctx.cotTranslation` | `service` | [`experimental-client-ui-cot-translation`](../packages/experimental/client-ui-cot-translation) | - | - | - | Serves reasoning translations, reuses saved results, and joins ordinary Session activation for uncached inactive Sessions. |

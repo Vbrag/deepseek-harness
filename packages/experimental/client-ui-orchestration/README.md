@@ -32,13 +32,13 @@ Use the composer's mode menu to choose Default or Orchestration. The selector ap
 
 ### Pick the model pool
 
-The panel shows every model the live LLM registry reports, grouped by provider, each with capability badges derived from the catalog entry or live adapter metadata. Checking or unchecking a row, **Select all**, and **Clear** adjust a local selection; the explicit **Save model pool** button persists the whole pool to the Host through `setPool`. The pool read at mount time is seeded into the panel, so the current Host selection is the starting state; when nothing has been persisted yet, the panel defaults to every catalog model selected so the full pool is available immediately.
+The panel lists eligible provider models and their capability badges. Checking rows, **Select all**, and **Clear** adjust a local draft; **Save model pool** persists it against the settings revision. Opening the panel refreshes the effective pool and catalog. An explicitly empty pool remains empty, and new catalog entries do not alter a saved selection.
 
-The panel shows the applied selection count, a notice when the pool is empty, and a save failure notice if the Host refuses an update. Save reports success only after the Host applies the pool; a refused write shows a failure notice instead of claiming a save that never happened. The Host applies the selection in memory and attempts to persist it to the profile; a profile that owns the `orchestration` entry in a shipped layer refuses the write, so only the in-memory selection survives (see the limitation below).
+The panel reports whether the write succeeded, failed, or became stale. A failed write retains the draft and does not claim persistence. For a stale revision, refresh settings and review the retained draft before saving. If the account is corrected after billing exhaustion, **Retry billing-limited models** clears the observed billing failures so a later request can try again.
 
-### Follow child model changes
+### Follow model changes
 
-Open the conversation's subagent catalog to see **Subagent models** below the child list. Each observed local child shows the model used by its last recorded request, any selected next model or requested preference, its previous model, and the routing reason. Queued changes, **Changing model**, **Waiting for capacity**, and blocked changes have distinct labels. A selected or requested route becomes **Last used** only when the host publishes a request using it; a child with no recorded request says **No request yet**.
+Open the conversation's session panel to see **Orchestration models**. The lead and each observed local child show the model used by the last recorded request, any selected next model or requested preference, the previous model, and the routing reason. Queued changes, **Changing model**, **Waiting for capacity**, and blocked changes have distinct labels. A selected or requested route becomes **Last used** only when the host publishes a request using it; a session with no recorded request says **No request yet**.
 
 -----
 
@@ -48,7 +48,7 @@ Open the conversation's subagent catalog to see **Subagent models** below the ch
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel, an additive `conversation.input.left` composer control, and the subagent-catalog footer. The composer reads the `orchestration` session projection and submits `/orchestration on|off` through the session-bound command service. The footer reads published child `orchestrationRouting` and `modelSelection` projections; the existing catalog owns child refresh, and the footer neither opens Sessions nor scans logs. Disposing the plugin withdraws the controls before the Remote mount. The panel derives its catalog from the Host `getCatalog` Remote, which projects the live LLM registry grouped by provider; curated Paderborn facts are annotations on known routes.
+The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel, an additive `conversation.input.left` composer control, and a `conversation.session.panel.section` section. The composer reads the `orchestration` session projection and submits `/orchestration on|off` through the session-bound command service. The section reads published lead and child `orchestrationRouting` and `modelSelection` projections; it neither opens Sessions nor scans logs. Disposing the plugin withdraws the controls before the Remote mount. The panel derives its catalog from the Host `getCatalog` Remote, which projects the live LLM registry grouped by provider; curated Paderborn facts are annotations on known routes.
 
 | File | Role |
 |---|---|
@@ -95,7 +95,7 @@ None. The panel adds no model context and retains no KV prefix; the pool is Host
 
 - **Host service required** — the panel needs the `orchestrations` Remote namespace mounted by the Orchestration service; without it, reads and writes are refused and the panel shows the save-failure notice.
 - **Pool picker is catalog-scoped** — the panel lists providers the live LLM registry advertises; models appear only when their provider reports them, and catalog changes take effect on the next page load.
-- **Persistence requires a user-layer entry** — `persistPool` persists through the profile's `orchestration` plugin entry. When that entry's pool is owned by a shipped bundle layer, the config editor refuses the write and the save is reported as a failure; only the in-memory selection applies for the session. Persisting to a user-owned span is future work.
+- **Profile overrides** — a higher-priority home patch or command-line overlay can refuse a pool write; the panel reports the failure.
 - **No per-session override** — the selected pool is a single Shared Host value, not a per-session or per-run override.
 - **Experimental prototype with no stability promise** — the package is public, but its contracts can change freely while it incubates.
 

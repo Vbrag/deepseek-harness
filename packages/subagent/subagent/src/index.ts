@@ -54,6 +54,7 @@ import type {
 } from './control-types.ts'
 import type {
   SubagentCapabilities,
+  SubagentCapacity,
   SubagentActivation,
   SubagentActivationSpec,
   SubagentInterruptAuthority,
@@ -98,6 +99,7 @@ export type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
   SubagentCapabilities,
+  SubagentCapacity,
   SubagentActivation,
   SubagentActivationSpec,
   SubagentInterruptAuthority,
@@ -258,13 +260,18 @@ export class SubagentRuntime extends TypertRemoteService {
         emitLifecycle: this.emitLifecycle,
         resolveModelRouting: context => this.resolveModelRouting(context),
         modelSelectionPolicyOf: session => this.modelSelectionPolicyOf(session),
-      }, () => this.config.maxActiveSubagents.get())
+      }, () => this.maxActiveSubagents)
       this.manager = manager
       childCtx.effect(() => () => {
         /* v8 ignore else -- one injected binding owns the slot until its fiber disposes. */
         if (this.manager === manager) this.manager = undefined
       }, 'subagents.managerBinding()')
     })
+  }
+
+  /** Current concurrency limit shared by all descendants in each subagent tree. */
+  get maxActiveSubagents(): number {
+    return this.config.maxActiveSubagents.get()
   }
 
   /**
@@ -508,6 +515,15 @@ export class SubagentRuntime extends TypertRemoteService {
    */
   rootOf(caller: Agent): Agent {
     return this.requireManager().rootOf(caller)
+  }
+
+  /**
+   * Observe the shared concurrency capacity of the caller's subagent tree.
+   * @param caller - exact live root or resident tree member.
+   * @returns occupied slots and the current limit; this observation reserves no capacity.
+   */
+  capacityOf(caller: Agent): SubagentCapacity {
+    return this.requireManager().capacityOf(caller)
   }
 
   /**

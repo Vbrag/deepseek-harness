@@ -1,4 +1,4 @@
-/** Child model progress in the session panel below the subagent catalog, using published projection snapshots. */
+/** Lead and child model progress in the session panel, using published projection snapshots. */
 
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OrchestrationRoutingState, PoolRoute } from '@deepseek-ai/dsh-orchestration/client'
@@ -28,7 +28,7 @@ function routeLabel(route: PoolRoute): string {
  * Show the model used by the last admitted request separately from selected and requested future routes.
  * Catalog opening owns projection refresh; rendering neither loads Sessions nor reads their logs.
  * @param props - Session list snapshots and localized labels supplied by the session panel section.
- * @returns Model progress for observed local children, or nothing before routing facts are available.
+ * @returns Model progress for the lead and observed local children, or nothing before routing facts are available.
  */
 export function OrchestrationRouting({ sessionId, useSessions, t }: OrchestrationRoutingProps) {
   const projections = useSessions(state => state.projectionsBySession)
@@ -40,20 +40,27 @@ export function OrchestrationRouting({ sessionId, useSessions, t }: Orchestratio
     if (snapshot?.state !== 'ready') return []
     const routing = snapshot.values.orchestrationRouting
     if (routing === undefined || (routing.assessment === null && routing.status === 'idle')) return []
-    return [{ child, routing, current: snapshot.values.modelSelection?.lastUsed ?? null }]
+    return [{ id: child.id, name: 'name' in child ? child.name ?? child.id : summaries[child.id]?.displayTitle ?? child.id,
+      routing, current: snapshot.values.modelSelection?.lastUsed ?? null }]
   })
+  const lead = projections[sessionId]
+  const leadRouting = lead?.state === 'ready' ? lead.values.orchestrationRouting : undefined
+  if (leadRouting !== undefined && (leadRouting.assessment !== null || leadRouting.status !== 'idle')) {
+    rows.unshift({ id: sessionId, name: t('routingLead'), routing: leadRouting,
+      current: lead?.state === 'ready' ? lead.values.modelSelection?.lastUsed ?? null : null })
+  }
   if (rows.length === 0) return null
   return (
     <section className={css.section} aria-label={t('routingTitle')} data-orchestration-routing>
       <h3 className={css.title}>{t('routingTitle')}</h3>
       <ul className={css.list}>
-        {rows.map(({ child, routing, current }) => {
+        {rows.map(({ id, name, routing, current }) => {
           const selected = same(routing.route, current) ? null : routing.route
           const requested = routing.request?.preferredRoute
           return (
-            <li key={child.id} className={css.row} data-orchestration-child={child.id} data-status={routing.status}>
+            <li key={id} className={css.row} data-orchestration-child={id} data-status={routing.status}>
               <div className={css.heading}>
-                <h4 className={css.name}>{'name' in child ? child.name ?? child.id : summaries[child.id]?.displayTitle ?? child.id}</h4>
+                <h4 className={css.name}>{name}</h4>
                 <span className={css.status}>{t(statusKeys[routing.status])}</span>
               </div>
               <dl className={css.routes}>

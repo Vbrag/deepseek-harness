@@ -1,7 +1,7 @@
 /** Orchestration settings page: pick the multi-model pool from the live provider catalog and save it to the Host. */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { OrchestrationCatalog, OrchestrationCatalogModel, PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { OrchestrationCatalog, OrchestrationCatalogModel, PoolRoute, PoolSaveResult, PoolSettingsState } from '@deepseek-ai/dsh-orchestration/client'
 import type { TaskDomain } from '@deepseek-ai/dsh-orchestration/capabilities'
 import { NS, type OrchestrationKey } from './locales.ts'
 import css from './OrchestrationPanel.module.css'
@@ -23,10 +23,11 @@ function hasBadge(capability: OrchestrationCatalogModel, domain: TaskDomain | 'i
 
 /** A checkable catalog row with its capability badges. */
 function CatalogRow({
-  capability, checked, onToggle, t,
+  capability, checked, disabled, onToggle, t,
 }: {
   capability: OrchestrationCatalogModel
   checked: boolean
+  disabled: boolean
   onToggle: (key: string, checked: boolean) => void
   t: PropsLocale<typeof NS>['t']
 }) {
@@ -39,6 +40,7 @@ function CatalogRow({
           type="checkbox"
           className={css.checkbox}
           checked={checked}
+          disabled={disabled}
           onChange={(event) => { onToggle(key, event.target.checked) }}
         />
         <span className={css.rowText}>
@@ -64,8 +66,14 @@ export interface OrchestrationInjected {
   readonly catalog: OrchestrationCatalog
   /** The pool persisted on the Host when the panel mounted. */
   readonly pool: readonly PoolRoute[]
-  /** Persist a replacement pool to the Host; resolves true when it was accepted. */
-  readonly setPool: (pool: readonly PoolRoute[]) => Promise<boolean>
+  /** Current profile settings revision, or null when settings are unavailable. */
+  readonly revision: number | null
+  /** Read the current pool and catalog when the panel opens. */
+  readonly refresh: () => Promise<PoolSettingsState & { readonly catalog: OrchestrationCatalog }>
+  /** Persist a replacement pool against the revision the user read. */
+  readonly setPool: (pool: readonly PoolRoute[], revision: number) => Promise<PoolSaveResult>
+  /** Clear observed billing failures after the user corrects the account. */
+  readonly resetBillingHealth: () => Promise<boolean>
 }
 
 /** Props assembled by the settings renderer. */
@@ -86,39 +94,58 @@ function routeFromKey(key: string): PoolRoute {
 /**
  * Render the live provider catalog grouped by provider with capability badges as
  * checkable rows to select the multi-model pool. Selection is local state drawn
- * from the injected Host pool; Select all and Clear adjust it, and Save persists
- * the whole pool through the injected `setPool`, reporting a refused write. When
- * nothing is persisted the panel defaults to every catalog model selected, so the
- * full pool is available immediately. The component is function-only and uses no DOM refs.
+ * from the effective Host pool; Select all and Clear adjust it, and Save persists
+ * the whole pool through the injected `setPool`, reporting a refused write.
  * @param props - settings runtime, the injected pool and setter, and localized copy.
  * @returns The Orchestration settings section.
  */
-export function OrchestrationPanel({ pool, catalog, setPool, t }: OrchestrationPanelProps) {
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => {
-    const persisted = pool.map(routeKey)
-    return persisted.length > 0
-      ? new Set(persisted)
-      : new Set(catalog.groups.flatMap(group => group.models.map(model => routeKey({ provider: model.provider, model: model.id }))))
-  })
+export function OrchestrationPanel({ pool, catalog: initialCatalog, revision: initialRevision, refresh, setPool, resetBillingHealth, t }: OrchestrationPanelProps) {
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(pool.map(routeKey)))
+  const [catalog, setCatalog] = useState(initialCatalog)
+  const [revision, setRevision] = useState(initialRevision)
   const [notice, setNotice] = useState<OrchestrationKey | undefined>(undefined)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [stale, setStale] = useState(false)
+  const dirtyRef = useRef(false)
+
+  useEffect(() => {
+    let active = true
+    void refresh().then((current) => {
+      if (!active || dirtyRef.current) return
+      setCatalog(current.catalog)
+      setSelected(new Set(current.pool.map(routeKey)))
+      setRevision(current.revision)
+      if (current.revision === null) setNotice('loadFailed')
+    }, () => { if (active) setNotice('loadFailed') })
+    return () => { active = false }
+  }, [refresh])
 
   const save = (): void => {
+    if (revision === null) return
     setNotice(undefined)
     const routes: readonly PoolRoute[] = [...selected].map(routeFromKey)
     setSaving(true)
-    void setPool(routes).then((ok) => {
-      setSaving(false)
-      setDirty(false)
-      setNotice(ok ? 'savedOk' : 'saveFailed')
-    })
+    void setPool(routes, revision).then((result) => {
+      if (result.status === 'saved') {
+        setSelected(new Set(result.pool.map(routeKey)))
+        setRevision(result.revision)
+        dirtyRef.current = false
+        setDirty(false)
+        setStale(false)
+        setNotice('savedOk')
+      } else {
+        setStale(result.status === 'stale')
+        setNotice(result.status === 'stale' ? 'saveStale' : 'saveFailed')
+      }
+    }, () => { setNotice('saveFailed') }).finally(() => { setSaving(false) })
   }
 
   const setSelection = (next: ReadonlySet<string>): void => {
     setSelected(next)
+    dirtyRef.current = true
     setDirty(true)
-    setNotice(undefined)
+    setNotice(stale ? 'saveStale' : undefined)
   }
 
   const toggle = (id: string, checked: boolean): void => {
@@ -143,8 +170,8 @@ export function OrchestrationPanel({ pool, catalog, setPool, t }: OrchestrationP
       <h2 className={css.title}>{t('title')}</h2>
       <p className={css.subtitle}>{t('subtitle')}</p>
       <div className={css.toolbar}>
-        <button type="button" className={css.linkButton} onClick={selectAll}>{t('selectAll')}</button>
-        <button type="button" className={css.linkButton} onClick={clear}>{t('clearAll')}</button>
+        <button type="button" className={css.linkButton} disabled={saving} onClick={selectAll}>{t('selectAll')}</button>
+        <button type="button" className={css.linkButton} disabled={saving} onClick={clear}>{t('clearAll')}</button>
         <span className={css.count}>{t('selectedPool')} ({selected.size})</span>
       </div>
       {catalog.groups.map(group => (
@@ -158,6 +185,7 @@ export function OrchestrationPanel({ pool, catalog, setPool, t }: OrchestrationP
                   key={key}
                   capability={capability}
                   checked={selected.has(key)}
+                  disabled={saving}
                   onToggle={toggle}
                   t={t}
                 />
@@ -170,11 +198,26 @@ export function OrchestrationPanel({ pool, catalog, setPool, t }: OrchestrationP
       <button
         type="button"
         className={css.saveButton}
-        disabled={saving || !dirty}
+        disabled={saving || !dirty || revision === null || stale}
         onClick={save}
       >
         {saving ? t('saving') : t('save')}
       </button>
+      {stale && <button type="button" className={css.linkButton} disabled={saving} onClick={() => {
+        setSaving(true)
+        void refresh().then((current) => {
+          if (current.revision === null) { setNotice('loadFailed'); return }
+          setCatalog(current.catalog)
+          setRevision(current.revision)
+          setStale(false)
+          setNotice('settingsRefreshed')
+        }, () => { setNotice('loadFailed') }).finally(() => { setSaving(false) })
+      }}>{t('refreshSettings')}</button>}
+      <button type="button" className={css.linkButton} disabled={saving} onClick={() => {
+        setSaving(true)
+        void resetBillingHealth().then((ok) => { setNotice(ok ? 'billingReset' : 'saveFailed') },
+          () => { setNotice('saveFailed') }).finally(() => { setSaving(false) })
+      }}>{t('resetBilling')}</button>
     </section>
   )
 }

@@ -232,15 +232,15 @@ export abstract class LlmAdapter {
   }
 
   /**
-   * Resolve the image dimensions and byte target this adapter sends to the model.
+   * Resolve the maximum image dimensions and byte budgets this adapter uses for the model.
    * The default preserves normalized images; adapters that resize must override it.
    * @param _provider - registered provider route.
    * @param _model - exact model id.
    * @param image - normalized image whose request projection is being resolved.
-   * @returns the same target used by request serialization, before provider-internal processing.
+   * @returns the target used by request serialization; encoded images can be smaller to satisfy the hard byte limit.
    */
   imageRequestTarget(_provider: string, _model: string, image: ImageAttachmentRef): ImageRequestTarget {
-    return { width: image.width, height: image.height, maxBytes: image.bytes }
+    return { width: image.width, height: image.height, maxImageBytes: image.bytes, imageTargetBytes: image.bytes }
   }
 
   /**
@@ -681,7 +681,7 @@ export class LlmRuntime extends TypertRemoteService {
    * @param provider - registered provider route.
    * @param model - exact model id.
    * @param image - normalized image reference.
-   * @returns dimensions and byte target used by the adapter's request serializer.
+   * @returns maximum dimensions and byte budgets used by the request serializer; readImageRequest returns the actual encoded dimensions.
    */
   imageRequestTarget(provider: string, model: string, image: ImageAttachmentRef): ImageRequestTarget {
     return this.registration(provider).adapter.imageRequestTarget(provider, model, image)
@@ -855,6 +855,11 @@ export class LlmRuntime extends TypertRemoteService {
         'INVALID_MODEL_MAX_TOKENS',
       )
     }
+    const billing = resolved.billing
+    if (billing !== undefined && ((billing.free !== undefined && typeof billing.free !== 'boolean')
+      || (billing.budgetId !== undefined && (typeof billing.budgetId !== 'string' || billing.budgetId.length === 0)))) {
+      throw new LlmError(`adapter returned invalid billing metadata for provider "${provider}" model "${model}"`, 'INVALID_MODEL_INFO')
+    }
     const info: LlmResolvedModelInfo = {
       provider,
       id: model,
@@ -864,6 +869,7 @@ export class LlmRuntime extends TypertRemoteService {
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
       ...maxOutputTokens === undefined ? {} : { maxOutputTokens },
+      ...billing === undefined ? {} : { billing: { ...billing } },
       ...resolved.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: resolved.systemPromptUpdate },
       ...resolved.toolUpdate === undefined ? {} : { toolUpdate: resolved.toolUpdate },
       ...resolved.rateLimit === undefined ? {} : { rateLimit: this.normalizedRateLimit(provider, model, resolved.rateLimit) },

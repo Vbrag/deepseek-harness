@@ -39,6 +39,17 @@ export interface OrchestrationCatalog {
   readonly groups: readonly OrchestrationCatalogGroup[]
 }
 
+/** Current effective pool and the revision required for a settings write. */
+export interface PoolSettingsState {
+  readonly pool: readonly PoolRoute[]
+  readonly revision: number | null
+}
+
+/** Result of attempting a revision-checked pool write. */
+export type PoolSaveResult =
+  | { readonly status: 'saved'; readonly pool: readonly PoolRoute[]; readonly revision: number }
+  | { readonly status: 'stale' | 'failed'; readonly message: string }
+
 /** Explicit specialty facts for a route, replacing its curated specialties. */
 export interface RouteCapabilities extends PoolRoute {
   /** Every specialty the route may satisfy; an empty list clears curated facts. */
@@ -51,6 +62,8 @@ export interface OrchestrationConfig {
   readonly pool?: PoolRoute[]
   /** User-selected pool persisted through Settings; takes precedence over `pool`. */
   readonly userPool?: PoolRoute[]
+  /** An explicit user override exists, including an intentionally empty pool. */
+  readonly userPoolConfigured?: boolean
   /** Exact-route specialties for models outside the curated gateway catalog. */
   readonly routeCapabilities?: RouteCapabilities[]
   /** Input-token allowance for child instructions, tool schemas, and request wrappers; defaults to 8192. */
@@ -71,7 +84,7 @@ export interface OrchestrationConfig {
 export type OrchestrationRouteExclusion =
   | 'unauthorized' | 'missing-required-capability' | 'missing-required-modality'
   | 'unknown-context' | 'context-capacity' | 'output-capacity' | 'rate-limit' | 'request-token-capacity'
-  | 'compaction-budget' | 'recovery-attempted'
+  | 'compaction-budget' | 'recovery-attempted' | 'billing-exhausted' | 'unsupported-reasoning' | 'route-unavailable'
 
 /** Capacity and eligibility facts for one other configured route at assignment time. */
 export interface OrchestrationRouteAlternative extends PoolRoute {
@@ -132,7 +145,7 @@ export interface OrchestrationPhaseRequest {
   readonly maxTokens?: number
 }
 
-/** Current and requested child routes with recovery counters that survive reload. */
+/** Current and requested routes with recovery counters that survive reload. */
 export interface OrchestrationRoutingState {
   readonly revision: number
   readonly assessment: SubagentTaskAssessment | null
@@ -177,7 +190,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Applied and pending orchestration mode. */
     orchestration: OrchestrationProjection
-    /** Phase request, applied route, and recovery disposition for one local child. */
+    /** Phase request, applied route, and recovery disposition for a lead or local child. */
     orchestrationRouting: OrchestrationRoutingState
   }
 }

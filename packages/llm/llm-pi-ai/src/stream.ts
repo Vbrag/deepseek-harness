@@ -39,6 +39,26 @@ export function mapUsage(usage: PiUsage): TokenUsage {
 // only that status; other wordings scan the whole message.
 const LEADING_HTTP_STATUS = /^[45]\d\d\b/
 
+/** Read the provider's machine code when pi-ai retains an HTTP JSON body in its message. */
+function providerErrorType(message: string): string | undefined {
+  const body = message.replace(/^[45]\d\d(?:\s*:\s*|\s+)/, '')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch (_notJson) {
+    // Non-JSON messages remain eligible for the adapter's text classifiers.
+    return undefined
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined
+  const nested = 'error' in parsed ? parsed.error : parsed
+  if (typeof nested !== 'object' || nested === null) return undefined
+  if ('type' in nested && typeof nested.type === 'string'
+    && (nested.type === 'budget_exceeded' || nested.type === 'insufficient_funds')) return nested.type
+  if ('code' in nested && typeof nested.code === 'string') return nested.code
+  if ('type' in nested && typeof nested.type === 'string') return nested.type
+  return undefined
+}
+
 // XXX(pi-ai upstream): pi-ai flattens the caught error to `error.message`
 // (api/anthropic-messages.js: `errorMessage = error instanceof Error ?
 // error.message : JSON.stringify(error)`), discarding the original Error and its
@@ -49,6 +69,9 @@ const LEADING_HTTP_STATUS = /^[45]\d\d\b/
 // us capture the cause ourselves), classify on `code`/`cause` instead of text.
 function classifyPiAiError(message: string): BuiltinLlmFailureCode {
   const statusSource = LEADING_HTTP_STATUS.exec(message)?.[0] ?? message
+  const providerType = providerErrorType(message)
+  if (providerType === 'budget_exceeded' || providerType === 'insufficient_funds'
+    || /\binsufficient[\s_-]+funds?\b/i.test(message)) return 'BILLING_EXHAUSTED'
   if (/\b(?:401|403)\b/.test(statusSource)) return 'AUTH'
   if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE
   if (/\b429\b/.test(statusSource) || /rate.?limit/i.test(message)) return 'RATE_LIMIT'
@@ -131,7 +154,9 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
     }
     case 'error': {
       const text = message.errorMessage ?? 'pi-ai stream error'
-      return { kind: 'error', failure: { message: text, code: classifyPiAiError(text) } }
+      const status = LEADING_HTTP_STATUS.exec(text)?.[0]
+      return { kind: 'error', failure: { message: text, code: classifyPiAiError(text),
+        ...status === undefined ? {} : { status: Number(status) } } }
     }
   }
 }

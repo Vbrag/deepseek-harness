@@ -96,7 +96,7 @@ turn/start
      reject, or a first enter rewritten empty -> close the turn with no step
      step/start
      agent/request -> prepareCall (cancellation commits neither system nor users)
-     reconcile system/message using the prepared call capability
+     commit system/message updates; rebuild the system head after compaction
      append entered messages as user/message; reconcile retained runtime context
      log request/header and request/context as needed
      derive and freeze model history from the log
@@ -119,7 +119,7 @@ fork 创建存储调用方提供的历史；共享前缀的后端先持久化父
 
 输入通过同一个 inbox 到达驱动器；注入的上下文等待一条唤醒消息。AgentLoop 的持久 `inbox` 投影使待处理输入在没有活跃 Agent 时仍可读取。
 
-串行 `agent/step-preparing` 监听器可在循环为工具、提示词组装和 `agent/pre-step` 捕获 Session 模型选择前选择路由。Pre-step 接纳、改写或拒绝已领取消息；首次领取被拒绝或为空时，关闭不含步骤的轮次。其 `startsRequestSeries` 声明开启有日志记录的消息序列。`step/start` 之后，`agent/request` 在捕获的路由内调整控制参数；`prepareCall()` 先绑定适配器，再提交系统或用户消息。更早取消时二者均不提交。每次尝试刷新运行时事实、协调提示词、仅接纳一次用户消息、记录 header/context 并冻结请求。`retry` 保留组装结果；`reprepare` 在同一步骤内重新捕获路由并组装，不重复已提交输入或工具。`agent/request-finished` 先于响应提交和工具执行。`interruptRequest()` 仅停止活跃的模型准备或流式输出，保留轮次与 inbox。表层替换或图片省略开启消息序列；未变化的恢复延续已有序列。已准备调用的能力决定追加或归并提示词；空文本清除提示词。[Agent-loop](../packages/core/agent-loop/README.zh.md#understand-the-implementation) 说明准入与替换细节。
+串行 `agent/step-preparing` 监听器可在提示词组装前选择路由。结构化准备失败会连同已领取的输入交给 `agent/request-error`，以便恢复过程在提交前评估待处理请求。`agent/pre-step` 接受、改写或拒绝输入；`prepareCall()` 在提交系统消息和用户消息前绑定适配器。每次尝试使用组装的 `systemUpdates()` 写入系统段落，刷新运行时事实并冻结请求。`retry` 复用组装结果；`reprepare` 在同一步骤重新捕获路由并组装，不重复已提交的输入或工具。`agent/request-finished` 在响应提交和工具执行前运行；`interruptRequest()` 只中断当前模型请求。详见 [Agent-loop](../packages/core/agent-loop/README.zh.md#understand-the-implementation)。
 
 循环发送不可变请求，同时保持取消有效，仅对完全冻结的对象复用冻结证据；[agent-loop](../packages/core/agent-loop/README.zh.md) 负责请求构建与取消原因。
 

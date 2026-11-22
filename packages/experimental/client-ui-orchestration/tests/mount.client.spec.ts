@@ -8,7 +8,7 @@ import { OrchestrationModeControl, type OrchestrationModeInjected } from '../src
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import type { OrchestrationCatalog, PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { OrchestrationCatalog, PoolRoute, PoolSaveResult, PoolSettingsState } from '@deepseek-ai/dsh-orchestration/types'
 import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
@@ -54,8 +54,8 @@ function assertInjected(value: Record<string, unknown>): asserts value is Record
 
 /** Wire the services the section needs and a Remote `$mount`; no slot registration yet. */
 async function buildCtx(options: {
-  getPool?: () => Promise<RemoteResult<readonly PoolRoute[]>>
-  persistPool?: (pool: readonly PoolRoute[]) => Promise<RemoteResult<boolean>>
+  getPool?: () => Promise<RemoteResult<PoolSettingsState>>
+  persistPool?: (pool: readonly PoolRoute[], revision: number) => Promise<RemoteResult<PoolSaveResult>>
   contribution?: TypertRemoteContribution
 } = {}) {
   const ctx = new Context()
@@ -68,12 +68,14 @@ async function buildCtx(options: {
     }
   }
   new Remote()
-  const persistPool = (options.persistPool ?? vi.fn(async (_pool: readonly PoolRoute[]) =>
-    ({ ok: true as const, value: true }))) as Mock<(pool: readonly PoolRoute[]) => Promise<RemoteResult<boolean>>>
+  const persistPool = (options.persistPool ?? vi.fn(async (pool: readonly PoolRoute[], revision: number) =>
+    ({ ok: true as const, value: { status: 'saved' as const, pool, revision: revision + 1 } })))
+    as Mock<(pool: readonly PoolRoute[], revision: number) => Promise<RemoteResult<PoolSaveResult>>>
   ctx.provide('remote.orchestrations', {
     getCatalog: vi.fn(async () => ({ ok: true as const, value: CATALOG })),
-    getPool: options.getPool ?? vi.fn(async () => ({ ok: true as const, value: INITIAL })),
+    getPoolSettingsState: options.getPool ?? vi.fn(async () => ({ ok: true as const, value: { pool: INITIAL, revision: 0 } })),
     persistPool,
+    resetBillingHealth: vi.fn(async () => ({ ok: true as const, value: undefined })),
   })
   ctx.provide('locale', new LocaleRuntime(ctx))
   class Layout extends Service {
@@ -86,12 +88,12 @@ async function buildCtx(options: {
   ctx.slots.register({ name: 'root', children: {
     'settings.section': { kind: 'list', scope: 'root' },
     'conversation.input.left': { kind: 'list', scope: 'session' },
-    'conversation.session.header.actions.subagent.footer': { kind: 'list', scope: 'session' },
+    'conversation.session.panel.section': { kind: 'list', scope: 'session' },
   } } as never, () => null)
   return { ctx, unmount, persistPool, warn }
 }
 
-async function mount(options: { getPool?: () => Promise<RemoteResult<readonly PoolRoute[]>> } = {}) {
+async function mount(options: { getPool?: () => Promise<RemoteResult<PoolSettingsState>> } = {}) {
   const built = await buildCtx(options)
   let dispose: (() => Promise<void>) | undefined
   const fiber = built.ctx.plugin({ inject: [...inject], apply: async (plugin: Context) => {
@@ -144,7 +146,7 @@ it('exposes the host marker and the browser inject list', () => {
   expect(inject).toEqual(['layout', 'locale', 'slots', 'remote'])
 })
 
-it('adds model progress to the subagent catalog and withdraws it before its Remote owner', async () => {
+it('adds model progress to the session panel and withdraws it before its Remote owner', async () => {
   const built = await buildCtx()
   const dispose = await clientApply(built.ctx)
   const slot = 'conversation.session.panel.section'
@@ -170,8 +172,8 @@ it('seeds the face from getPool and persists a replacement through persistPool',
   const f = await mount()
   expect(f.injected().pool).toEqual(INITIAL)
   expect(f.injected().catalog).toEqual(CATALOG)
-  await expect(f.injected().setPool([])).resolves.toBe(true)
-  expect(f.persistPool).toHaveBeenCalledWith([])
+  await expect(f.injected().setPool([], 0)).resolves.toMatchObject({ status: 'saved' })
+  expect(f.persistPool).toHaveBeenCalledWith([], 0)
   await f.dispose()
   expect(f.unmount).toHaveBeenCalled()
   expect(f.warn).not.toHaveBeenCalled()
@@ -184,14 +186,14 @@ it('resolves the nav label through the locale', async () => {
 })
 
 it('defaults the pool to empty and logs when getPool is refused', async () => {
-  const f = await mount({ getPool: vi.fn(async (): Promise<RemoteResult<readonly PoolRoute[]>> => ({ ok: false as const, error: new RemoteError('gateway/bad-request', 'refused read', {}) })) })
+  const f = await mount({ getPool: vi.fn(async (): Promise<RemoteResult<PoolSettingsState>> => ({ ok: false as const, error: new RemoteError('gateway/bad-request', 'refused read', {}) })) })
   expect(f.injected().pool).toEqual([])
   expect(f.warn).toHaveBeenCalled()
   await f.dispose()
 })
 
 it('stringifies a non-Error getPool refusal in the warning', async () => {
-  const f = await mount({ getPool: vi.fn(async (): Promise<RemoteResult<readonly PoolRoute[]>> => ({ ok: false as const, error: 'plain refusal' } as never)) })
+  const f = await mount({ getPool: vi.fn(async (): Promise<RemoteResult<PoolSettingsState>> => ({ ok: false as const, error: 'plain refusal' } as never)) })
   expect(f.injected().pool).toEqual([])
   expect(f.warn).toHaveBeenCalled()
   await f.dispose()
@@ -200,15 +202,15 @@ it('stringifies a non-Error getPool refusal in the warning', async () => {
 it('reports a refused persistPool to the panel as false', async () => {
   const f = await mount()
   f.persistPool.mockResolvedValueOnce({ ok: false as const, error: new RemoteError('gateway/bad-request', 'no', {}) })
-  await expect(f.injected().setPool(INITIAL)).resolves.toBe(false)
+  await expect(f.injected().setPool(INITIAL, 0)).resolves.toMatchObject({ status: 'failed' })
   expect(f.warn).toHaveBeenCalled()
   await f.dispose()
 })
 
 it('treats a Host-refused pool write (value false) as a failure without refreshing the face', async () => {
   const f = await mount()
-  f.persistPool.mockResolvedValueOnce({ ok: true as const, value: false })
-  await expect(f.injected().setPool(INITIAL)).resolves.toBe(false)
+  f.persistPool.mockResolvedValueOnce({ ok: true as const, value: { status: 'failed', message: 'refused' } })
+  await expect(f.injected().setPool(INITIAL, 0)).resolves.toMatchObject({ status: 'failed' })
   expect(f.injected().pool).toEqual(INITIAL)
   expect(f.warn).not.toHaveBeenCalled()
   await f.dispose()
@@ -217,8 +219,18 @@ it('treats a Host-refused pool write (value false) as a failure without refreshi
 it('keeps the face pool current after a successful persistPool', async () => {
   const f = await mount()
   const next: readonly PoolRoute[] = [{ provider: POOL_PROVIDER, model: 'gwdg.gemma-4-31b-it' }]
-  await f.injected().setPool(next)
+  await f.injected().setPool(next, 0)
   expect(f.injected().pool).toEqual(next)
+  await f.dispose()
+})
+
+it('refreshes the effective pool when the panel opens again', async () => {
+  const getPool = vi.fn<() => Promise<RemoteResult<PoolSettingsState>>>()
+    .mockResolvedValueOnce({ ok: true, value: { pool: INITIAL, revision: 0 } })
+    .mockResolvedValueOnce({ ok: true, value: { pool: [], revision: 1 } })
+  const f = await mount({ getPool })
+  await expect(f.injected().refresh()).resolves.toMatchObject({ pool: [], revision: 1 })
+  expect(f.injected().pool).toEqual([])
   await f.dispose()
 })
 

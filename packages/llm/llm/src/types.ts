@@ -466,10 +466,10 @@ export interface LlmModelReasoningInfo {
 }
 
 /**
- * How a model applies a system prompt that changes mid-conversation.
- * `'in-history'`: the model reads the latest `system` message at any position
- * of `messages` as the complete effective system prompt, so a changed prompt
- * can follow the cached history instead of rewriting message 0.
+ * Whether a model accepts native system updates within conversation history.
+ * `'in-history'` preserves later system messages as additions or explicit
+ * supersession notices. Without it, the adapter uses its supported prompt or
+ * reminder format. This capability does not select system-section admission.
  */
 export type SystemPromptUpdate = 'in-history'
 
@@ -484,6 +484,9 @@ export type SystemPromptUpdate = 'in-history'
  */
 export type ToolUpdate = 'in-history' | 'addition-only'
 
+/** Deployment-declared identity of a shared billing budget. */
+export type LlmBillingBudgetId = Branded<'LlmBillingBudgetId'>
+
 /** Exact-route model metadata resolved by its owning adapter. */
 export interface LlmResolvedModelInfo extends LlmModelInfo {
   /** Provider-owned context capacity when known. */
@@ -492,6 +495,8 @@ export interface LlmResolvedModelInfo extends LlmModelInfo {
   defaultMaxTokens?: number
   /** Provider maximum response tokens when known, independent of configured request defaults. */
   maxOutputTokens?: number
+  /** Deployment billing facts; an omitted value is unknown, not free or independent. */
+  billing?: { readonly free?: boolean; readonly budgetId?: LlmBillingBudgetId }
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
   /** Declared mid-conversation system prompt handling; absent means only a leading system message is read. */

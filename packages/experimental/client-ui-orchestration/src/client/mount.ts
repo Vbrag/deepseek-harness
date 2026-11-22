@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-orchestration/remote'
-import type { OrchestrationCatalog, PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { OrchestrationCatalog, PoolRoute, PoolSaveResult, PoolSettingsState } from '@deepseek-ai/dsh-orchestration/client'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { OrchestrationPanel, type OrchestrationInjected } from './OrchestrationPanel.tsx'
 import { en, ja, es, fr, de, ru, pt, NS, zh, type OrchestrationKey } from './locales.ts'
@@ -38,32 +38,40 @@ function messageOf(error: unknown): string {
  * @param ctx - browser Context with the mounted `remote.orchestrations` namespace.
  * @returns the current pool.
  */
-async function readPool(ctx: Context): Promise<readonly PoolRoute[]> {
-  const pooled = await ctx.remote.orchestrations.getPool()
+async function readPool(ctx: Context): Promise<PoolSettingsState> {
+  const pooled = await ctx.remote.orchestrations.getPoolSettingsState()
   if (!pooled.ok) ctx.logger.warn(`orchestration: getPool refused: ${messageOf(pooled.error)}`)
-  return pooled.ok ? pooled.value : []
+  return pooled.ok ? pooled.value : { pool: [], revision: null }
 }
 
-function registerUi(ctx: Context, initial: readonly PoolRoute[], catalog: OrchestrationCatalog): void {
+function registerUi(ctx: Context, initial: PoolSettingsState, catalog: OrchestrationCatalog): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'client-ui-orchestration: dictionaries')
-  let pool = initial
-  const setPool = async (next: readonly PoolRoute[]): Promise<boolean> => {
-    const result = await ctx.remote.orchestrations.persistPool(next)
+  let state = initial
+  let currentCatalog = catalog
+  const refresh = async () => {
+    const [next, models] = await Promise.all([readPool(ctx), ctx.remote.orchestrations.getCatalog()])
+    if (!models.ok) throw models.error
+    state = next
+    currentCatalog = models.value
+    return { ...state, catalog: currentCatalog }
+  }
+  const setPool = async (next: readonly PoolRoute[], revision: number): Promise<PoolSaveResult> => {
+    const result = await ctx.remote.orchestrations.persistPool(next, revision)
     if (!result.ok) {
       ctx.logger.warn(`orchestration: persistPool refused: ${messageOf(result.error)}`)
-      return false
+      return { status: 'failed', message: 'The model pool could not be saved.' }
     }
-    if (!result.value) return false
-    pool = next
-    return true
+    if (result.value.status === 'saved') state = { pool: result.value.pool, revision: result.value.revision }
+    return result.value
   }
+  const resetBillingHealth = async (): Promise<boolean> => (await ctx.remote.orchestrations.resetBillingHealth()).ok
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'orchestration',
     order: 30,
     label: () => ctx.locale.bind(NS)('title'),
     locale: NS,
-    inject: (): OrchestrationInjected => ({ pool, catalog, setPool }),
+    inject: (): OrchestrationInjected => ({ ...state, catalog: currentCatalog, setPool, refresh, resetBillingHealth }),
   }, OrchestrationPanel))
   ctx.slots.inject('conversation.session.panel.section', () => ctx.slots.register({
     name: 'conversation.session.panel.section',

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /** The panel draws the catalog rows, seeds the selection from the Host pool, and persists every toggle. */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { OrchestrationCatalog, PoolRoute } from '@deepseek-ai/dsh-orchestration/types'
+import type { OrchestrationCatalog, PoolRoute, PoolSaveResult } from '@deepseek-ai/dsh-orchestration/types'
 import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 import { afterEach, expect, it, vi } from 'vitest'
 import { OrchestrationPanel, type OrchestrationPanelProps } from '../src/client/OrchestrationPanel.tsx'
@@ -29,21 +29,25 @@ const CATALOG: OrchestrationCatalog = {
   }],
 }
 
-function fixture(pool: readonly PoolRoute[] = [], setPool = vi.fn<(pool: readonly PoolRoute[]) => Promise<boolean>>(async () => true)) {
+function fixture(pool: readonly PoolRoute[] = [], setPool = vi.fn<(pool: readonly PoolRoute[], revision: number) => Promise<PoolSaveResult>>(
+  async (next, revision) => ({ status: 'saved', pool: next, revision: revision + 1 }),
+), refresh: () => Promise<{ pool: readonly PoolRoute[]; catalog: OrchestrationCatalog; revision: number | null }>
+  = async () => ({ pool, catalog: CATALOG, revision: 0 })) {
   const props = {
-    t: makeTranslate(zh), pool, catalog: CATALOG, setPool,
+    t: makeTranslate(zh), pool, catalog: CATALOG, revision: 0, setPool,
+    refresh,
+    resetBillingHealth: async () => true,
   } as OrchestrationPanelProps
   render(<OrchestrationPanel {...props} />)
   return { setPool }
 }
 
-it('renders every catalog row and selects all models by default when nothing is persisted', () => {
+it('renders an explicitly empty pool with no models selected', () => {
   fixture()
   const checkboxes = screen.getAllByRole('checkbox') as HTMLInputElement[]
   expect(checkboxes).toHaveLength(PADERBORN_CATALOG.length)
-  for (const checkbox of checkboxes) expect(checkbox.checked).toBe(true)
-  expect(screen.getByRole('status').textContent).toContain(zh.selectedPool)
-  expect(screen.getByRole('status').textContent).not.toContain(zh.noneSelected)
+  for (const checkbox of checkboxes) expect(checkbox.checked).toBe(false)
+  expect(screen.getByRole('status').textContent).toContain(zh.noneSelected)
 })
 
 it('seeds the selection from the Host pool', () => {
@@ -60,7 +64,7 @@ it('persists a toggled-on model on Save, computing the pool from the selection',
   expect(setPool).toHaveBeenCalledWith([
     ROUTE,
     { provider: POOL_PROVIDER, model: 'gwdg.gemma-4-31b-it' },
-  ])
+  ], 0)
   await act(async () => { await Promise.resolve() })
   expect(screen.getByRole('status').textContent).toContain(zh.savedOk)
   expect(screen.getByRole('status').textContent).not.toContain(zh.saveFailed)
@@ -70,18 +74,60 @@ it('persists a toggled-off model on Save, dropping it from the pool', async () =
   const { setPool } = fixture([ROUTE])
   fireEvent.click(screen.getByRole('checkbox', { name: /DeepSeek V4 Flash/ }))
   fireEvent.click(screen.getByRole('button', { name: zh.save }))
-  expect(setPool).toHaveBeenCalledWith([])
+  expect(setPool).toHaveBeenCalledWith([], 0)
   await act(async () => { await Promise.resolve() })
   expect(screen.getByRole('status').textContent).toBe(zh.savedOk)
 })
 
 it('shows a failure notice when the Host refuses a write', async () => {
-  const { setPool } = fixture([], vi.fn(async () => false))
+  const { setPool } = fixture([], vi.fn(async (): Promise<PoolSaveResult> => ({ status: 'failed', message: 'refused' })))
   fireEvent.click(screen.getByRole('checkbox', { name: /Gemma 4/ }))
   fireEvent.click(screen.getByRole('button', { name: zh.save }))
   expect(setPool).toHaveBeenCalled()
   await act(async () => { await Promise.resolve() })
   expect(screen.getByRole('status').textContent).toBe(zh.saveFailed)
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.save }).disabled).toBe(false) })
+})
+
+it('retains the draft when the save request rejects', async () => {
+  fixture([ROUTE], vi.fn(async (): Promise<PoolSaveResult> => { throw new Error('offline') }))
+  fireEvent.click(screen.getByRole('checkbox', { name: /Gemma 4/ }))
+  fireEvent.click(screen.getByRole('button', { name: zh.save }))
+  await waitFor(() => { expect(screen.getByRole('status').textContent).toBe(zh.saveFailed) })
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /Gemma 4/ }).checked).toBe(true)
+})
+
+it('keeps the selected draft after a stale settings revision', async () => {
+  const save = vi.fn<(pool: readonly PoolRoute[], revision: number) => Promise<PoolSaveResult>>()
+    .mockResolvedValueOnce({ status: 'stale', message: 'changed' })
+    .mockImplementationOnce(async (pool, revision) => ({ status: 'saved', pool, revision: revision + 1 }))
+  const refresh = vi.fn<() => Promise<{ pool: readonly PoolRoute[]; catalog: OrchestrationCatalog; revision: number | null }>>()
+    .mockResolvedValueOnce({ pool: [ROUTE], catalog: CATALOG, revision: 0 })
+    .mockResolvedValueOnce({ pool: [], catalog: CATALOG, revision: 1 })
+  const { setPool } = fixture([ROUTE], save, refresh)
+  fireEvent.click(screen.getByRole('checkbox', { name: /Gemma 4/ }))
+  fireEvent.click(screen.getByRole('button', { name: zh.save }))
+  await waitFor(() => { expect(screen.getByRole('status').textContent).toBe(zh.saveStale) })
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /Gemma 4/ }).checked).toBe(true)
+  expect(setPool).toHaveBeenCalledWith(expect.arrayContaining([ROUTE]), 0)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.save }).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: zh.refreshSettings }))
+  await waitFor(() => { expect(screen.getByRole('status').textContent).toBe(zh.settingsRefreshed) })
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /Gemma 4/ }).checked).toBe(true)
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.save }).disabled).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: zh.save }))
+  expect(setPool).toHaveBeenLastCalledWith(expect.arrayContaining([ROUTE]), 1)
+  await waitFor(() => { expect(screen.getByRole('status').textContent).toBe(zh.savedOk) })
+})
+
+it('prevents selection changes while a save is pending', async () => {
+  const pending = Promise.withResolvers<PoolSaveResult>()
+  fixture([ROUTE], vi.fn(() => pending.promise))
+  fireEvent.click(screen.getByRole('checkbox', { name: /Gemma 4/ }))
+  fireEvent.click(screen.getByRole('button', { name: zh.save }))
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /Gemma 4/ }).disabled).toBe(true)
+  await act(async () => { pending.resolve({ status: 'failed', message: 'offline' }); await pending.promise })
+  await waitFor(() => { expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /Gemma 4/ }).disabled).toBe(false) })
 })
 
 it('selects and clears the whole catalog through the toolbar buttons', async () => {
@@ -93,6 +139,6 @@ it('selects and clears the whole catalog through the toolbar buttons', async () 
     expect(checkbox.checked).toBe(true)
   }
   fireEvent.click(screen.getByRole('button', { name: zh.save }))
-  expect(setPool).toHaveBeenCalledWith(PADERBORN_CATALOG.map(capability => ({ provider: POOL_PROVIDER, model: capability.id })))
+  expect(setPool).toHaveBeenCalledWith(PADERBORN_CATALOG.map(capability => ({ provider: POOL_PROVIDER, model: capability.id })), 0)
   await act(async () => { await Promise.resolve() })
 })

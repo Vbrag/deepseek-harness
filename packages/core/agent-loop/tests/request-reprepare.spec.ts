@@ -149,6 +149,25 @@ it('recovers a structured pre-step compaction failure before step admission', as
   expect(test.agent.session.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(1)
 })
 
+it('recovers a routing preparation failure with the claimed input still available', async () => {
+  const adapter = new MockAdapter([textResponse('recovered')])
+  const test = await fixture(adapter)
+  test.ctx.on('agent/step-preparing', ({ agent }) => {
+    if (agent.model.current()?.model === 'vision') throw new HarnessError('The provider is unavailable', 'NO_ADAPTER')
+  })
+  test.ctx.on('agent/request-error', ({ agent, failure, stage, messages }) => {
+    expect(failure.code).toBe('NO_ADAPTER')
+    expect(stage).toBe('step-preparation')
+    expect(messages?.[0]?.content).toEqual([{ type: 'text', text: 'Inspect the image and solve the task' }])
+    expect(userInputs(agent)).toHaveLength(0)
+    agent.model.select({ provider: 'models', model: 'reasoning' })
+    return Promise.resolve({ kind: 'reprepare' })
+  })
+  await test.run()
+  expect(adapter.requests.map(request => request.model)).toEqual(['reasoning'])
+  expect(userInputs(test.agent)).toHaveLength(1)
+})
+
 it('does not offer programming defects to model-request recovery', async () => {
   const test = await fixture(new MockAdapter([]))
   const recovery = vi.fn()

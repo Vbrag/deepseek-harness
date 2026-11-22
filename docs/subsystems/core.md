@@ -1077,10 +1077,11 @@ Handle one failed model-request attempt before the loop retries or closes its st
  * @param payload.signal - the turn abort signal.
  * @param payload.stage - operation that failed; absent in older manually dispatched events.
  * @param payload.requestInterrupted - true for an explicit request-only interruption.
+ * @param payload.messages - claimed input not yet admitted when preparation failed.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode waterfall
  */
-'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: 'step-preparation' | 'request-preparation' | 'stream'; requestInterrupted?: true }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: 'step-preparation' | 'request-preparation' | 'stream'; requestInterrupted?: true; messages?: readonly UserMessage[] }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
 ```
 
 Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)

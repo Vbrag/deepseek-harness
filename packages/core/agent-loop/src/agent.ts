@@ -34,7 +34,7 @@ import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals, ToolCallRecovery } from '@deepseek-ai/dsh-session'
-import { renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import { renderContextSections } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import { ToolBatchExecutionError } from '@deepseek-ai/dsh-tools'
 import type { ResolvedToolSet } from '@deepseek-ai/dsh-tools'
@@ -42,7 +42,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { ReactLoopInbox } from './inbox.ts'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
-import { SystemPromptProjection } from './runtime-context.ts'
 
 /** Projected facts consumed by this driver; registration stays with the factory. */
 interface LoopProjections {
@@ -142,7 +141,6 @@ export class ReactLoopAgent implements Agent {
   /** Process-local revision of assistant frames for this attached Session. */
   private assistantStreamRevision = 0
   private assistantAttemptCounter = 0
-  private readonly systemPrompt: SystemPromptProjection
   /** Identities fully frozen by this loop; weak references do not retain replaced history. */
   private readonly frozenMessages = new WeakSet<Message>()
 
@@ -163,7 +161,6 @@ export class ReactLoopAgent implements Agent {
     this.inbox = new ReactLoopInbox(projections.inbox, session, this.dispatch)
     this.phase = { kind: 'idle', lastTurn }
     this.runtimeContext = new RuntimeContextProjection(this.ctx, session)
-    this.systemPrompt = new SystemPromptProjection(session)
   }
 
   get status(): AgentStatus {
@@ -311,7 +308,16 @@ export class ReactLoopAgent implements Agent {
     const signal = this.phase.abort.signal
     const claimed = offered ?? this.inbox.claim(target, position.turn)
     while (true) {
-      await this.dispatch.serial('agent/step-preparing', { ...position, messages: claimed, signal })
+      const previousSelection = this.model.current()
+      try {
+        await this.dispatch.serial('agent/step-preparing', { ...position, messages: claimed, signal })
+      } catch (error: unknown) {
+        const selection = this.model.current() ?? previousSelection
+        if (selection === undefined) throw error
+        const action = await this.requestError(error, selection, position, signal, 'step-preparation', undefined, undefined, claimed)
+        if (action === undefined) throw error
+        continue
+      }
       signal.throwIfAborted()
       const selection = this.model.current()
       if (selection === undefined) {
@@ -343,17 +349,10 @@ export class ReactLoopAgent implements Agent {
         return { ...decision, assembly, selection, toolSet }
       } catch (error: unknown) {
         toolSet?.dispose()
-        const action = await this.requestError(error, selection, position, signal, 'step-preparation')
+        const action = await this.requestError(error, selection, position, signal, 'step-preparation', undefined, undefined, claimed)
         if (action === undefined) throw error
       }
     }
-  }
-
-  /** Whether the assembled tool schemas differ from the logged request header's. */
-  private toolsChanged(tools: PromptAssembly['tools']): boolean {
-    const baseline = this.session.requestHeader()
-    if (baseline === undefined) return false
-    return !headerEquals(baseline, canonicalHeader({ ...baseline, tools: [...tools] }))
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -475,7 +474,7 @@ export class ReactLoopAgent implements Agent {
   private async requestError(
     error: unknown, selection: Readonly<ModelSelection>, position: { turn: number; step: number },
     signal: AbortSignal, stage: 'step-preparation' | 'request-preparation' | 'stream',
-    retryPolicy?: ResolvedRetryPolicy, interruption?: string,
+    retryPolicy?: ResolvedRetryPolicy, interruption?: string, messages?: readonly UserMessage[],
   ): Promise<RequestErrorAction> {
     signal.throwIfAborted()
     const failure = interruption !== undefined ? { code: 'REQUEST_INTERRUPTED', message: interruption }
@@ -485,6 +484,7 @@ export class ReactLoopAgent implements Agent {
     const action = await this.dispatch.waterfall('agent/request-error', {
       ...position, provider: selection.provider, model: selection.model, failure, retryPolicy, signal, stage,
       ...interruption === undefined ? {} : { requestInterrupted: true as const },
+      ...messages === undefined ? {} : { messages },
     }, () => Promise.resolve<RequestErrorAction>(undefined))
     signal.throwIfAborted()
     return action
@@ -532,13 +532,9 @@ export class ReactLoopAgent implements Agent {
       const context = this.runtimeContext.project(renderContextSections(currentContext))
       signal.throwIfAborted()
       const startsRequestSeries = admissions.firstAttempt && decision.startsRequestSeries === true
-      const commits = this.systemPrompt.project(renderPrompt(assembly), {
-        inHistory: preparedCall?.systemPromptUpdate === 'in-history',
-        startsSeries: startsRequestSeries
-          || this.requestSurfaceGeneration !== this.session.surface.contentGeneration
-          || (preparedCall?.toolUpdate === undefined && this.toolsChanged(assembly.tools)),
-      })
-      for (const { message, intent } of commits) this.session.append('system/message', { ...position, message }, intent)
+      for (const { message, intent } of assembly.systemUpdates(!admissions.offerMessages)) {
+        this.session.append('system/message', { ...position, message }, intent)
+      }
       const admit = (message: UserMessage): void => {
         if (admissions.ids.has(message.id)) return
         this.session.append('user/message', message, { surfaceOp: 'append' })
@@ -583,7 +579,8 @@ export class ReactLoopAgent implements Agent {
       const reason: unknown = abort.signal.reason
       const interruption = abort.signal.aborted ? reason instanceof Error ? reason.message : 'The model request was interrupted.' : undefined
       const action = await this.requestError(error, decision.selection, position, turnSignal,
-        started ? 'stream' : 'request-preparation', preparedCall?.retryPolicy, interruption)
+        started ? 'stream' : 'request-preparation', preparedCall?.retryPolicy, interruption,
+        admissions.offerMessages ? decision.messages : undefined)
       if (action === undefined) {
         if (interruption !== undefined) throw new HarnessError(interruption, 'REQUEST_INTERRUPTED', { cause: error })
         throw error

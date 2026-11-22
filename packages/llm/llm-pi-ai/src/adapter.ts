@@ -47,6 +47,7 @@ import type {
   GenerateOptions,
   ImageAttachmentAccess,
   LlmModelInfo,
+  LlmBillingBudgetId,
   LlmQueueRequest,
   LlmQueueAvailability,
   LlmProviderInfo,
@@ -63,6 +64,7 @@ import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import type { ModelRateReservation } from './rate-limit.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
+import { resolveImageRequestBudget } from './image-policy.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
 import { ModelRateLimiter, estimateRequestInputTokens } from './rate-limit.ts'
 import { toStreamChunks } from './stream.ts'
@@ -294,9 +296,9 @@ export class PiAiAdapter extends LlmAdapter {
 
   override imageRequestTarget(provider: string, model: string, image: ImageAttachmentRef) {
     const snapshot = this.current()
-    this.modelOf(snapshot, provider, model)
+    const selected = this.modelOf(snapshot, provider, model)
     const profile = this.profileOf(snapshot, provider)
-    return requestImageTarget(image, { maxPixels: profile.requestImagePixelBudget, maxBytes: profile.requestImageMaxBytes })
+    return requestImageTarget(image, resolveImageRequestBudget(selected, profile))
   }
 
   /**
@@ -387,6 +389,7 @@ export class PiAiAdapter extends LlmAdapter {
     // catalog's `maxTokens` sizes the model and stops there.
     const configuredMaxTokens = profile.configuredMaxTokens.get(model)
     const limits = profile.modelRateLimits.get(model)
+    const billing = profile.modelBilling.get(model)
     return {
       provider,
       id: model,
@@ -397,6 +400,10 @@ export class PiAiAdapter extends LlmAdapter {
       ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
       ...reasoningInfo(resolvedModel, defaultLevel),
       ...conversationUpdates(resolvedModel),
+      ...billing?.free === undefined && profile.billingBudgetKey === undefined ? {} : { billing: {
+        ...billing?.free === undefined ? {} : { free: billing.free },
+        ...profile.billingBudgetKey === undefined ? {} : { budgetId: brandString<LlmBillingBudgetId>(profile.billingBudgetKey) },
+      } },
       ...limits === undefined ? {} : {
         rateLimit: {
           ...limits.rpm === undefined ? {} : { rpm: limits.rpm },
@@ -504,10 +511,7 @@ export class PiAiAdapter extends LlmAdapter {
           maxRequestImageBytes: profile.maxRequestImageBytes,
           maxRequestImages: profile.maxRequestImages,
           imageOffloadCountQuantum: profile.imageOffloadCountQuantum,
-          requestImagePolicy: {
-            maxPixels: profile.requestImagePixelBudget,
-            maxBytes: profile.requestImageMaxBytes,
-          },
+          requestImagePolicy: resolveImageRequestBudget(model, profile),
         }, onReplayDegrade, updates.systemPromptUpdate === 'in-history', prefixDigests)
       if (options.signal?.aborted) {
         yield { type: 'finish', reason: { kind: 'aborted', failure: new LlmError('pi-ai request aborted by caller', 'ABORTED').failure } }

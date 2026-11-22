@@ -23,6 +23,10 @@ it('boots the profile and routes ordinary coding, vision, and mixed subagents on
     visionOutput: string
     mixedOutput: string
     persistAccepted: boolean
+    staleSave: string
+    emptySave: string
+    emptyPool: { provider: string; model: string }[]
+    restoreSave: string
     persistedPool: { provider: string; model: string }[]
     compactionConfig: { modelPolicies: { provider: string; model: string; headroomTokens: number; maxTokens: number }[] }
     parentId: string
@@ -39,6 +43,10 @@ it('boots the profile and routes ordinary coding, vision, and mixed subagents on
   // `pool` default stays a layer-provided fallback), so the write is accepted
   // and the effective pool becomes the persisted selection.
   expect(report.persistAccepted).toBe(true)
+  expect(report.staleSave).toBe('stale')
+  expect(report.emptySave).toBe('saved')
+  expect(report.emptyPool).toEqual([])
+  expect(report.restoreSave).toBe('saved')
   expect(report.persistedPool).toEqual([{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }])
   expect(report.compactionConfig.modelPolicies).toEqual([
     { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash', headroomTokens: 8192, maxTokens: 8192 },

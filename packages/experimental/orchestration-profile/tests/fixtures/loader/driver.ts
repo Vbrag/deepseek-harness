@@ -51,12 +51,23 @@ try {
     await runFixtureTurn(ctx, { task: 'Reply with your assigned route.' })
     const runToolPresent = ctx.tools.schemas(parent).some(tool => tool.name === 'run_orchestration')
     const persistedPool = [{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }]
-    const persistAccepted = await ctx.orchestrations.persistPool(persistedPool)
+    const poolState = ctx.orchestrations.getPoolSettingsState()
+    const persistAccepted = poolState.revision !== null
+      && (await ctx.orchestrations.persistPool(persistedPool, poolState.revision)).status === 'saved'
+    const staleSave = poolState.revision === null ? 'unavailable'
+      : (await ctx.orchestrations.persistPool([], poolState.revision)).status
+    const beforeEmpty = ctx.orchestrations.getPoolSettingsState()
+    const emptySave = beforeEmpty.revision === null ? 'unavailable'
+      : (await ctx.orchestrations.persistPool([], beforeEmpty.revision)).status
+    const emptyPool = ctx.orchestrations.getPool()
+    const beforeRestore = ctx.orchestrations.getPoolSettingsState()
+    const restoreSave = beforeRestore.revision === null ? 'unavailable'
+      : (await ctx.orchestrations.persistPool(persistedPool, beforeRestore.revision)).status
     const compactionConfig: unknown = [...ctx.loader.entries()].find(entry => entry.options.id === 'compaction-basic')?.options.config
     process.stdout.write(`${JSON.stringify({
       rootOutput, orchestrationsLoaded: ctx.get('orchestrations') !== undefined,
       runToolPresent, defaultOutput, codingOutput, visionOutput, mixedOutput,
-      persistAccepted, persistedPool: ctx.orchestrations.getPool(),
+      persistAccepted, staleSave, emptySave, emptyPool, restoreSave, persistedPool: ctx.orchestrations.getPool(),
       compactionConfig,
       parentId: parent.id,
       requests: (await readFile('model-requests.jsonl', 'utf8')).trimEnd().split('\n')

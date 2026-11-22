@@ -14,6 +14,9 @@ export interface CapabilityRoute extends PoolRoute {
   readonly contextWindow: number | undefined
   /** Provider maximum response tokens; undefined means unknown. */
   readonly maxOutputTokens: number | undefined
+  /** Provider-supplied billing and explicit reasoning facts. */
+  readonly billing?: LlmResolvedModelInfo['billing']
+  readonly reasoningEfforts?: readonly string[]
 }
 
 /** Resolve one route using exact adapter facts and optional configured specialties.
@@ -40,6 +43,8 @@ export function capabilityRoute(
     modalities,
     contextWindow: info.context?.contextWindow ?? catalog?.contextWindow,
     maxOutputTokens: info.maxOutputTokens,
+    ...info.billing === undefined ? {} : { billing: info.billing },
+    ...info.reasoning === undefined ? {} : { reasoningEfforts: info.reasoning.efforts.map(effort => effort.id) },
   }
 }
 

@@ -54,6 +54,18 @@ it('shows the last request model, previous model, and reason without treating a 
   expect(screen.queryByText('models/selected-next')).toBeNull()
 })
 
+it('shows a blocked lead recovery alongside its child', () => {
+  const view = fixture()
+  const state = view.sessions.getSnapshot()
+  view.set({ ...state.projectionsBySession, [ROOT]: { state: 'ready', error: null, values: {
+    subagentCatalog: [{ id: CHILD, createdAt: 0, mode: 'continuable', label: 'Implement change', name: 'coder' }],
+    orchestrationRouting: routing({ status: 'blocked', reason: 'BILLING_EXHAUSTED' }),
+    modelSelection: { lastUsed: CURRENT, next: NEXT },
+  } } })
+  expect(screen.getByRole('heading', { name: en.routingLead })).toBeTruthy()
+  expect(screen.getByText(/BILLING_EXHAUSTED/u)).toBeTruthy()
+})
+
 it.each([
   ['queued', en.routingQueued], ['changing', en.routingChanging], ['waiting', en.routingWaiting], ['blocked', en.routingBlocked],
 ] as const)('keeps %s distinct and displays selected and requested routes separately', (status, label) => {

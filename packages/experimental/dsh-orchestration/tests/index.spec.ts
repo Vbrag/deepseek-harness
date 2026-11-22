@@ -798,12 +798,20 @@ describe('durable mode selections', () => {
 })
 
 describe('pool settings and configuration', () => {
-  it('applies defaults, replaces the pool, and reports when persistence is unavailable', async () => {
+  it('distinguishes an explicitly empty pool from an inherited default', () => {
+    const ctx = new Context()
+    const emptyCtx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose(); await emptyCtx.fiber.dispose() })
+    const inherited = new OrchestrationService(ctx, { pool, userPool: [] })
+    expect(inherited.getPool()).toEqual(pool)
+    const empty = new OrchestrationService(emptyCtx, { pool, userPool: [], userPoolConfigured: true })
+    expect(empty.getPool()).toEqual([])
+  })
+  it('keeps the current pool when persistence is unavailable', async () => {
     const f = await fixture()
-    const warning = vi.spyOn(f.ctx.logger, 'warn')
-    await expect(f.service.persistPool([])).resolves.toBe(false)
-    expect(f.service.getPool()).toEqual([])
-    expect(warning).toHaveBeenCalled()
+    const original = f.service.getPool()
+    await expect(f.service.persistPool([], 0)).resolves.toMatchObject({ status: 'failed' })
+    expect(f.service.getPool()).toEqual(original)
   })
 
   it('rejects invalid allowances and duplicate exact specialty declarations', async () => {
