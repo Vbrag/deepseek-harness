@@ -12,7 +12,7 @@ import type { OrchestrationCatalog, PoolRoute, PoolSaveResult, PoolSettingsState
 import { PADERBORN_CATALOG, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capabilities'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
-import { expect, it, vi, type Mock } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { apply as hostApply } from '../src/index.ts'
 import { apply as clientApply } from '../src/client/index.ts'
 import { OrchestrationPanel, type OrchestrationInjected } from '../src/client/OrchestrationPanel.tsx'
@@ -68,9 +68,9 @@ async function buildCtx(options: {
     }
   }
   new Remote()
-  const persistPool = (options.persistPool ?? vi.fn(async (pool: readonly PoolRoute[], revision: number) =>
-    ({ ok: true as const, value: { status: 'saved' as const, pool, revision: revision + 1 } })))
-    as Mock<(pool: readonly PoolRoute[], revision: number) => Promise<RemoteResult<PoolSaveResult>>>
+  const persistPool = vi.fn<(pool: readonly PoolRoute[], revision: number) => Promise<RemoteResult<PoolSaveResult>>>(
+    options.persistPool ?? (async (pool, revision) => ({ ok: true, value: { status: 'saved', pool, revision: revision + 1 } })),
+  )
   ctx.provide('remote.orchestrations', {
     getCatalog: vi.fn(async () => ({ ok: true as const, value: CATALOG })),
     getPoolSettingsState: options.getPool ?? vi.fn(async () => ({ ok: true as const, value: { pool: INITIAL, revision: 0 } })),
