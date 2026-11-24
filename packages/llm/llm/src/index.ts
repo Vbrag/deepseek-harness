@@ -40,6 +40,7 @@ import type { ConfigureCall, LlmCallConfig, LlmCallConfigAdapterDefaults } from 
 import { HarnessError } from './error.ts'
 import type { BuiltinLlmFailureCode } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
+import { LlmBillingHealth } from './billing-health.ts'
 import {
   contentHasFile, contentHasImage, fileHandleText, projectFilesToText, projectImagesForTextModel, projectToolUpdates,
 } from './content.ts'
@@ -57,6 +58,9 @@ export {
   createSystemMessage, createToolResultMessage, createUserMessage, freezeMessage,
 } from './message.ts'
 export * from './retry-policy.ts'
+export { describeLlmEgress } from './egress.ts'
+export { LlmBillingHealth } from './billing-health.ts'
+export type { BillingHealthObservation } from './billing-health.ts'
 export { BlockAssembler } from './assembler.ts'
 export { callConfigEquals, isAgentLoopRequest, markAgentLoopRequest } from './call-config.ts'
 export type { ConfigureCall, LlmCallConfig, LlmCallConfigAdapterDefaults, LlmCallControls } from './call-config.ts'
@@ -163,6 +167,8 @@ export interface PreparedLlmCall {
   readonly inputModalities?: readonly ModelModality[]
   /** Billing facts captured with the adapter dispatch generation, when supplied. */
   readonly billing?: LlmResolvedModelInfo['billing']
+  /** Endpoint identity captured with this adapter generation, when available. */
+  readonly egressId?: LlmResolvedModelInfo['egressId']
   /** Exact model system prompt update mode captured with the adapter dispatch generation. */
   readonly systemPromptUpdate?: SystemPromptUpdate
   /** Exact model tool update mode captured with the adapter dispatch generation. */
@@ -367,6 +373,8 @@ export interface DirectoryRegistrationHandle {
  * API, interceptable via the `llm/stream` waterfall.
  */
 export class LlmRuntime extends TypertRemoteService {
+  /** Process-local shared billing observations for this runtime. */
+  readonly billingHealth = new LlmBillingHealth()
   private adapters = new Map<string, AdapterRegistration>()
   private directory = new Map<string, LlmConfigurableProvider>()
   private discoveries = new Map<
@@ -881,6 +889,18 @@ export class LlmRuntime extends TypertRemoteService {
       || (billing.budgetId !== undefined && (typeof billing.budgetId !== 'string' || billing.budgetId.length === 0)))) {
       throw new LlmError(`adapter returned invalid billing metadata for provider "${provider}" model "${model}"`, 'INVALID_MODEL_INFO')
     }
+    if (resolved.egressId !== undefined && (typeof resolved.egressId !== 'string' || resolved.egressId.length === 0)) {
+      throw new LlmError(`adapter returned invalid endpoint identity for provider "${provider}" model "${model}"`, 'INVALID_MODEL_INFO')
+    }
+    if (resolved.egressLabel !== undefined) {
+      let parsed: URL
+      try { parsed = new URL(resolved.egressLabel) } catch {
+        throw new LlmError(`adapter returned invalid endpoint label for provider "${provider}" model "${model}"`, 'INVALID_MODEL_INFO')
+      }
+      if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.origin !== resolved.egressLabel) {
+        throw new LlmError(`adapter returned unsafe endpoint label for provider "${provider}" model "${model}"`, 'INVALID_MODEL_INFO')
+      }
+    }
     const info: LlmResolvedModelInfo = {
       provider,
       id: model,
@@ -891,6 +911,8 @@ export class LlmRuntime extends TypertRemoteService {
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
       ...maxOutputTokens === undefined ? {} : { maxOutputTokens },
       ...billing === undefined ? {} : { billing: { ...billing } },
+      ...resolved.egressId === undefined ? {} : { egressId: resolved.egressId },
+      ...resolved.egressLabel === undefined ? {} : { egressLabel: resolved.egressLabel },
       ...resolved.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: resolved.systemPromptUpdate },
       ...resolved.toolUpdate === undefined ? {} : { toolUpdate: resolved.toolUpdate },
       ...resolved.rateLimit === undefined ? {} : { rateLimit: this.normalizedRateLimit(provider, model, resolved.rateLimit) },
@@ -1058,6 +1080,7 @@ export class LlmRuntime extends TypertRemoteService {
         : {},
     })
     let dispatched = false
+    let adapterDispatched = false
     return Object.freeze({
       config: resolvedConfig,
       retryPolicy: registration.retryPolicy,
@@ -1067,6 +1090,7 @@ export class LlmRuntime extends TypertRemoteService {
         ? {}
         : { inputModalities: Object.freeze([...modelInfo.inputModalities]) },
       ...modelInfo.billing === undefined ? {} : { billing: Object.freeze({ ...modelInfo.billing }) },
+      ...modelInfo.egressId === undefined ? {} : { egressId: modelInfo.egressId },
       ...modelInfo.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: modelInfo.systemPromptUpdate },
       ...modelInfo.toolUpdate === undefined ? {} : { toolUpdate: modelInfo.toolUpdate },
       requestTokenBudget: (options: GenerateOptions): LlmRequestTokenBudget | undefined => {
@@ -1092,7 +1116,13 @@ export class LlmRuntime extends TypertRemoteService {
           registration,
           config: resolvedConfig,
           modelInfo,
-          dispatch: options => adapterCall.stream(options),
+          dispatch: (options) => {
+            if (adapterDispatched) {
+              throw new LlmError('a prepared LLM adapter can only be dispatched once', 'INVALID_PREPARED_CALL')
+            }
+            adapterDispatched = true
+            return adapterCall.stream(options)
+          },
         })
       },
     })

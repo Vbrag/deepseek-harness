@@ -499,6 +499,9 @@ export type ToolUpdate = 'in-history' | 'addition-only'
 /** Deployment-declared identity of a shared billing budget. */
 export type LlmBillingBudgetId = Branded<'LlmBillingBudgetId'>
 
+/** Opaque fingerprint of the endpoint used by one captured provider route. */
+export type LlmEgressId = Branded<'LlmEgressId'>
+
 /** Exact-route model metadata resolved by its owning adapter. */
 export interface LlmResolvedModelInfo extends LlmModelInfo {
   /** Provider-owned context capacity when known. */
@@ -509,6 +512,10 @@ export interface LlmResolvedModelInfo extends LlmModelInfo {
   maxOutputTokens?: number
   /** Deployment billing facts; an omitted value is unknown, not free or independent. */
   billing?: { readonly free?: boolean; readonly budgetId?: LlmBillingBudgetId }
+  /** Adapter-owned endpoint identity, absent when it cannot be determined safely. */
+  egressId?: LlmEgressId
+  /** Credential-free HTTP origin displayed before sending data to a new endpoint. */
+  egressLabel?: string
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
   /** Declared mid-conversation system prompt handling; absent means only a leading system message is read. */

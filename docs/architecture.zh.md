@@ -120,6 +120,8 @@ fork 创建存储调用方提供的历史；共享前缀的后端先持久化父
 
 输入通过同一个 inbox 到达驱动器；注入的上下文等待一条唤醒消息。AgentLoop 的持久 `inbox` 投影使待处理输入在没有活跃 Agent 时仍可读取。
 
+可选的 [prompt-enhancement](../packages/context/prompt-enhancement/README.zh.md) 插件在主 Session 输入栏的普通提交之前准备一次有界且已记录的辅助请求；Agent 仅接收选定的最终文本和未更改的附件。
+
 串行 `agent/step-preparing` 监听器可在提示词组装前选择路由。结构化准备失败会连同已领取但尚未提交的输入交给 `agent/request-error`，重新准备后也保持此规则；终态恢复负责人可以在 Session 中保留该输入。`agent/pre-step` 接受、改写或拒绝输入；`prepareCall()` 在提交系统消息和用户消息前绑定适配器。每次尝试使用组装的 `systemUpdates()` 写入系统段落，刷新运行时事实并冻结请求。`agent/request-ready` 可在分派前检查已记录的请求及其捕获的适配器；持久输入发生变更时可请求重新准备。`retry` 复用组装结果；`reprepare` 在同一步骤重新捕获路由并组装，不重复已提交的输入或工具。`agent/request-finished` 在响应提交和工具执行前运行；`interruptRequest()` 只中断当前模型请求。详见 [Agent-loop](../packages/core/agent-loop/README.zh.md#understand-the-implementation)。
 
 循环发送不可变请求，同时保持取消有效，仅对完全冻结的对象复用冻结证据；[agent-loop](../packages/core/agent-loop/README.zh.md) 负责请求构建与取消原因。

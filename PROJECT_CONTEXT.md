@@ -83,6 +83,14 @@ A durable surface reduction is flushed before the same turn is reprepared, witho
 
 The relevant extension and provider owners are packages/core/agent-loop/src/agent.ts, packages/core/agent/src/runtime-types.ts, packages/llm/llm/src/index.ts, packages/llm/llm-pi-ai/src/adapter.ts, and packages/compaction/compaction-basic/src/index.ts. The implementation and focused tests are not yet runtime-verified.
 
+## Prompt enhancement work in progress
+
+The user requested an optional GUI Prompt Enhancement feature: preserve the original prompt and attachments, collect only relevant bounded project instructions and recent conversation text, make at most one auxiliary model call, and submit the enhanced prompt or fall back to the original. The default is off. Automatic submission is the default enabled mode, with an optional review/edit flow. Slash commands, empty and attachment-only submissions, direct child chats, and automated inputs are outside the feature. The user's main model, Orchestration pool, Agent Teams behavior, and child route grants must stay independent.
+
+The current unverified source work adds a host service under `packages/context/prompt-enhancement`, composer and settings UI under `packages/client/ui-prompt-enhancement`, a scoped instruction preview, shared LLM billing observations, and adapter endpoint identities for cross-provider consent. The host freezes and records a request before model dispatch and stores the result and accepted text; recognizable credentials are excluded, but detection and semantic preservation remain heuristic. These raw Session records are visible to anyone authorized to read the Session, even when the user cancels before submission; the live comparison projection publishes an entry only after admission. Provider consent is profile-backed for a known endpoint and per submission when the identity is unknown. Failed enhancement normally uses the original; cancellation retains the draft. A prepared LLM call also refuses a second adapter dispatch if middleware attempts to call the downstream stream twice.
+
+The new required Session events are not yet present in the generated Session catalog. The service currently refuses to dispatch until that catalog knows all three event names, so the composer falls back to the original rather than writing a Session the current reader cannot reopen. The catalog, persistence acknowledgement, generated Remote metadata, lockfile, translation records, recorded-session and SDK expectations, and UI verification are still outstanding. Do not describe the feature as verified or ready to use until those items and focused tests have been completed under an explicitly lifted execution restriction.
+
 ## Verification evidence and known gaps
 
 - During the merge and subsequent source work, the assistant used source inspection and non-executing Git checks, including git diff --check and checks for unresolved paths. The focused tests were added but not run in this phase; no successful end-to-end application, UI, or authenticated provider verification was performed for these changes.
@@ -129,5 +137,20 @@ Only after the user authorizes execution and, where needed, application launch o
        pnpm run build:check
 
 4. Once launch or restart is specifically authorized, inspect the actual Web settings and session panel, including narrow and error states. Confirm the active profile's non-empty save, explicit empty pool, reopen/restart persistence, revision conflicts, billing reset, lead model selection, and child routing. Check the active uni-paderborn profile and its deployment-owned reasoning settings rather than assuming the 2026-11-19 live state is still current.
+   For Prompt Enhancement, inspect the composer toggle, automatic and review flows, cancellation, provider consent and revocation, long input and narrow layout in light and dark themes, with real profile reload and Session reopen. Verify attachments remain unchanged and no extra model request occurs when disabled.
+   After the restrictions are lifted, refresh the lockfile and generated Remote and persistence catalogs, acknowledge the event-type changes according to the persistence cookbook, then run focused tests and regenerate the pairing record for the prompt-enhancement upgrade guide and changed bilingual pages:
+
+       pnpm install --ignore-scripts
+       pnpm exec tsx scripts/generate-typert.ts
+       pnpm run gen-persistence-catalog
+       pnpm exec vitest run packages/context/prompt-enhancement/tests packages/context/agent-instructions/tests/agent-instructions.spec.ts packages/llm/llm/tests/service.spec.ts packages/llm/llm/tests/billing-health.spec.ts packages/llm/llm/tests/egress.spec.ts
+       pnpm exec vitest run packages/client/ui-prompt-enhancement/tests packages/client/ui-conversation/tests/service-orchestration.client.spec.ts packages/client/ui-conversation/tests/input-reference-submit.client.spec.ts packages/client/ui-chat/tests/user-origin-slot.client.spec.tsx packages/client/ui-chat/tests/chat-apply.client.spec.tsx
+       pnpm --silent run verify-persistence-changes --json
+       pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.3-alpha.2/prompt-enhancement-sessions/guide.md
+       pnpm run test:docs
+       pnpm run doc-sync
+       pnpm run build:artifacts
+       pnpm run build:check
+
 5. Refresh the remote state and follow the repository's pre-push checks before any separately authorized push. Investigate the MSYS access denial if it recurs in a normal interactive environment. Do not expose credentials while diagnosing.
 <!-- dsh:project-context:end -->

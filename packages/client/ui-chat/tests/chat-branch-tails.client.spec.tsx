@@ -14,7 +14,7 @@ import {
 } from '../src/client/chat/message-chrome.ts'
 import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, UnknownNodeView,
-  UserMessageNodeView,
+  SteeringMessageNodeView, UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
 import { useDetailedPresentation } from './presentation-fixture.client.ts'
@@ -34,7 +34,7 @@ afterEach(() => {
 
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const renderUserImages: Parameters<ReturnType<typeof createUserContentFixture>>[1] = () => null
-const userSlots: PropsRenderSlots<'conversation.chat.user.before'> = {
+const userSlots: PropsRenderSlots<'conversation.chat.user.before' | 'conversation.chat.user.details'> = {
   renderSlot: () => null,
   renderSlotChain: (_key, _owner, opts) => opts?.fallback ?? null,
   SessionProvider: ({ children }) => <>{children}</>,
@@ -90,7 +90,7 @@ function MessageItem({ node, t: translate, openCompaction, referenceLabels, skil
     case 'user':
       return <UserMessageNodeView {...props as ChatNodeViewProps<'user'>} {...userSlots} />
     case 'steering':
-      return <UserMessageNodeView {...props as ChatNodeViewProps<'steering'>} renderSlotChain={() => null} />
+      return <SteeringMessageNodeView {...props as ChatNodeViewProps<'steering'>} renderSlot={() => null} />
     case 'context':
       return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} />
     case 'compaction':

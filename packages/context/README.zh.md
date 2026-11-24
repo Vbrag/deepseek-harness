@@ -26,6 +26,7 @@ context 组提供模型可见上下文与项目文档维护：工作区指令文
 |---|---|---|
 | [`agent-instructions/`](agent-instructions/README.zh.md) | 将 `AGENTS.md`、`CLAUDE.md` 工作区指令加载到上下文，并在文件编辑后刷新 | — |
 | [`project-context/`](project-context/README.zh.md) | 在根轮次结束时维护规范项目知识，并安全整合观察过的指南 | `ctx.projectContext` |
+| [`prompt-enhancement/`](prompt-enhancement/README.zh.md) | 准备有界且已记录的用户提示词辅助改写 | `ctx.promptEnhancement` |
 | [`session-reference/`](session-reference/README.zh.md) | 引用其他会话：提及一个会话，其有界只读快照即成为上下文 | `ctx.sessionReferenceResolver` |
 | [`file-reference/`](file-reference/README.zh.md) | 发现 `@file` 提及，并提供由宿主支持的 UI 共用的提及语法 | `ctx.fileReferences` |
 | [`file-reference-local/`](file-reference-local/README.zh.md) | `@file` 提及的本地工作区补全提供方 | — |

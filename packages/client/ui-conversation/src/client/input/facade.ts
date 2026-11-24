@@ -75,6 +75,7 @@ export interface SessionInputDeps {
     mode: InputSubmitMode,
     signal: AbortSignal,
     accept: () => void,
+    displayOriginal?: string,
   ): Promise<SubmitOutcome>
   /** Read the Session facts whose removal and subagent mode gate quote and reference insertion; absent permits both. */
   session?: (() => Pick<SessionSnapshot, 'removed' | 'subagent'>) | undefined
@@ -839,7 +840,8 @@ export class SessionInputShell implements SessionInput {
         this.settleSink(attempt, Promise.resolve({ kind: 'success' }))
         return
       }
-      this.settleSink(attempt, this.deps.defaultSink(text, attachmentIds, mode, attempt.signal, () => { this.acceptSink(attempt) }))
+      this.settleSink(attempt, this.deps.defaultSink(text, attachmentIds, mode, attempt.signal,
+        () => { this.acceptSink(attempt) }, attempt.draftSnapshot))
     }
     if (!(prompt instanceof Promise)) { send(prompt); return }
     void prompt.then(send, (error: unknown) => { this.failSink(attempt, error) })

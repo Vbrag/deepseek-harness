@@ -49,6 +49,7 @@ interface ConversationAttachmentFace {
     mode: InputSubmitMode,
     signal?: AbortSignal,
     accept?: () => void,
+    displayOriginal?: string,
   ): Promise<SubmitOutcome>
   serializeDraftAttachments(attachmentIds: readonly DraftAttachmentId[]): Promise<DraftAttachmentSerializationResult>
   releaseDraftAttachment(id: DraftAttachmentId): void
@@ -179,7 +180,8 @@ export class InputHub implements SessionInputResolver {
       popup: () => this.popup(actx),
       inbox: session.projections.faceOf('inbox') as ObservableSnapshot<InboxState | undefined>,
       events: binding.eventSource,
-      defaultSink: (text, attachmentIds, mode, signal, accept) => this.sink(session, text, attachmentIds, mode, signal, accept),
+      defaultSink: (text, attachmentIds, mode, signal, accept, displayOriginal) =>
+        this.sink(session, text, attachmentIds, mode, signal, accept, displayOriginal),
       quoteRemoveLabel: () => this.t('quote.remove'),
       session: () => session.getSnapshot(),
       composerBlock: () => this.conversation().blocks.storeFor(session.sessionId).getSnapshot(),
@@ -366,11 +368,12 @@ export class InputHub implements SessionInputResolver {
     mode: InputSubmitMode,
     signal: AbortSignal,
     accept: () => void,
+    displayOriginal?: string,
   ): Promise<SubmitOutcome> {
     if (text === '' && attachmentIds.length === 0) {
       return session.prompt([], mode, signal).then(result => result.ok ? { kind: 'success' } : { kind: 'error' })
     }
-    return this.conversation().sendSession(session, text, attachmentIds, mode, signal, accept)
+    return this.conversation().sendSession(session, text, attachmentIds, mode, signal, accept, displayOriginal)
   }
 
   /**

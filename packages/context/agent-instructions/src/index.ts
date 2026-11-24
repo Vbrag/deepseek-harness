@@ -101,6 +101,18 @@ export function apply(ctx: Context, config: Config): void {
     enabled: resolved.maxBytes > 0 && Number.isFinite(resolved.maxBytes)
       && resolved.maxSourceBytes > 0 && Number.isFinite(resolved.maxSourceBytes),
   }))
+  ctx.on('agent-instructions/preview', async ({ agent, signal }) => {
+    signal.throwIfAborted()
+    const fileSystem = ctx.get('fs')
+    if (fileSystem === undefined || resolved.maxBytes <= 0 || !Number.isFinite(resolved.maxBytes)
+      || resolved.maxSourceBytes <= 0 || !Number.isFinite(resolved.maxSourceBytes)) return undefined
+    const cwd = await ctx.workingDirectory.ensure(agent, signal)
+    const projectRoot = await findProjectRoot(cwd, resolved.projectRootMarkers, fileSystem, signal)
+    const baseline = await loadBaselineInstructionSet({
+      ...resolved, cwd, projectRoot, signal,
+    }, fileSystem)
+    return baseline?.rendered.text
+  })
   const instructionVersions: InstructionVersionCache = new WeakMap()
   const baselinePreparations = new WeakMap<Session, {
     identity: string

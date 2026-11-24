@@ -636,6 +636,10 @@ interface LlmResolvedModelInfo extends LlmModelInfo {
   maxOutputTokens?: number
   /** Deployment billing facts; an omitted value is unknown, not free or independent. */
   billing?: { readonly free?: boolean; readonly budgetId?: LlmBillingBudgetId }
+  /** Adapter-owned endpoint identity, absent when it cannot be determined safely. */
+  egressId?: LlmEgressId
+  /** Credential-free HTTP origin displayed before sending data to a new endpoint. */
+  egressLabel?: string
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
   /** Declared mid-conversation system prompt handling; absent means only a leading system message is read. */
@@ -904,12 +908,21 @@ interface PreparedLlmCall {
   readonly context?: LlmModelContext
   /** Exact model modalities captured with the adapter dispatch generation. */
   readonly inputModalities?: readonly ModelModality[]
+  /** Billing facts captured with the adapter dispatch generation, when supplied. */
+  readonly billing?: LlmResolvedModelInfo['billing']
+  /** Endpoint identity captured with this adapter generation, when available. */
+  readonly egressId?: LlmResolvedModelInfo['egressId']
   /** Exact model system prompt update mode captured with the adapter dispatch generation. */
   readonly systemPromptUpdate?: SystemPromptUpdate
   /** Exact model tool update mode captured with the adapter dispatch generation. */
   readonly toolUpdate?: ToolUpdate
   /** Config fields materialized by the captured adapter rather than proposed by the caller. */
   readonly adapterDefaults: LlmCallConfigAdapterDefaults
+  /** Estimate this prepared request's per-minute reservation without reserving capacity.
+   * @param options - fully assembled request carrying this call's config.
+   * @returns Adapter-owned token budget, or undefined when no limit is known.
+   */
+  requestTokenBudget(options: GenerateOptions): LlmRequestTokenBudget | undefined
   /**
    * Dispatch this call once through the registration captured during
    * preparation. The request's call-config fields must match {@link config};

@@ -448,6 +448,31 @@ describe('LlmRuntime', () => {
     expect(ctx.llm.providerRetryPolicy('route')).toBe(newPolicy)
   })
 
+  it('dispatches a prepared adapter at most once when middleware calls next twice', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    let dispatches = 0
+    const adapter = new class extends ScriptedAdapter {
+      override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        dispatches++
+        return super.stream(options)
+      }
+    }(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    ctx.on('llm/stream', (_options, next) => (async function* () {
+      yield* next()
+      yield* next()
+    })())
+    try {
+      const prepared = await ctx.llm.prepareCall({ provider: 'route', model: 'model' })
+      const chunks = await collect(prepared.stream({ ...prepared.config, messages: [] }))
+      expect(dispatches).toBe(1)
+      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: 'INVALID_PREPARED_CALL' } } })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('normalizes an unregistered provider to a terminal failure', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

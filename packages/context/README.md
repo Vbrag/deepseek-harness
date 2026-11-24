@@ -26,6 +26,7 @@ The context group provides plugins that add model-visible context and maintain p
 |---|---|---|
 | [`agent-instructions/`](agent-instructions/README.md) | Loads `AGENTS.md`/`CLAUDE.md` workspace instructions into context and refreshes them after file edits | — |
 | [`project-context/`](project-context/README.md) | Maintains canonical project knowledge and safely consolidates observed guides at root-turn completion | `ctx.projectContext` |
+| [`prompt-enhancement/`](prompt-enhancement/README.md) | Prepares a bounded, logged auxiliary rewrite of a user prompt | `ctx.promptEnhancement` |
 | [`session-reference/`](session-reference/README.md) | References other sessions: mention one and its bounded read-only snapshot becomes context | `ctx.sessionReferenceResolver` |
 | [`file-reference/`](file-reference/README.md) | `@file` mention discovery and the shared mention grammar for host-backed UIs | `ctx.fileReferences` |
 | [`file-reference-local/`](file-reference-local/README.md) | Local-workspace completion provider for `@file` mentions | — |

@@ -57,6 +57,7 @@
   ],
   "references": [
     { "path": "./packages/client/ui-action-cards" },
+    { "path": "./packages/client/ui-prompt-enhancement" },
     { "path": "./packages/client/ui-creation-recommendations" },
     { "path": "./packages/client/ui-plugin-recommendations" },
     { "path": "./packages/client/ui-file-drag" },

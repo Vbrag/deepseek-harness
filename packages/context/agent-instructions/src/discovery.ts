@@ -26,5 +26,13 @@ declare module '@deepseek-ai/cordis' {
      * @mode bail
      */
     'agent-instructions/discovery'(this: Scoped<Agent>, payload: { agent: Agent }): AgentInstructionDiscovery | undefined
+    /**
+     * Read the current bounded instruction baseline without admitting it to the Agent inbox.
+     * @param payload.agent - Agent whose working directory and loader configuration apply.
+     * @param payload.signal - Cancellation for filesystem reads.
+     * @returns Rendered baseline, or undefined when the loader or filesystem is unavailable.
+     * @mode bail
+     */
+    'agent-instructions/preview'(this: Scoped<Agent>, payload: { agent: Agent; signal: AbortSignal }): Promise<string | undefined> | undefined
   }
 }

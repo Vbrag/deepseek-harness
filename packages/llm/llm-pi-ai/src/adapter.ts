@@ -40,6 +40,7 @@ import type {
 import {
   attributionHeaders,
   contentHasImage,
+  describeLlmEgress,
   LlmAdapter,
   LlmError,
 } from '@deepseek-ai/dsh-llm'
@@ -405,6 +406,7 @@ export class PiAiAdapter extends LlmAdapter {
       provider,
       id: model,
       name: resolvedModel.name,
+      ...describeLlmEgress(provider, resolvedModel.api, resolvedModel.baseUrl),
       inputModalities: [...resolvedModel.input],
       context: { contextWindow: resolvedModel.contextWindow },
       maxOutputTokens: resolvedModel.maxTokens,

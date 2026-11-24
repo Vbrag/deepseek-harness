@@ -8,6 +8,8 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Branded } from '@deepseek-ai/dsh-brand'
@@ -88,6 +90,21 @@ export interface InsertTextRequest {
   readonly continue?: boolean
 }
 
+/** One frozen ordinary composer submission before Host admission. */
+export interface ComposerSubmissionPreparation {
+  readonly sessionId: SessionId
+  readonly requestId: SessionRequestId
+  readonly original: string
+  readonly displayOriginal: string
+  readonly attachments: readonly string[]
+  readonly signal: AbortSignal
+}
+
+/** Whether the composer should admit the prepared text. */
+export type ComposerSubmissionDecision =
+  | { readonly kind: 'submit'; readonly text: string }
+  | { readonly kind: 'cancel' }
+
 /** Trigger hit used to open one source programmatically. */
 export interface InputTriggerHit {
   readonly trigger: '/' | '@'
@@ -139,6 +156,15 @@ export interface InputTriggerController {
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /**
+     * Prepare a frozen ordinary composer prompt before Host admission.
+     * @param request - Session, submission identity, text, attachment names, and cancellation.
+     * @param next - Continue to the next preparation listener.
+     * @returns Text to admit or a cancellation that preserves the draft.
+     * @mode waterfall
+     */
+    'conversation/prepare-submission'(request: ComposerSubmissionPreparation,
+      next: () => Promise<ComposerSubmissionDecision>): Promise<ComposerSubmissionDecision>
     /**
      * Claim a command token for the scoped input machine.
      * @param request - command claim and span.

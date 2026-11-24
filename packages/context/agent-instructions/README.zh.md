@@ -35,6 +35,8 @@ kind: "package-reference"
 
 项目上下文跨聊天记录目标、已完成与剩余工作、决策及验证事实。长期指令保留优先级。根知识文件沿用项目指令链的字节预算及持久的刷新、移除行为；用户全局与嵌套指令候选保留原有选择方式。结束轮次的项目更新会在下一次获准请求时刷新指令，不会仅因知识变化而启动另一次请求。维护说明见 [project-context 写入方](../project-context/README.zh.md)。
 
+作用域查询 `agent-instructions/preview` 读取当前有界基线，但不将其加入收件箱。调用方向模型发送预览时，必须在 Session 中记录该完整请求。
+
 ### 配置
 
 默认设置适合典型检出：`.git` 标记项目根目录，`AGENTS.md` 与 `CLAUDE.md` 是基础候选，`AGENTS.local.md` 与 `CLAUDE.local.md` 是叠加的本地 overlay。`projectContextFileName` 选择根知识文件名，且必须不同于所有长期规则候选名。写入方在准备更改前验证相同文件名与加载配置。只有 `maxBytes` 必填——它在每条渲染消息内分别限制用户全局指令链与项目指令链，让每个部署显式选择自己的提示词预算；同时包含两条链的消息最多为 `maxBytes` 的两倍。

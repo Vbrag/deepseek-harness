@@ -50,7 +50,7 @@ Session 作用域的 `conversation.chat.user.content` Factory 只渲染用户内
 
 `UserStyleBubble` 和[各来源包装层](<src/client/chat/MessageItem.tsx#L164-L340>) 保留用户行、key、pending／echo 标记、时间、复制控件及其他消息操作。内容 Factory 不读取来源专属模型或私有 Context，也不是全局用户内容替换入口。
 
-官方 user 与 steering 共用的渲染器在 `user` 注册项上声明 session-scoped `conversation.chat.user.before` chain slot，并在气泡上方直接通过 `renderSlotChain` 渲染；`steering` 注册项复用该渲染器但不拥有该槽位。owner props 携带 Session 记录的持久化消息 `source` 与行 `kind`；各条目的 `select` 匹配自己负责的来源，首个非 null 结果作为 `matched` 交给获选组件。无匹配时不显示内容。条目自行拥有标记和文案；Chat 不解析消息来源。
+user renderer 在气泡上方声明 session-scoped `conversation.chat.user.before` chain slot 和 `conversation.chat.user.details` list；steering renderer 声明 `conversation.chat.steering.details`。owner props 携带持久消息 `source` 与行 `kind`。chain 选取首个匹配条目；独立的 list 条目可为任一行渲染详情，而不占用该 chain。Chat 不解析消息来源。
 
 独立的 Markdown 图片以内嵌预览显示，点击打开共享图片浮层；消息落定后，绝对本地路径按原样加载，相对路径与相对文件链接一样按 Session 的当前工作目录解析。图片文件链接保持点击打开侧栏，鼠标停留或键盘聚焦时显示缩略图，Esc 关闭缩略图。图片加载失败时保留本地化状态与图片说明；不执行重复图片过滤。
 

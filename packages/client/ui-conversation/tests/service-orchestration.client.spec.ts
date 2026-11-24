@@ -655,6 +655,84 @@ describe('sendSession submission echo', () => {
     return { ...b, beginSubmission, begun: begun.promise, abandon, retire, revoked, restore }
   }
 
+  it('prepares a steering prompt once while preserving its attachments and submission identity', async () => {
+    const b = await echoBench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const [attachment] = b.root.createDrafts(session.sessionId, [
+        new File([Uint8Array.of(1, 2, 3)], 'a.png', { type: 'image/png' }),
+      ], INLINE_IMAGES)
+      const signal = new AbortController().signal
+      const seen = vi.fn()
+      b.runtime.ctx.on('conversation/prepare-submission', async (request, next) => {
+        await next()
+        seen(request)
+        return { kind: 'submit', text: 'Fix the parser.' }
+      })
+      await expect(b.root.sendSession(session, 'Fix parser', [attachment!.id], 'steer', signal, undefined, 'Fix parser '))
+        .resolves.toEqual({ kind: 'success' })
+      expect(seen).toHaveBeenCalledOnce()
+      expect(seen).toHaveBeenCalledWith({ sessionId: session.sessionId, requestId: 'req-echo', original: 'Fix parser',
+        displayOriginal: 'Fix parser ', attachments: ['a.png'], signal })
+      expect(b.prompt).toHaveBeenCalledWith([
+        { type: 'image', mediaType: 'image/png', data: expect.any(String) as string, name: 'a.png' },
+        { type: 'text', text: 'Fix the parser.' },
+      ], 'steer', signal, 'req-echo')
+    } finally {
+      b.restore()
+      await b.runtime.dispose()
+    }
+  })
+
+  it('does not prepare commands, attachment-only input, or direct child messages', async () => {
+    const b = await echoBench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const [attachment] = b.root.createDrafts(session.sessionId, [
+        new File([Uint8Array.of(1)], 'a.png', { type: 'image/png' }),
+      ], INLINE_IMAGES)
+      const signal = new AbortController().signal
+      const seen = vi.fn()
+      b.runtime.ctx.on('conversation/prepare-submission', async (request, next) => {
+        seen(request)
+        return next()
+      })
+      await b.root.sendSession(session, '/help', [], 'queue', signal)
+      await b.root.sendSession(session, '', [attachment!.id], 'queue', signal)
+      await b.runtime.sessions.updateSessionSnapshot('s1', (state) => {
+        state.subagent = { address: { parentSessionId: session.sessionId, childSessionId: session.sessionId, mode: 'continuable' } }
+      })
+      await b.root.sendSession(session, 'Child follow-up', [], 'queue', signal)
+      expect(seen).not.toHaveBeenCalled()
+      expect(b.prompt).toHaveBeenCalledTimes(3)
+    } finally {
+      b.restore()
+      await b.runtime.dispose()
+    }
+  })
+
+  it('abandons a cancelled preparation and retains the attachment draft', async () => {
+    const b = await echoBench()
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const [attachment] = b.root.createDrafts(session.sessionId, [
+        new File([Uint8Array.of(1)], 'a.png', { type: 'image/png' }),
+      ], INLINE_IMAGES)
+      b.runtime.ctx.on('conversation/prepare-submission', async (_request, next) => {
+        await next()
+        return { kind: 'cancel' }
+      })
+      await expect(b.root.sendSession(session, 'Fix parser', [attachment!.id], 'queue', new AbortController().signal))
+        .resolves.toEqual({ kind: 'error' })
+      expect(b.abandon).toHaveBeenCalledOnce()
+      expect(b.prompt).not.toHaveBeenCalled()
+      expect(b.root.resolveDraftAttachments([attachment!.id])).toHaveLength(1)
+    } finally {
+      b.restore()
+      await b.runtime.dispose()
+    }
+  })
+
   it('registers the echo before serialization and prompts with its identity', async () => {
     const b = await echoBench()
     try {

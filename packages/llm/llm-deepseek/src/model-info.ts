@@ -1,6 +1,7 @@
 /** Protocol-independent model capabilities and reasoning choices. */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm/types'
+import { describeLlmEgress } from '@deepseek-ai/dsh-llm'
 import type { LlmModelBadge, LlmModelInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './types.ts'
 
@@ -77,6 +78,7 @@ export function modelInfo(
       ? { provider, id: model, name: model, inputModalities: ['text' as const] }
       : catalogModelInfo(provider, configured),
     context: { contextWindow },
+    ...describeLlmEgress(provider, 'deepseek-messages', connection.baseURL),
     defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
     ...configured?.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: configured.systemPromptUpdate },
     ...configured?.toolUpdate === undefined ? {} : { toolUpdate: configured.toolUpdate },

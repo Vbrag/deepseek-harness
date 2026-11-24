@@ -478,6 +478,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: UserBeforeOwnerProps
     }
+    /** Independent message details above an admitted user message. */
+    'conversation.chat.user.details': {
+      kind: 'list'
+      scope: 'session'
+      owner: UserBeforeOwnerProps
+    }
+    /** Independent message details above an admitted steering message. */
+    'conversation.chat.steering.details': {
+      kind: 'list'
+      scope: 'session'
+      owner: UserBeforeOwnerProps
+    }
     /**
      * Renderer for one consecutive group of durable message images. The owner
      * supplies image references, an authorized loader, and alignment. A

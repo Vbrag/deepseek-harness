@@ -120,6 +120,8 @@ Fork creation stores the caller-supplied history; a sharing backend persists the
 
 One inbox feeds the driver; injected context waits for a waking message. AgentLoop’s durable `inbox` projection exposes pending input without live Agents.
 
+The optional [prompt-enhancement](../packages/context/prompt-enhancement/README.md) plugin prepares one bounded, recorded auxiliary request before an ordinary main-Session composer submission; the Agent receives only the selected final text and unchanged attachments.
+
 Serial `agent/step-preparing` listeners may select a route before prompt assembly. Structured preparation failures reach `agent/request-error` with claimed input that has not yet committed, including after repreparation; a terminal recovery owner can preserve that input in the Session. `agent/pre-step` accepts, rewrites, or rejects input; `prepareCall()` binds the adapter before system or user messages commit. Each attempt writes the assembly’s `systemUpdates()`, refreshes runtime facts, and freezes the request. `agent/request-ready` can inspect that logged request and its captured adapter before dispatch; a durable input change requests repreparation. `retry` retains the assembly; `reprepare` captures the route and assembles again in the same step without repeating committed input or tools. `agent/request-finished` precedes response commitment and tool execution; `interruptRequest()` stops only the active model request. [Agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) owns request timing.
 
 The loop sends immutable requests with live cancellation and reuses freeze evidence for frozen identities; [agent-loop](../packages/core/agent-loop/README.md) owns construction and cancellation causes.

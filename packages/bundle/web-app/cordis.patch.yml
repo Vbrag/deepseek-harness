@@ -366,6 +366,12 @@
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
 
+    - id: prompt-enhancement
+      name: '@deepseek-ai/dsh-prompt-enhancement'
+
+    - id: ui-prompt-enhancement
+      name: '@deepseek-ai/dsh-client-ui-prompt-enhancement'
+
     - id: ui-approval
       name: '@deepseek-ai/dsh-client-ui-approval'
 

@@ -35,6 +35,8 @@ The first request includes one durable baseline message with the user-global cha
 
 Project context records goals, completed and remaining work, decisions, and verification facts across chats. Standing instructions retain precedence. The root knowledge file shares the existing project-chain byte budget and logged refresh/removal behavior; user-global and nested instruction candidates retain their existing selection. A concluding project update refreshes instructions at the next admitted request, without starting another request solely for changed knowledge. See the [project-context writer](../project-context/README.md) for maintenance.
 
+The scoped `agent-instructions/preview` query reads the current bounded baseline without adding it to the inbox. Callers sending a preview to a model must record that exact request in the Session.
+
 ### Configuration
 
 The defaults suit a typical checkout: `.git` marks the project root, `AGENTS.md` and `CLAUDE.md` are the base candidates, and `AGENTS.local.md` and `CLAUDE.local.md` are additive local overlays. `projectContextFileName` selects the root knowledge filename and must differ from every standing-rule candidate. Its writer validates the same filename and loader configuration before preparing changes. Only `maxBytes` is required — it caps the user-global chain and the project chain separately within each rendered message, so each deployment chooses its prompt budget explicitly; a message that holds both chains is at most twice `maxBytes`.

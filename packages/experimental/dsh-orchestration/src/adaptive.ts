@@ -4,7 +4,7 @@ import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-work-handoff'
 import type {} from '@deepseek-ai/dsh-compaction'
-import type { LlmBillingBudgetId, LlmCallConfig, LlmResolvedModelInfo, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig, LlmResolvedModelInfo, UserMessage } from '@deepseek-ai/dsh-llm'
 import { estimateRequestInputTokens } from '@deepseek-ai/dsh-llm/input-estimate'
 import { offloadOldestImages } from '@deepseek-ai/dsh-compaction-image-offload'
 import { appendPluginRecord, type Session, type SessionId } from '@deepseek-ai/dsh-session'
@@ -49,11 +49,7 @@ export class AdaptiveRouting {
   private readonly pending = new Set<Promise<unknown>>()
   private readonly locks = new Map<SessionId, Promise<void>>()
   private readonly cooldowns = new Map<string, number>()
-  private readonly exhaustedBudgets = new Set<LlmBillingBudgetId>()
   private readonly requestBilling = new WeakMap<Agent, { route: PoolRoute; billing: LlmResolvedModelInfo['billing'] }>()
-  private unscopedBillingFailure = false
-  private pendingBillingChecks = 0
-  private billingGeneration = 0
 
   private constructor(private ctx: Context, private host: RoutingHost,
     private projection: ProjectionHandle<AdaptiveProjectionState>) {}
@@ -97,40 +93,31 @@ export class AdaptiveRouting {
    * @returns False when independence from an exhausted budget is unknown.
    */
   billingAvailable(billing: LlmResolvedModelInfo['billing']): boolean {
-    if (billing?.free === true) return true
-    if (this.unscopedBillingFailure || this.pendingBillingChecks > 0) return false
-    if (this.exhaustedBudgets.size === 0) return true
-    return billing?.budgetId !== undefined && !this.exhaustedBudgets.has(billing.budgetId)
+    return this.ctx.llm.billingHealth.available(billing)
   }
 
   private hasBillingRestrictions(): boolean {
-    return this.unscopedBillingFailure || this.pendingBillingChecks > 0 || this.exhaustedBudgets.size > 0
+    return this.ctx.llm.billingHealth.restricted()
   }
 
   /** Allow a user to retry billing routes after correcting the account. */
   resetBillingHealth(): void {
-    this.billingGeneration++
-    this.pendingBillingChecks = 0
-    this.unscopedBillingFailure = false
-    this.exhaustedBudgets.clear()
+    this.ctx.llm.billingHealth.reset()
   }
 
   private async noteBillingFailure(route: PoolRoute, signal: AbortSignal,
     captured?: { readonly billing: LlmResolvedModelInfo['billing'] }): Promise<void> {
-    const generation = this.billingGeneration
-    this.pendingBillingChecks++
+    const observation = this.ctx.llm.billingHealth.begin()
     try {
       const billing = captured === undefined
         ? (await this.ctx.llm.resolveModelInfo(route.provider, route.model, signal)).billing : captured.billing
-      if (generation !== this.billingGeneration) return
-      if (billing?.budgetId === undefined) this.unscopedBillingFailure = true
-      else this.exhaustedBudgets.add(billing.budgetId)
+      observation.record(billing)
     } catch (error: unknown) {
       signal.throwIfAborted()
-      if (generation === this.billingGeneration) this.unscopedBillingFailure = true
+      observation.record(undefined)
       this.ctx.logger.warn('orchestration: billing scope could not be resolved', error)
     } finally {
-      if (generation === this.billingGeneration) this.pendingBillingChecks--
+      observation.dispose()
     }
   }
 

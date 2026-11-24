@@ -234,6 +234,7 @@ export class ConversationController extends Service implements IConversation {
    * @param mode - queue or steer delivery selected by composer policy.
    * @param signal - optional cancellation for the complete Host admission.
    * @param accept - called inside the Session's acceptance, before the echo renders, so the composer settles with it.
+   * @param displayOriginal - frozen human-readable draft before reference serialization, when available.
    * @returns the Host admission outcome; local attachment preparation failures reject.
    */
   async sendSession(
@@ -243,6 +244,7 @@ export class ConversationController extends Service implements IConversation {
     mode: InputSubmitMode,
     signal?: AbortSignal,
     accept?: () => void,
+    displayOriginal?: string,
   ): Promise<SubmitOutcome> {
     const attachments = this.resolveDraftAttachments(attachmentIds)
     if (attachments.length !== attachmentIds.length) {
@@ -304,7 +306,20 @@ export class ConversationController extends Service implements IConversation {
     try {
       await nextPaint()
       const uploaded = await serializeAttachments()
-      content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
+      let submittedText = text
+      if (signal !== undefined && text.trim() !== '' && !text.trimStart().startsWith('/')
+        && session.getSnapshot().subagent === null) {
+        const decision = await this.ctx.waterfall('conversation/prepare-submission', {
+          sessionId: session.sessionId, requestId: submission.requestId, original: text,
+          displayOriginal: displayOriginal ?? text, attachments: attachments.map(item => item.file.name), signal,
+        }, () => Promise.resolve({ kind: 'submit' as const, text }))
+        if (decision.kind === 'cancel') {
+          submission.abandon()
+          return { kind: 'error' }
+        }
+        submittedText = decision.text
+      }
+      content = [...uploaded, ...(submittedText === '' ? [] : [{ type: 'text' as const, text: submittedText }])]
     } catch (error) {
       submission.abandon()
       throw error

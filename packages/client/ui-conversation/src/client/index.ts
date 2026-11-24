@@ -99,7 +99,7 @@ export type {
 } from './contract/slots.ts'
 export type {
   BeginCommandRequest, CommandClaim, ConsumeTokenRequest, DraftAttachmentId, DraftInitializationOptions,
-  DraftInitializationResult, InputActions,
+  DraftInitializationResult, InputActions, ComposerSubmissionPreparation, ComposerSubmissionDecision,
   InputState, InsertReferenceRequest, InsertTextRequest, PickOutcome, SessionInput,
   SessionInputResolver, SubmitAttachment, SubmitOutcome,
 } from './contract/input.ts'
