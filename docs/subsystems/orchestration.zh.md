@@ -61,6 +61,14 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
  */
 @Remote('getPool') getPool(): readonly PoolRoute[]
 
+/** Read the effective pool and its current settings revision.
+ * @returns The current pool and null when settings are unavailable.
+ */
+@Remote('getPoolSettingsState') getPoolSettingsState(): PoolSettingsState
+
+/** Permit a user to retry models after correcting an exhausted billing account. */
+@Remote('resetBillingHealth') resetBillingHealth(): void
+
 /** Project the pool picker catalog from the live LLM registry, not a static list.
  * Providers and models are taken from `ctx.llm.listProviders()`/`listModels()`,
  * so the picker matches the models the composer can actually select. Curated
@@ -75,19 +83,15 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
  */
 @Remote('setPool') setPool(pool: readonly PoolRoute[]): void
 
-/** Apply the pool and persist it in this profile's settings.
- * The in-memory pool is replaced unconditionally; persistence is best-effort
- * but reported honestly. A refused or failed settings write (for example, a
- * profile that owns the `orchestration` entry in a shipped layer rather than a
- * user layer) makes this resolve `false` so the picker can show a save failure
- * instead of claiming a save that never happened.
+/** Persist a pool against the revision read by the caller.
  * @param pool - New default routes; existing Session authorization remains fixed.
- * @returns True only when the pool was applied in memory AND persisted to settings.
+ * @param revision - Settings revision from the most recent read.
+ * @returns The applied pool or an actionable failure.
  */
-@Remote('persistPool') async persistPool(pool: readonly PoolRoute[]): Promise<boolean>
+@Remote('persistPool') async persistPool(pool: readonly PoolRoute[], revision: number): Promise<PoolSaveResult>
 ```
 
-Types: [Agent](core.zh.md)
+Types: [Agent](core.zh.md) · [PoolSaveResult](../../packages/experimental/dsh-orchestration/README.zh.md#use-this-package) · [PoolSettingsState](../../packages/experimental/dsh-orchestration/README.zh.md#use-this-package)
 
 Source: [`packages/experimental/dsh-orchestration/src/index.ts`](../../packages/experimental/dsh-orchestration/src/index.ts)
 <!-- END GENERATED cordis-surface -->

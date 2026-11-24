@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-11-24-merge-source-histories.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-11-24-merge-source-histories.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-11-24-merge-source-histories:
+  en: fde0cddfb1bde705
+  zh: c130b681e90335f0
+/2026-11-24-merge-source-histories/summary:
+  en: f66df71025c4d09e
+  zh: 1650550b807d87cf
+/2026-11-24-merge-source-histories/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-11-24-merge-source-histories/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-11-24-merge-source-histories/compatibility:
+  en: e4aba1494a3038a8
+  zh: 62d91c16102d2b07
+/2026-11-24-merge-source-histories/verification:
+  en: ecfb7040aed06612
+  zh: 7297de04c09b66ad
+/2026-11-24-merge-source-histories/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-orchestration-profile",
   "description": "Task-aware model selection for normal subagents in Orchestration mode",
-  "version": "0.2.2-rc.3",
+  "version": "0.2.3-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -20,9 +20,11 @@
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
+    "locale/*.json",
     "lib/index.js",
     "cordis.patch.yml",
     "lib/types/**/*.d.ts",

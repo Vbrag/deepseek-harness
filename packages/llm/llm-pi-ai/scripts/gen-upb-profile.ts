@@ -134,7 +134,7 @@ export function applyModelsToPatch(
     throw new Error(`Profile patch has no "${UPB_PROFILE_PLUGIN}" row to refresh`)
   }
   const path = [rowIndex, 'config', 'providers', route, 'models']
-  const existing = toPlain(document.getIn(path) as unknown)
+  const existing = toPlain(document.getIn(path))
   const desired = mergeDeploymentFields(models, existing)
   const before = JSON.stringify(existing)
   const after = JSON.stringify(desired)

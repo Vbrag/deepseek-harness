@@ -710,6 +710,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract compaction service. Implementations own trigger policy, retention, and summarization, and may consume a separate measurement service. A successful run replaces the selected surface span with one summary node and prevents concurrent compaction of the same session. The replacement user message uses compactCheckpointSource with the transaction identity so consumers recognize and correlate it independently of the backend. Load one implementation per context as `ctx.compaction`.',
     methods: [
       {
+        signature: 'tpmThreshold(_config: LlmCallConfig, _tokenLimit: number): number | undefined',
+        description: 'Inspect the enabled automatic TPM trigger for one route.',
+        parameters: [{ name: '_config', description: 'effective model route and controls.' }, { name: '_tokenLimit', description: 'fixed per-minute budget for one request.' }],
+        returns: 'Trigger tokens, or undefined when this backend does not own TPM pressure.',
+      },
+      {
         signature: 'pressureBudget( _agent: CompactionAgentContext, _header: EpochHeader, _signal: AbortSignal, ): Promise<CompactionPressureBudget | undefined>',
         description: 'Inspect a proposed route\'s pressure policy without modifying the session or summarizing.',
         parameters: [{ name: '_agent', description: 'owner of the conversation being admitted.' }, { name: '_header', description: 'proposed request fields, including its effective output limit.' }, { name: '_signal', description: 'cancellation for provider metadata resolution.' }],
@@ -2472,6 +2478,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
     methods: [
       {
+        signature: 'readonly billingHealth: LlmBillingHealth = new LlmBillingHealth()',
+        description: 'Process-local shared billing observations for this runtime.',
+        parameters: [],
+      },
+      {
         signature: 'registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle',
         description: 'Register an adapter for the given provider routes. Throws `LlmError` with code `DUPLICATE_ADAPTER` if any provider already has an adapter (all-or-nothing). Disposed with the fiber.',
         parameters: [{ name: 'providers', description: 'every provider route this adapter should serve.' }, { name: 'adapter', description: 'the adapter that streams calls for those providers.' }],
@@ -2561,6 +2572,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Inspect the registered adapter\'s shared queue without reserving a request.',
         parameters: [{ name: 'request', description: 'estimated work for an exact provider/model route.' }],
         returns: 'advisory admission state; dispatch remains responsible for pacing.',
+      },
+      {
+        signature: 'requestTokenBudget(request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined>',
+        description: 'Inspect one route\'s estimated per-request token reservation.',
+        parameters: [{ name: 'request', description: 'exact route, estimated input, and optional output cap.' }],
+        returns: 'A fixed budget or undefined when the adapter does not declare one.',
       },
       {
         signature: 'async prepareCall( config: LlmCallConfig, signal?: AbortSignal, configure?: ConfigureCall, ): Promise<PreparedLlmCall>',
@@ -2827,6 +2844,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Detached exact routes in configured order.',
       },
       {
+        signature: '@Remote(\'getPoolSettingsState\') getPoolSettingsState(): PoolSettingsState',
+        description: 'Read the effective pool and its current settings revision.',
+        parameters: [],
+        returns: 'The current pool and null when settings are unavailable.',
+      },
+      {
+        signature: '@Remote(\'resetBillingHealth\') resetBillingHealth(): void',
+        description: 'Permit a user to retry models after correcting an exhausted billing account.',
+        parameters: [],
+      },
+      {
         signature: '@Remote(\'getCatalog\') async getCatalog(): Promise<OrchestrationCatalog>',
         description: 'Project the pool picker catalog from the live LLM registry, not a static list. Providers and models are taken from `ctx.llm.listProviders()`/`listModels()`, so the picker matches the models the composer can actually select. Curated specialties/capacity from the Paderborn catalogue apply only to known `uni-paderborn` routes; everything else carries live adapter metadata.',
         parameters: [],
@@ -2838,10 +2866,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'pool', description: 'Exact routes, possibly empty to disable automatic selection.' }],
       },
       {
-        signature: '@Remote(\'persistPool\') async persistPool(pool: readonly PoolRoute[]): Promise<boolean>',
-        description: 'Apply the pool and persist it in this profile\'s settings. The in-memory pool is replaced unconditionally; persistence is best-effort but reported honestly. A refused or failed settings write (for example, a profile that owns the `orchestration` entry in a shipped layer rather than a user layer) makes this resolve `false` so the picker can show a save failure instead of claiming a save that never happened.',
-        parameters: [{ name: 'pool', description: 'New default routes; existing Session authorization remains fixed.' }],
-        returns: 'True only when the pool was applied in memory AND persisted to settings.',
+        signature: '@Remote(\'persistPool\') async persistPool(pool: readonly PoolRoute[], revision: number): Promise<PoolSaveResult>',
+        description: 'Persist a pool against the revision read by the caller.',
+        parameters: [{ name: 'pool', description: 'New default routes; existing Session authorization remains fixed.' }, { name: 'revision', description: 'Settings revision from the most recent read.' }],
+        returns: 'The applied pool or an actionable failure.',
       },
     ],
   },
@@ -3199,6 +3227,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Publish a model\'s explicit assessment through the project\'s shared write queue.',
         parameters: [{ name: 'agent', description: 'Active lead Agent admitted by the ordinary tool pipeline.' }, { name: 'request', description: 'Bounded assessment and exact observed guide replacements.' }, { name: 'signal', description: 'Ordinary tool cancellation.' }],
         returns: 'Actual terminal assessment and the paths successfully changed.',
+      },
+    ],
+  },
+  {
+    key: 'promptEnhancement',
+    summary: 'Session-owned enhancement service; it does not create or wake an Agent.',
+    description: 'Session-owned enhancement service; it does not create or wake an Agent.',
+    methods: [
+      {
+        signature: 'readPreferences(): PromptEnhancementPreferences',
+        description: 'Read effective user preferences.',
+        parameters: [],
+        returns: 'Current settings and their revision.',
+      },
+      {
+        signature: 'settingsNamespace(): string',
+        description: 'Read the active profile entry identity.',
+        parameters: [],
+        returns: 'Settings namespace.',
+      },
+      {
+        signature: 'approvedEgress(): readonly string[]',
+        description: 'Read the current provider approvals.',
+        parameters: [],
+        returns: 'Detached endpoint identities.',
+      },
+      {
+        signature: 'requestTimeout(): number',
+        description: 'Read the operation deadline.',
+        parameters: [],
+        returns: 'Timeout in milliseconds.',
+      },
+      {
+        signature: 'catalogReady(): boolean',
+        description: 'Check whether this build can reopen Sessions containing the new records.',
+        parameters: [],
+        returns: 'Catalog readiness.',
+      },
+      {
+        signature: 'async enhance(agent: Agent, request: PromptEnhancementRequest, signal: AbortSignal): Promise<PromptEnhancementResult>',
+        description: 'Prepare one submission once, reusing durable outcomes on replay.',
+        parameters: [{ name: 'agent', description: 'Main Agent whose Session and scope own the request.' }, { name: 'request', description: 'Immutable prompt, attachment references, and selected route.' }, { name: 'signal', description: 'Caller cancellation.' }],
+        returns: 'The enhancement, an actionable failure code, cancellation, or an interrupted attempt.',
       },
     ],
   },
@@ -5767,6 +5838,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.agent - Agent whose loader must admit the written project file.' }],
   },
   {
+    name: 'agent-instructions/preview',
+    mode: 'bail',
+    signature: '\'agent-instructions/preview\'(this: Scoped<Agent>, payload: { agent: Agent; signal: AbortSignal }): Promise<string | undefined> | undefined',
+    summary: 'Read the current bounded instruction baseline without admitting it to the Agent inbox.',
+    description: 'Read the current bounded instruction baseline without admitting it to the Agent inbox.',
+    parameters: [{ name: 'payload', description: '.signal - Cancellation for filesystem reads.' }],
+  },
+  {
     name: 'agent-loop/config-start-failed',
     mode: 'emit',
     signature: '\'agent-loop/config-start-failed\'(payload: { sessionId: SessionId; error: unknown }): void',
@@ -5849,10 +5928,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'agent/request-error',
     mode: 'waterfall',
-    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: \'step-preparation\' | \'request-preparation\' | \'stream\'; requestInterrupted?: true }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
+    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: \'step-preparation\' | \'request-preparation\' | \'stream\'; requestInterrupted?: true; messages?: readonly UserMessage[] }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
     description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
-    parameters: [{ name: 'payload', description: '.requestInterrupted - true for an explicit request-only interruption. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.messages - claimed input not yet admitted when preparation failed; committed messages are excluded after repreparation. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/request-finished',
@@ -5861,6 +5940,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Inspect a settled successful generation before accepting its message or executing tools.',
     description: 'Inspect a settled successful generation before accepting its message or executing tools. Returning retry or reprepare retains its stream as an attempt and executes no tool blocks. Undefined accepts the normal result unchanged.',
     parameters: [{ name: 'payload', description: '.signal - owning turn signal; whole-turn cancellation takes precedence.' }],
+  },
+  {
+    name: 'agent/request-ready',
+    mode: 'waterfall',
+    signature: '\'agent/request-ready\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; request: GenerateOptions; preparedCall: PreparedLlmCall | undefined; signal: AbortSignal }, next: () => Promise<RequestReadyAction>): Promise<RequestReadyAction>',
+    summary: 'Inspect the frozen, logged request before the adapter starts.',
+    description: 'Inspect the frozen, logged request before the adapter starts. A listener that durably changes its inputs returns reprepare; otherwise it calls next().',
+    parameters: [{ name: 'payload', description: '.signal - request cancellation signal.' }, { name: 'next', description: 'continue request admission.' }],
   },
   {
     name: 'agent/status',
@@ -6969,6 +7056,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'BillingHealthObservation',
+    declaration: 'export interface BillingHealthObservation {\n    record(billing: LlmResolvedModelInfo[\'billing\']): void;\n    dispose(): void;\n}',
   },
   {
     name: 'BindingOrigin',
@@ -8572,11 +8663,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmAdapter',
-    declaration: 'export abstract class LlmAdapter {\n    queueAvailability(_request: LlmQueueRequest): Promise<LlmQueueAvailability>;\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    imageRequestTarget(_provider: string, _model: string, image: ImageAttachmentRef): ImageRequestTarget;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export abstract class LlmAdapter {\n    requestTokenBudget(_request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined>;\n    queueAvailability(_request: LlmQueueRequest): Promise<LlmQueueAvailability>;\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    imageRequestTarget(_provider: string, _model: string, image: ImageAttachmentRef): ImageRequestTarget;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'LlmAttemptId',
     declaration: 'export type LlmAttemptId = Branded<\'LlmAttemptId\'>;',
+  },
+  {
+    name: 'LlmBillingBudgetId',
+    declaration: 'export type LlmBillingBudgetId = Branded<\'LlmBillingBudgetId\'>;',
+  },
+  {
+    name: 'LlmBillingHealth',
+    declaration: 'export class LlmBillingHealth {\n    restricted(): boolean;\n    available(billing: LlmResolvedModelInfo[\'billing\']): boolean;\n    begin(): BillingHealthObservation;\n    reset(): void;\n}',
   },
   {
     name: 'LlmCallConfig',
@@ -8597,6 +8696,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmDiscoveredModel',
     declaration: 'export interface LlmDiscoveredModel {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n    inputModalities?: readonly ModelModality[];\n}',
+  },
+  {
+    name: 'LlmEgressId',
+    declaration: 'export type LlmEgressId = Branded<\'LlmEgressId\'>;',
   },
   {
     name: 'LlmFailure',
@@ -8667,12 +8770,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LlmRequestPurposeMap {\n}',
   },
   {
+    name: 'LlmRequestTokenBudget',
+    declaration: 'export interface LlmRequestTokenBudget {\n    readonly tokenLimit: number;\n    readonly inputTokens: number;\n    readonly outputTokens: number;\n    readonly estimatedTokens: number;\n}',
+  },
+  {
     name: 'LlmResolvedModelInfo',
-    declaration: 'export interface LlmResolvedModelInfo extends LlmModelInfo {\n    context?: LlmModelContext;\n    defaultMaxTokens?: number;\n    maxOutputTokens?: number;\n    reasoning?: LlmModelReasoningInfo;\n    systemPromptUpdate?: SystemPromptUpdate;\n    toolUpdate?: ToolUpdate;\n}',
+    declaration: 'export interface LlmResolvedModelInfo extends LlmModelInfo {\n    context?: LlmModelContext;\n    defaultMaxTokens?: number;\n    maxOutputTokens?: number;\n    billing?: {\n        readonly free?: boolean;\n        readonly budgetId?: LlmBillingBudgetId;\n    };\n    egressId?: LlmEgressId;\n    egressLabel?: string;\n    reasoning?: LlmModelReasoningInfo;\n    systemPromptUpdate?: SystemPromptUpdate;\n    toolUpdate?: ToolUpdate;\n}',
   },
   {
     name: 'LlmRuntime',
-    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    imageRequestTarget(provider: string, model: string, image: ImageAttachmentRef): ImageRequestTarget;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    queueAvailability(requ /* …truncated — full shape in source */',
+    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    readonly billingHealth: LlmBillingHealth;\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    imageRequestTarget(provider: string, model: string, image: ImageAttachmentRef): ImageRequestTarget;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Prom /* …truncated — full shape in source */',
   },
   {
     name: 'LocalAtInput',
@@ -9427,12 +9534,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PoolRoute {\n    readonly provider: string;\n    readonly model: string;\n}',
   },
   {
+    name: 'PoolSaveResult',
+    declaration: 'export type PoolSaveResult = {\n    readonly status: \'saved\';\n    readonly pool: readonly PoolRoute[];\n    readonly revision: number;\n} | {\n    readonly status: \'stale\' | \'failed\';\n    readonly message: string;\n};',
+  },
+  {
+    name: 'PoolSettingsState',
+    declaration: 'export interface PoolSettingsState {\n    readonly pool: readonly PoolRoute[];\n    readonly revision: number | null;\n}',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    info?: ToolErrorInfo;\n    additionalContexts?: UserMessage[];\n};',
   },
   {
     name: 'PreparedAdapterCall',
-    declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    requestTokenBudget?(options: GenerateOptions): LlmRequestTokenBudget | undefined;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'PreparedDeepSeekLlmApiExtension',
@@ -9444,7 +9559,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PreparedLlmCall',
-    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly inputModalities?: readonly ModelModality[];\n    readonly systemPromptUpdate?: SystemPromptUpdate;\n    readonly toolUpdate?: ToolUpdate;\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly inputModalities?: readonly ModelModality[];\n    readonly billing?: LlmResolvedModelInfo[\'billing\'];\n    readonly egressId?: LlmResolvedModelInfo[\'egressId\'];\n    readonly systemPromptUpdate?: SystemPromptUpdate;\n    readonly toolUpdate?: ToolUpdate;\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    requestTokenBudget(options: GenerateOptions): LlmRequestTokenBudget | undefined;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'PreparedReferencedMessage',
@@ -9573,6 +9688,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PromptContextOrderName',
     declaration: 'export type PromptContextOrderName = keyof typeof CONTEXT_ORDERS;',
+  },
+  {
+    name: 'PromptEnhancementId',
+    declaration: 'export type PromptEnhancementId = SessionRequestId;',
+  },
+  {
+    name: 'PromptEnhancementPreferences',
+    declaration: 'export interface PromptEnhancementPreferences {\n    readonly enabled: boolean;\n    readonly mode: \'automatic\' | \'review\';\n    readonly maxPromptWords: number;\n    readonly maxPromptCharacters: number;\n    readonly provider: string;\n    readonly model: string;\n    readonly revision: number | null;\n}',
+  },
+  {
+    name: 'PromptEnhancementRequest',
+    declaration: 'export interface PromptEnhancementRequest {\n    readonly sessionId: SessionId;\n    readonly id: PromptEnhancementId;\n    readonly original: string;\n    readonly displayOriginal: string;\n    readonly attachments: readonly string[];\n    readonly provider: string;\n    readonly model: string;\n    readonly expectedEgress: LlmEgressId | null;\n}',
+  },
+  {
+    name: 'PromptEnhancementResult',
+    declaration: 'export type PromptEnhancementResult = {\n    readonly status: \'enhanced\';\n    readonly text: string;\n} | {\n    readonly status: \'skipped\';\n    readonly reason: \'length\';\n} | {\n    readonly status: \'failed\';\n    readonly code: string;\n} | {\n    readonly status: \'cancelled\';\n} | {\n    readonly status: \'interrupted\';\n};',
   },
   {
     name: 'PromptFileBinding',
@@ -9853,6 +9984,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RequestMessage',
     declaration: 'export type RequestMessage = Message | RequestUserInput;',
+  },
+  {
+    name: 'RequestReadyAction',
+    declaration: 'export type RequestReadyAction = {\n    kind: \'reprepare\';\n} | undefined;',
   },
   {
     name: 'RequestRunOutcome',
@@ -11216,7 +11351,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    static Config;\n    static inject;\n    constructor(ctx: Context, private config: Config);\n    get maxActiveSubagents(): number;\n    resolveMaxDepth(configured?: number | \'provider-managed\'): number | undefined;\n    startActivation(spec: SubagentActivationSpec & {\n        readonly childId: SessionId;\n    }): Promise<SubagentActivation & {\n        readonly messageId: MessageId;\n    }>;\n    startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation>;\n    registerModelRouter(router: SubagentModelRouter): () => void;\n    routesModelsFor(providerName: string): boolean;\n    modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined;\n    runningModelPolicyOf(session: Session): readonly SubagentModelRoute[];\n    requestModelChange(request: SubagentModelChangeRequest): Promise<SubagentModelChangeResult>;\n    modelRoutingDefaults(): SubagentModelRoute[] | undefined;\n    contextImagesOf(session: Session): readonly ImageAttachmentRef[];\n    rootOf(caller: Agent): Agent;\n    capacityOf(caller: Agent): SubagentCapacity;\n    namesOf(agent: Agent): SubagentMemberNames;\n    async resolveName(caller: Agent, name: string, signal: AbortSignal): Promise<SessionId>;\n    async waitForTreeWork(root: Agent): Promise<boolean>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainDescendants(parents:  /* …truncated — full shape in source */',
+    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    static Config;\n    static inject;\n    constructor(ctx: Context, private config: Config);\n    get maxActiveSubagents(): number;\n    resolveMaxDepth(configured?: number | \'provider-managed\'): number | undefined;\n    startActivation(spec: SubagentActivationSpec & {\n        readonly childId: SessionId;\n    }): Promise<SubagentActivation & {\n        readonly messageId: MessageId;\n    }>;\n    startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation>;\n    registerModelRouter(router: SubagentModelRouter): () => void;\n    routesModelsFor(providerName: string): boolean;\n    modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined;\n    runningModelPolicyOf(session: Session): readonly SubagentModelRoute[];\n    requestModelChange(request: SubagentModelChangeRequest): Promise<SubagentModelChangeResult>;\n    modelRoutingDefaults(): SubagentModelRoute[] | undefined;\n    contextImagesOf(session: Session): readonly ImageAttachmentRef[];\n    rootOf(caller: Agent): Agent;\n    capacityOf(caller: Agent): SubagentCapacity;\n    namesOf(agent: Agent): SubagentMemberNames;\n    async resolveName(caller: Agent, name: string, signal: AbortSignal): Promise<SessionId>;\n    async waitForTreeWork(root: Agent): Promise<boolean>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: Sessio /* …truncated — full shape in source */',
   },
   {
     name: 'SubagentSendMessageOptions',

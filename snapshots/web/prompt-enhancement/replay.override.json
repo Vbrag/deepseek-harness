@@ -1,0 +1,18 @@
+[
+  { "kind": "chunks", "chunks": [
+    { "type": "block-end", "index": 0, "block": { "type": "text", "text": "Please fix the parser." } },
+    { "type": "finish", "reason": { "kind": "stop" } }
+  ] },
+  { "kind": "chunks", "chunks": [
+    { "type": "block-end", "index": 0, "block": { "type": "text", "text": "SHORT_RESPONSE" } },
+    { "type": "finish", "reason": { "kind": "stop" } }
+  ] },
+  { "kind": "chunks", "chunks": [
+    { "type": "block-end", "index": 0, "block": { "type": "text", "text": "LONG_RESPONSE" } },
+    { "type": "finish", "reason": { "kind": "stop" } }
+  ] },
+  { "kind": "chunks", "chunks": [
+    { "type": "block-end", "index": 0, "block": { "type": "text", "text": "Please fix the layout." } },
+    { "type": "finish", "reason": { "kind": "stop" } }
+  ] }
+]

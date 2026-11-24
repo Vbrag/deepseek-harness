@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-orchestration",
   "description": "Orchestration Mode settings page: pick the multi-model pool from the provider catalog with capability badges",
-  "version": "0.2.2-rc.3",
+  "version": "0.2.3-alpha.2",
   "publishConfig": {
     "access": "public"
   },

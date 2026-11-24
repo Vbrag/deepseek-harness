@@ -9,6 +9,9 @@
 
 ```mermaid
 flowchart LR
+  pkg_prompt_enhancement["prompt-enhancement"]
+  svc_promptEnhancement["ctx.promptEnhancement<br/>Bounded prompt enhancement"]
+  pkg_client_ui_prompt_enhancement["client-ui-prompt-enhancement"]
   pkg_project_context["project-context"]
   svc_projectContext["ctx.projectContext<br/>Project documentation checkpoints"]
   pkg_todo_reconcile_driver["todo-reconcile-driver"]
@@ -470,6 +473,7 @@ flowchart LR
   pkg_plugin_package_inventory_deepseek --> svc_deepseekLlmApiExtensions
   pkg_plugin_recommendations --> svc_pluginRecommendations
   pkg_project_context --> svc_projectContext
+  pkg_prompt_enhancement --> svc_promptEnhancement
   pkg_ptc_runtime --> svc_ptcRuntime
   pkg_ptc_runtime_node --> svc_ptcRuntime
   pkg_pwsh_local --> svc_shell
@@ -624,6 +628,7 @@ flowchart LR
   svc_profileContext --> pkg_plugin_manager
   svc_projectContext --> pkg_client_ui_goal
   svc_projectContext --> pkg_todo_reconcile_driver
+  svc_promptEnhancement --> pkg_client_ui_prompt_enhancement
   svc_ptcRuntime --> pkg_tool_executor_ptc
   svc_ptcRuntime --> pkg_workflow_ptc
   svc_remoteAccess --> pkg_api_gateway
@@ -744,13 +749,14 @@ flowchart LR
 
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.promptEnhancement` | `service` | [`prompt-enhancement`](../packages/context/prompt-enhancement) | - | [`client-ui-prompt-enhancement`](../packages/client/ui-prompt-enhancement) | - | 准备并记录辅助提示词请求；客户端负责授权、审核和提交。 |
 | `ctx.projectContext` | `service` | [`project-context`](../packages/context/project-context) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | 管理带日志的轮次末文档评估及受控项目指南更新。 |
 | `ctx.todoPolicy` | `service` | [`tool-todo`](../packages/todo/tool-todo) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`work-handoff`](../packages/goal/work-handoff) | - | 管理列表用途、暂停状态、已完成数量的最高记录和修复计数。 |
 | `ctx.workHandoffs` | `service` | [`work-handoff`](../packages/goal/work-handoff) | - | [`goal-round-driver`](../packages/goal/goal-round-driver), [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | 保存检查点与宿主观测信息；用户明确选择继续时保留来源会话的限制。 |
+| `ctx.remoteConnection` | `service` | [`client-remote-connection`](../packages/client/remote-connection) | - | - | - | 管理二维码邀请、获批的配对申请、Remote 浏览器凭据和匿名登录文档；Client 提供审批控件及独立的 Token 链接入口。 |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/interaction/action-cards) | - | [`creation-recommendations`](../packages/extensions/creation-recommendations), [`client-ui-action-cards`](../packages/client/ui-action-cards) | - | 负责卡片状态、用户操作和状态通知；各卡片种类注册自己的动作和处理器。 |
 | `ctx.orchestrations` | `service` | [`orchestration`](../packages/experimental/dsh-orchestration) | - | [`client-ui-orchestration`](../packages/experimental/client-ui-orchestration) | - | 负责已记录的会话模式与模型池设置；在子代理服务上注册模型路由器，子代理服务继续持有子代理激活与清理的所有权。 |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/extensions/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/client/ui-plugin-recommendations) | - | 读取官方插件卡片的当前目录文本，并在用户点击后通过配置插件管理器启用该插件。 |
-| `ctx.remoteConnection` | `service` | [`client-remote-connection`](../packages/client/remote-connection) | - | - | - | 管理二维码邀请、获批的配对申请、Remote 浏览器凭据和匿名登录文档；Client 提供审批控件及独立的 Token 链接入口。 |
 | `ctx.deepseekChatImport` | `service` | [`deepseek-chat-import`](../packages/experimental/deepseek-chat-import) | - | - | - | 提供仅 owner 可用的上传路由，把 DeepSeek 会话导出的每个对话导入为一个会话，并提供浏览器先行检查的上传上限。 |
 | `ctx.headlessStartup` | `core` | [`headless`](../packages/bundle/headless) | - | [`headless`](../packages/bundle/headless) | - | 将解析后的任务和运行选项提供给无界面运行器及其 sandbox-policy 配置。 |
 | `ctx.cotTranslation` | `service` | [`experimental-client-ui-cot-translation`](../packages/experimental/client-ui-cot-translation) | - | - | - | 为展开的思考内容提供有界的 Session 翻译请求，不改变模型可见历史。 |

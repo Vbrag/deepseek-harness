@@ -108,6 +108,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-ui-plugin-manager` | yes | Plugin management for the dsh web client: the sidebar Plugins panel installs, enables, disables, retries, and composes installed plugin packages |
 | `@deepseek-ai/dsh-client-ui-plugin-market` | no | Discover tab of the dsh web Plugins page: browse configured plugin market indexes and install their bundles |
 | `@deepseek-ai/dsh-client-ui-plugin-recommendations` | no | Official plugin card body with catalog text and enabling |
+| `@deepseek-ai/dsh-client-ui-prompt-enhancement` | no | Composer controls for context-aware prompt enhancement |
 | `@deepseek-ai/dsh-client-ui-reference` | no | Unified Web @file and @session reference source |
 | `@deepseek-ai/dsh-client-ui-renderer` | no | Browser UI renderer: React slot bindings, ctx.uiRenderer, and the assembled application root |
 | `@deepseek-ai/dsh-client-ui-schedule` | no | Host task management page and Session reminder catalog |
@@ -177,6 +178,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-file-reference-local` | yes | Local-filesystem ctx.fileReferences provider with bounded fuzzy indexes |
 | `@deepseek-ai/dsh-harness-dev-context` | no | Model context naming the DeepSeek Harness checkout and Web GUI URL without letting either change the system prompt |
 | `@deepseek-ai/dsh-project-context` | yes | Turn-end project documentation checkpoints and safe guide consolidation |
+| `@deepseek-ai/dsh-prompt-enhancement` | yes | Context-aware, durable one-shot prompt enhancement |
 | `@deepseek-ai/dsh-session-reference` | yes | Cross-session snapshot references and durable untrusted model context (ctx.sessionReferenceResolver) |
 | `@deepseek-ai/dsh-time-context` | yes | Durable per-step context with the current time and elapsed time |
 | `@deepseek-ai/dsh-tmux-context` | yes | Opt-in durable per-step context with this agent's tmux pane and window location |

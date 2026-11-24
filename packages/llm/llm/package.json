@@ -14,6 +14,14 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
+    "./billing-health": {
+      "types": "./lib/types/billing-health.d.ts",
+      "default": "./lib/types/billing-health.js"
+    },
+    "./egress": {
+      "types": "./lib/types/egress.d.ts",
+      "default": "./lib/types/egress.js"
+    },
     "./input-estimate": {
       "types": "./lib/types/input-estimate.d.ts",
       "default": "./lib/types/input-estimate.js"

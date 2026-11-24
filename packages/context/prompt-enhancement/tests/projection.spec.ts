@@ -20,10 +20,12 @@ describe('prompt enhancement projection', () => {
     const cursor = session.seq
     session.append('prompt-enhancement/result', { id, requestKey: 'request-hash', original: 'Fix parser',
       displayOriginal: 'Fix parser', status: 'enhanced', enhanced: 'Fix the parser.', elapsedMs: 1 })
-    const reviewed = session.snapshotEvents().slice(cursor).reduce((state, event) => promptEnhancementProjection.apply(state, event), checkpoint)
+    const reviewed = session.snapshotEvents().slice(cursor)
+      .reduce((state, event) => promptEnhancementProjection.apply(state, event), checkpoint)
     expect(promptEnhancementProjection.wire.view(reviewed)).toEqual({})
     session.append('prompt-enhancement/accepted', { id, text: 'Fix the parser and add coverage.' })
-    const replayed = session.snapshotEvents().slice(cursor).reduce((state, event) => promptEnhancementProjection.apply(state, event), checkpoint)
+    const replayed = session.snapshotEvents().slice(cursor)
+      .reduce((state, event) => promptEnhancementProjection.apply(state, event), checkpoint)
     const complete = session.snapshotEvents().reduce((state, event) => promptEnhancementProjection.apply(state, event), initial)
     expect(replayed).toEqual(complete)
     expect(replayed.entries[id]).toMatchObject({ status: 'enhanced', enhanced: 'Fix the parser.',

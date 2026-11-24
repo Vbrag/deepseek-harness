@@ -16,12 +16,17 @@ export class LlmBillingHealth {
   private pending = 0
   private generation = 0
 
-  /** Whether failures currently restrict paid or unknown routes. @returns The current restriction state. */
+  /** Whether failures currently restrict paid or unknown routes.
+   * @returns The current restriction state.
+   */
   restricted(): boolean {
     return this.unscoped || this.pending > 0 || this.exhausted.size > 0
   }
 
-  /** Check a route against known failures. @param billing - Captured route facts. @returns Whether dispatch is allowed. */
+  /** Check a route against known failures.
+   * @param billing - Captured route facts.
+   * @returns Whether dispatch is allowed.
+   */
   available(billing: LlmResolvedModelInfo['billing']): boolean {
     if (billing?.free === true) return true
     if (this.unscoped || this.pending > 0) return false
@@ -29,7 +34,9 @@ export class LlmBillingHealth {
     return billing?.budgetId !== undefined && !this.exhausted.has(billing.budgetId)
   }
 
-  /** Begin a failure observation; pending observations conservatively restrict unknown paid routes. @returns The observation. */
+  /** Begin a failure observation; pending observations restrict unknown paid routes.
+   * @returns The observation.
+   */
   begin(): BillingHealthObservation {
     const generation = this.generation
     let active = true

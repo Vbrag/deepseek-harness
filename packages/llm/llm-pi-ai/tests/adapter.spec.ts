@@ -272,7 +272,7 @@ describe('PiAiAdapter provider routing', () => {
     })
     expect(result.message.content).toEqual([{ type: 'text', text: 'hello' }])
     expect(result.finish).toEqual({ kind: 'stop' })
-    expect(result.usage).toEqual({ inputTokens: 3, outputTokens: 1, totalTokens: 4 })
+    expect(result.usage).toEqual({ inputTokens: 3, outputTokens: 1, totalTokens: 4, reasoningTokens: 0 })
     expect(server.paths).toEqual(['/chat/completions'])
   })
 
@@ -641,7 +641,7 @@ describe('PiAiAdapter provider routing', () => {
       },
     })
     const result = await assemble(ctx, { provider: 'gateway', model: 'gateway-model', messages: [] })
-    expect(result.finish).toEqual({ kind: 'error', failure: { message: `500 ${body}`, code: 'SERVER' } })
+    expect(result.finish).toEqual({ kind: 'error', failure: { message: `500 ${body}`, code: 'SERVER', status: 500 } })
   })
 
   it('uses the resolved catalog context window for usage-based overflow detection', async () => {

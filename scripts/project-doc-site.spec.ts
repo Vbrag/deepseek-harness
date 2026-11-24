@@ -1,7 +1,7 @@
 /** Tests for the documentation website projection adapter. */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -138,7 +138,8 @@ describe('documentation site build', () => {
       }).toThrow('must resolve inside site root')
       expect(readFileSync(keep, 'utf8')).toBe('outside\n')
     } finally {
-      unlinkSync(linkedParent)
+      if (process.platform === 'win32') rmdirSync(linkedParent)
+      else unlinkSync(linkedParent)
     }
   })
 })
@@ -157,9 +158,12 @@ describe('publishableImage', () => {
     const outside = mkdtempSync(join(tmpdir(), 'dsh-doc-site-outside-'))
     roots.push(outside)
     writeFileSync(join(outside, 'secret.png'), 'not really a png\n')
-    symlinkSync(join(outside, 'secret.png'), join(root, 'packages/linked.png'))
+    const link = join(root, process.platform === 'win32' ? 'packages/linked' : 'packages/linked.png')
+    symlinkSync(process.platform === 'win32' ? outside : join(outside, 'secret.png'), link,
+      process.platform === 'win32' ? 'junction' : 'file')
+    const linkedImage = process.platform === 'win32' ? join(link, 'secret.png') : link
 
-    expect(publishableImage(join(root, 'packages/linked.png'), realpathSync(root))).toBeUndefined()
+    expect(publishableImage(linkedImage, realpathSync(root))).toBeUndefined()
     expect(publishableImage(join(outside, 'secret.png'), realpathSync(root))).toBeUndefined()
   })
 

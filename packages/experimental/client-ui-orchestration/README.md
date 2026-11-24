@@ -94,7 +94,7 @@ None. The panel adds no model context and retains no KV prefix; the pool is Host
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Host service required** — the panel needs the `orchestrations` Remote namespace mounted by the Orchestration service; without it, reads and writes are refused and the panel shows the save-failure notice.
-- **Pool picker is catalog-scoped** — the panel lists providers the live LLM registry advertises; models appear only when their provider reports them, and catalog changes take effect on the next page load.
+- **Pool picker is catalog-scoped** — the panel lists providers the live LLM registry advertises; models appear only when their provider reports them, and catalog changes take effect when the panel reopens.
 - **Profile overrides** — a higher-priority home patch or command-line overlay can refuse a pool write; the panel reports the failure.
 - **No per-session override** — the selected pool is a single Shared Host value, not a per-session or per-run override.
 - **Experimental prototype with no stability promise** — the package is public, but its contracts can change freely while it incubates.

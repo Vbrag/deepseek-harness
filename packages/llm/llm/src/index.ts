@@ -58,8 +58,6 @@ export {
   createSystemMessage, createToolResultMessage, createUserMessage, freezeMessage,
 } from './message.ts'
 export * from './retry-policy.ts'
-export { describeLlmEgress } from './egress.ts'
-export { LlmBillingHealth } from './billing-health.ts'
 export type { BillingHealthObservation } from './billing-health.ts'
 export { BlockAssembler } from './assembler.ts'
 export { callConfigEquals, isAgentLoopRequest, markAgentLoopRequest } from './call-config.ts'
@@ -374,7 +372,7 @@ export interface DirectoryRegistrationHandle {
  */
 export class LlmRuntime extends TypertRemoteService {
   /** Process-local shared billing observations for this runtime. */
-  readonly billingHealth = new LlmBillingHealth()
+  readonly billingHealth: LlmBillingHealth = new LlmBillingHealth()
   private adapters = new Map<string, AdapterRegistration>()
   private directory = new Map<string, LlmConfigurableProvider>()
   private discoveries = new Map<
@@ -1080,7 +1078,6 @@ export class LlmRuntime extends TypertRemoteService {
         : {},
     })
     let dispatched = false
-    let adapterDispatched = false
     return Object.freeze({
       config: resolvedConfig,
       retryPolicy: registration.retryPolicy,
@@ -1116,13 +1113,7 @@ export class LlmRuntime extends TypertRemoteService {
           registration,
           config: resolvedConfig,
           modelInfo,
-          dispatch: (options) => {
-            if (adapterDispatched) {
-              throw new LlmError('a prepared LLM adapter can only be dispatched once', 'INVALID_PREPARED_CALL')
-            }
-            adapterDispatched = true
-            return adapterCall.stream(options)
-          },
+          dispatch: options => adapterCall.stream(options),
         })
       },
     })

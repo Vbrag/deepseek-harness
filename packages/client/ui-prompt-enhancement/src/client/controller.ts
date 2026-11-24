@@ -23,11 +23,21 @@ export interface SettingsState {
 export type PreparationState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'notice'; readonly message: PromptEnhancementKey; readonly dismiss: () => void }
-  | { readonly kind: 'consent'; readonly provider: string; readonly model: string; readonly stable: boolean; readonly endpoint?: string;
-    readonly choose: (value: 'approve' | 'original' | 'cancel') => void }
+  | {
+    readonly kind: 'consent'
+    readonly provider: string
+    readonly model: string
+    readonly stable: boolean
+    readonly endpoint?: string
+    readonly choose: (value: 'approve' | 'original' | 'cancel') => void
+  }
   | { readonly kind: 'running'; readonly cancel: () => void }
-  | { readonly kind: 'review'; readonly original: string; readonly enhanced: string;
-    readonly choose: (value: { readonly kind: 'submit'; readonly text: string } | { readonly kind: 'original' | 'cancel' }) => void }
+  | {
+    readonly kind: 'review'
+    readonly original: string
+    readonly enhanced: string
+    readonly choose: (value: { readonly kind: 'submit'; readonly text: string } | { readonly kind: 'original' | 'cancel' }) => void
+  }
 
 const IDLE: PreparationState = { kind: 'idle' }
 
@@ -41,6 +51,7 @@ function failureNotice(code: string): PromptEnhancementKey {
 
 /** Coordinates one frozen composer submission and the active profile's settings. */
 export class EnhancementController {
+  /** Effective settings, catalog, and save feedback. */
   readonly settings = createSnapshotStore<SettingsState>({ preferences: null, catalog: [], busy: false, notice: null })
   private readonly sessions = new Map<SessionId, SnapshotStore<PreparationState>>()
   private readonly active = new Map<SessionId, AbortController>()
@@ -50,7 +61,10 @@ export class EnhancementController {
   /** @param ctx - Client Context with the mounted enhancement Remote. */
   constructor(private readonly ctx: Context) {}
 
-  /** Session-scoped observable for the composer. @param id - Session identity. @returns Its interaction state. */
+  /** Session-scoped observable for the composer.
+   * @param id - Session identity.
+   * @returns Its interaction state.
+   */
   stateFor(id: SessionId): SnapshotStore<PreparationState> {
     let state = this.sessions.get(id)
     if (state === undefined) { state = createSnapshotStore<PreparationState>(IDLE); this.sessions.set(id, state) }
@@ -76,7 +90,11 @@ export class EnhancementController {
     }
   }
 
-  /** Save against the revision actually displayed. @param update - Desired settings. @returns Whether they were saved. */
+  /** Save against the revision actually displayed.
+   * @param update - Desired settings.
+   * @param revision - Displayed revision, or the current revision when omitted.
+   * @returns Whether the settings were saved.
+   */
   async save(update: PromptEnhancementPreferenceUpdate, revision?: number): Promise<boolean> {
     const state = this.settings.getSnapshot()
     if (state.busy || state.preferences?.revision == null) return false
@@ -97,7 +115,9 @@ export class EnhancementController {
     }
   }
 
-  /** Remove saved provider approvals. @returns Whether the operation succeeded. */
+  /** Remove saved provider approvals.
+   * @returns Whether the operation succeeded.
+   */
   async clearApprovals(): Promise<boolean> {
     const state = this.settings.getSnapshot()
     if (state.busy) return false
@@ -140,7 +160,7 @@ export class EnhancementController {
     const control = new AbortController()
     this.active.set(request.sessionId, control)
     const signal = AbortSignal.any([request.signal, control.signal, this.lifetime.signal])
-    const base = { sessionId: request.sessionId, id: request.requestId }
+    const base = { sessionId: request.sessionId, id: request.requestId, original, displayOriginal: request.displayOriginal }
     try {
       store.set({ kind: 'running', cancel: () => { control.abort() } })
       const response = await this.ctx.remote.promptEnhancement.preflight(base, signal)
@@ -148,6 +168,7 @@ export class EnhancementController {
       if (!response.ok) { this.notice(store, 'noticeFailed'); return fallback() }
       const route = response.value
       if (route.status === 'disabled') { store.set(IDLE); return fallback() }
+      if (route.status === 'skipped') { this.notice(store, 'noticeLength'); return fallback() }
       if (route.status === 'failed') { this.notice(store, failureNotice(route.code)); return fallback() }
       if (route.status === 'consent-required') {
         const choice = await this.choose<'approve' | 'original' | 'cancel'>(store, signal, 'cancel',
@@ -159,7 +180,7 @@ export class EnhancementController {
         const consent: PromptEnhancementConsentRequest = { ...base, provider: route.provider, model: route.model,
           ...route.egressId === undefined ? {} : { egressId: route.egressId } }
         const confirmed = await this.ctx.remote.promptEnhancement.confirmProvider(consent, signal)
-        if (signal.aborted) return { kind: 'cancel' }
+        signal.throwIfAborted()
         if (!confirmed.ok || !confirmed.value) { this.notice(store, 'noticeFailed'); return fallback() }
         // A saved approval changes the active settings revision.
         void this.refresh().catch((error: unknown) => {
@@ -167,12 +188,13 @@ export class EnhancementController {
         })
       }
       store.set({ kind: 'running', cancel: () => { control.abort() } })
-      const result = await this.ctx.remote.promptEnhancement.prepare({ ...base, original,
-        displayOriginal: request.displayOriginal, attachments: request.attachments, provider: route.provider, model: route.model,
+      const result = await this.ctx.remote.promptEnhancement.prepare({ ...base,
+        attachments: request.attachments, provider: route.provider, model: route.model,
         expectedEgress: route.egressId ?? null, mode: route.mode }, signal)
-      if (signal.aborted) return { kind: 'cancel' }
+      signal.throwIfAborted()
       if (!result.ok) { this.notice(store, 'noticeFailed'); return fallback() }
       if (result.value.status === 'cancelled') return { kind: 'cancel' }
+      if (result.value.status === 'skipped') { this.notice(store, 'noticeLength'); return fallback() }
       if (result.value.status !== 'enhanced') {
         this.notice(store, result.value.status === 'failed' ? failureNotice(result.value.code) : 'noticeFailed')
         return fallback()

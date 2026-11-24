@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-skill-continuous-learning",
   "description": "Bundled continuous-learning skill for extracting reusable patterns from sessions",
-  "version": "0.2.2-rc.3",
+  "version": "0.2.3-alpha.2",
   "publishConfig": {
     "access": "public"
   },

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-skill-codemap-docs",
   "description": "Bundled codebase-to-documentation codemap skill for mapping source structure into Markdown documentation",
-  "version": "0.2.2-rc.3",
+  "version": "0.2.3-alpha.2",
   "publishConfig": {
     "access": "public"
   },

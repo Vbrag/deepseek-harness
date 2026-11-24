@@ -1,6 +1,7 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it } from 'vitest'
-import { LlmBillingHealth, type LlmBillingBudgetId } from '../src/index.ts'
+import type { LlmBillingBudgetId } from '../src/index.ts'
+import { LlmBillingHealth } from '../src/billing-health.ts'
 
 describe('shared billing health', () => {
   it('blocks a shared exhausted budget while permitting known-free and independent routes', () => {

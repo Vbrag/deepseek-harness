@@ -1,1 +1,16 @@
-# Pairing hashes are pending the repository translation-pairing generator.
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.3-alpha.2/orchestration-pool-recovery/guide.md
+/:
+  en: f7e6a0c78565baf5
+  zh: 96a032e9013abbcd
+/update-orchestration-pool-clients-and-billing-handling:
+  en: c1f196ba01f14d26
+  zh: 3e07ec676e18ed66
+/update-orchestration-pool-clients-and-billing-handling/change:
+  en: 069534434371c47c
+  zh: b7062d9eafb06fa8
+/update-orchestration-pool-clients-and-billing-handling/migration:
+  en: aeae25fb0600425b
+  zh: 0b181131d045fb1f

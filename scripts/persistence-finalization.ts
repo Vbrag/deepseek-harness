@@ -45,7 +45,9 @@ function recordDigest(entry: PersistenceHistoryEntry): string {
   const record = entry.record
   const semantic = { record: { schemaVersion: record.schemaVersion, id: record.id, baseline: record.baseline,
     changes: [...record.changes].sort((a, b) => compare(a.root, b.root)).map(change => ({
-      root: change.root, previous: change.previous, after: change.after, decision: change.decision,
+      root: change.root, previous: change.previous,
+      ...(change.additionalPrevious === undefined ? {} : { additionalPrevious: change.additionalPrevious }),
+      after: change.after, decision: change.decision,
     })) }, snapshot: { formatVersion: entry.snapshot.formatVersion,
     roots: [...entry.snapshot.roots].sort((a, b) => compare(a.key, b.key)).map(root => ({
       key: root.key, ...identity(root), schema: root.schema,
@@ -140,14 +142,22 @@ export function loadPersistenceFinalization(root: string, history: Pick<Persiste
     if (selected.length === 0 || !selected.some(entry => entry.record.baseline)) throw new Error(`${file}: accepted records must include the persistence baseline`)
     const predecessors = new Set<string>()
     for (const entry of selected) for (const change of entry.record.changes) {
-      if (change.previous !== null) {
-        if (!Object.hasOwn(locked, change.previous)) throw new Error(`${file}: accepted history omits predecessor ${change.previous}`)
-        predecessors.add(JSON.stringify([change.previous, change.root]))
+      for (const previous of [change.previous, ...(change.additionalPrevious ?? [])]) {
+        if (previous === null) continue
+        if (!Object.hasOwn(locked, previous)) throw new Error(`${file}: accepted history omits predecessor ${previous}`)
+        if (!entries.get(previous)?.record.changes.some(item => item.root === change.root)) {
+          throw new Error(`${file}: predecessor ${previous} does not contain ${change.root}`)
+        }
+        predecessors.add(JSON.stringify([previous, change.root]))
       }
     }
     const tips = new Map<string, PersistenceRoot>()
+    const tipRoots = new Set<string>()
     for (const entry of selected) for (const change of entry.record.changes) {
-      if (!predecessors.has(JSON.stringify([entry.record.id, change.root])) && change.after !== null) {
+      if (!predecessors.has(JSON.stringify([entry.record.id, change.root]))) {
+        if (tipRoots.has(change.root)) throw new Error(`${file}: accepted history has competing tips for ${change.root}`)
+        tipRoots.add(change.root)
+        if (change.after === null) continue
         const schema = entry.snapshot.roots.find(root => root.key === change.root)
         if (schema === undefined) throw new Error(`${file}: accepted history omits schema ${change.root}`)
         tips.set(change.root, schema)

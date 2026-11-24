@@ -1,7 +1,7 @@
 /** Current-tree persistence history rejects uncovered and incorrectly acknowledged type changes. */
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, posix, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -617,6 +617,62 @@ describe('persistence history verification', () => {
     expect(() => validatePersistenceHistory([base, cycle])).toThrow('cycle')
   })
 
+  it('requires every competing branch to meet in an explicit reconciliation', () => {
+    const base = entry(BASE_ID, inventory(), null, true)
+    const left = entry(NEXT_ID, onlyEvent(inventory({ value: 'string', 'left?': 'string' })), BASE_ID)
+    const right = entry('2026-09-11-right', onlyEvent(inventory({ value: 'string', 'right?': 'number' })), BASE_ID)
+    const merged = entry('2026-09-12-merge', onlyEvent(inventory({ value: 'string', 'left?': 'string', 'right?': 'number' })), NEXT_ID)
+    const joined: PersistenceHistoryEntry = { ...merged, record: { ...merged.record,
+      changes: merged.record.changes.map(change => ({ ...change, additionalPrevious: [right.record.id] })) } }
+    expect(validatePersistenceHistory([base, left, right, joined]).tips.get('event:example/value')?.id).toBe(joined.record.id)
+
+    const third = entry('2026-09-11-third', onlyEvent(inventory({ value: 'string', 'third?': 'boolean' })), BASE_ID)
+    expect(() => validatePersistenceHistory([base, left, right, third, joined])).toThrow('forked')
+    const missing = { ...joined, record: { ...joined.record, changes: joined.record.changes.map(change =>
+      ({ ...change, additionalPrevious: ['2026-09-11-missing'] })) } }
+    expect(() => validatePersistenceHistory([base, left, right, missing])).toThrow('missing predecessor')
+    const duplicate = { ...joined, record: { ...joined.record, changes: joined.record.changes.map(change =>
+      ({ ...change, additionalPrevious: [NEXT_ID] })) } }
+    expect(() => validatePersistenceHistory([base, left, right, duplicate])).toThrow('invalid reconciliation predecessors')
+    const ancestor = { ...joined, record: { ...joined.record, changes: joined.record.changes.map(change =>
+      ({ ...change, additionalPrevious: [BASE_ID] })) } }
+    expect(() => validatePersistenceHistory([base, left, ancestor])).toThrow('predecessors must be independent')
+    const cycle = { ...joined, record: { ...joined.record, changes: joined.record.changes.map(change =>
+      ({ ...change, additionalPrevious: [joined.record.id] })) } }
+    expect(() => validatePersistenceHistory([base, left, cycle])).toThrow('cycle')
+  })
+
+  it('allows an explicit reconciliation of independent branches with identical schemas', () => {
+    const base = entry(BASE_ID, inventory(), null, true)
+    const schema = onlyEvent(inventory({ value: 'string', 'label?': 'string' }))
+    const left = entry(NEXT_ID, schema, BASE_ID)
+    const right = entry('2026-09-11-right', schema, BASE_ID)
+    const merged = entry('2026-09-12-merge', schema, NEXT_ID)
+    const joined: PersistenceHistoryEntry = { ...merged, record: { ...merged.record,
+      changes: merged.record.changes.map(change => ({ ...change, additionalPrevious: [right.record.id] })) } }
+    expect(validatePersistenceHistory([base, left, right, joined]).tips.get('event:example/value')?.root?.digest)
+      .toBe(schema.roots[0]?.digest)
+  })
+
+  it('joins independent deletion tombstones and reports an invalid version decision', () => {
+    const base = entry(BASE_ID, inventory(), null, true)
+    const deleted: PersistenceSchemaInventory = { ...inventory(), roots: [] }
+    const deletion = (id: string): PersistenceHistoryEntry => ({ record: { schemaVersion: 1, id, baseline: false,
+      changes: [{ root: 'event:example/value', previous: BASE_ID, after: null, decision: 'same-version' }] }, snapshot: deleted })
+    const left = deletion(NEXT_ID)
+    const right = deletion('2026-09-11-right')
+    const joined: PersistenceHistoryEntry = { record: { schemaVersion: 1, id: '2026-09-12-merge', baseline: false,
+      changes: [{ root: 'event:example/value', previous: NEXT_ID, additionalPrevious: [right.record.id],
+        after: null, decision: 'same-version' }] }, snapshot: deleted }
+    expect(validatePersistenceHistory([base, left, right, joined]).tips.get('event:example/value')?.root).toBeNull()
+    const invalid: PersistenceHistoryEntry = { ...joined, record: { ...joined.record,
+      changes: joined.record.changes.map(change => ({ ...change, decision: 'version-bump' })) } }
+    expect(() => validatePersistenceHistory([base, left, right, invalid])).toThrow("this record's own")
+    const restored = entry('2026-09-13-restore', onlyEvent(inventory()), joined.record.id)
+    expect(validatePersistenceHistory([base, left, right, joined, restored]).tips.get('event:example/value')?.id)
+      .toBe(restored.record.id)
+  })
+
   it('binds version-bump decisions to the same record header version transition', () => {
     const base = entry(BASE_ID, inventory(), null, true)
     const breaking = inventory({ value: 'number' }, 4)
@@ -657,6 +713,57 @@ describe('persistence history verification', () => {
 })
 
 describe('persistence changes current-tree commands', () => {
+  it('reconciles competing accepted branches without rewriting them and locks every predecessor in a later checkpoint', () => {
+    const root = fixture()
+    const other = fixture()
+    const leftId = '2026-09-20-left'
+    const rightId = '2026-09-20-right'
+    const mergeId = '2026-09-21-reconciliation'
+    const left = inventory({ value: 'number', 'left?': 'string' }, 4)
+    const right = inventory({ value: 'number', 'right?': 'boolean' }, 4)
+    const combined = inventory({ value: 'number', 'left?': 'string', 'right?': 'boolean' }, 4)
+    finalize(root)
+    finalize(other)
+    runPersistenceChanges(['--record', leftId, '--prose', proseFile(root)], root, () => left)
+    runPersistenceChanges(['--record', rightId, '--prose', proseFile(other)], other, () => right)
+    for (const suffix of ['.md', '.zh.md', '.i18n.yaml', '.schema.json']) {
+      copyFileSync(join(other, 'docs/persistence-changes', rightId + suffix), join(root, 'docs/persistence-changes', rightId + suffix))
+    }
+    const before = contents(root)
+    expect(() => loadPersistenceHistory(root)).toThrow('forked')
+    expect(() => runPersistenceChanges(['--reconcile', mergeId], root, () => combined)).toThrow('explicit --decision and bilingual --prose')
+    expect(contents(root)).toEqual(before)
+    const result = JSON.parse(runPersistenceChanges([
+      '--reconcile', mergeId, '--decision', 'same-version', '--prose', proseFile(root), '--json',
+    ], root, () => combined)) as { ok: boolean; operation: string; roots: { previous: string }[] }
+    expect(result).toMatchObject({ ok: true, operation: 'reconcile' })
+    expect(result.roots.map(item => item.previous).sort()).toEqual([leftId, rightId])
+    expect(runPersistenceChanges(['--check'], root, () => combined)).toContain('roots match')
+    const history = loadPersistenceHistory(root)
+    expect(history.tips.get('event:example/value')?.id).toBe(mergeId)
+    expect(history.entries.find(item => item.record.id === mergeId)?.record.changes[0]).toMatchObject({
+      previous: leftId, additionalPrevious: [rightId], decision: 'same-version',
+    })
+    for (const [path, value] of Object.entries(before).filter(([path]) => path.startsWith('docs/persistence-changes/'))) {
+      expect(readFileSync(join(root, path), 'utf8')).toBe(value)
+    }
+    expect(() => runPersistenceChanges(['--update', rightId], root, () => combined)).toThrow('with successors')
+    expect(() => runPersistenceChanges(['--update', mergeId], root, () => combined)).toThrow('cannot update a reconciliation')
+
+    const checkpoint = createPersistenceFinalizationCheckpoint(history, combined)
+    writeFileSync(join(root, 'docs/persistence-changes/finalized/v4.json'), JSON.stringify(checkpoint))
+    expect(loadPersistenceFinalization(root, history)?.acceptedRecords.has(mergeId)).toBe(true)
+    const altered = { entries: history.entries.map(item => item.record.id === mergeId
+      ? { ...item, record: { ...item.record, changes: item.record.changes.map(change =>
+        ({ ...change, additionalPrevious: [FINALIZED_ID] })) } } : item) }
+    expect(() => loadPersistenceFinalization(root, altered)).toThrow(`finalized acknowledgement ${mergeId} was removed or changed`)
+    const incomplete = { ...checkpoint, acceptedRecords: Object.fromEntries(
+      Object.entries(checkpoint.acceptedRecords).filter(([id]) => id !== rightId),
+    ) }
+    writeFileSync(join(root, 'docs/persistence-changes/finalized/v4.json'), JSON.stringify(incomplete))
+    expect(() => loadPersistenceFinalization(root, history)).toThrow(`accepted history omits predecessor ${rightId}`)
+  })
+
   it('requires completed record prose, rejects stale generated output, and reports unacknowledged paths', () => {
     const root = fixture()
     const before = inventory()

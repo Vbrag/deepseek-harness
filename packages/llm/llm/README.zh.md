@@ -31,6 +31,8 @@ kind: "package-reference"
 
 `billingHealth` 在模型消费方之间共享进程内的预算耗尽记录。已知免费路由仍可使用；无法确认预算独立的付费或未知路由会受限。修复账户后可重置记录；运行时重启后不保留这些记录。
 
+提供方实现从 `@deepseek-ai/dsh-llm/egress` 导入 `describeLlmEgress`；直接使用账单健康状态的消费方从 `@deepseek-ai/dsh-llm/billing-health` 导入 `LlmBillingHealth`。
+
 使用 `import type` 从 `@deepseek-ai/dsh-llm/types` 或包根入口导入消息、工具调用、提供方请求、尝试和推理强度标识符类型。通过 `@deepseek-ai/dsh-brand` 的 `brandString<IdentifierType>(value)` 为字符串添加品牌；此操作保留原字符串，不执行校验。
 
 ### 何时选择

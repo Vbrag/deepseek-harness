@@ -100,8 +100,6 @@ export const EXISTING_PLUGIN_ENTRY_EXPORTS = {
     'projectToolUpdates', 'requestImageHandleText', 'requiredImageOffload', 'resolveImageAttachmentAccess',
     'resolveRetryPolicy', 'runFirstTokenTime', 'runFirstVisibleTime', 'textOnlyImageText', 'userAgent',
   ],
-  '@deepseek-ai/dsh-llm-deepseek-account': ['plainAccountOptions', 'resolveAccountOptions'],
-  '@deepseek-ai/dsh-llm-deepseek-api-key': ['plainOptions', 'resolveAdapterOptions'],
   '@deepseek-ai/dsh-llm-pi-ai': [
     'ModelRateLimiter', 'PiAiAdapter', 'UPB_GATEWAY_API_KEY_ENV', 'UPB_GATEWAY_BASE_URL', 'UPB_GATEWAY_MODELS',
     'UPB_GATEWAY_PROFILE', 'UPB_GATEWAY_PROVIDER', 'estimateInputTokens', 'estimateRequestInputTokens',

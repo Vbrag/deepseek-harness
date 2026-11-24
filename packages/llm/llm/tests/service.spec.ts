@@ -465,9 +465,8 @@ describe('LlmRuntime', () => {
     })())
     try {
       const prepared = await ctx.llm.prepareCall({ provider: 'route', model: 'model' })
-      const chunks = await collect(prepared.stream({ ...prepared.config, messages: [] }))
+      await expect(collect(prepared.stream({ ...prepared.config, messages: [] }))).rejects.toThrow('next() called multiple times')
       expect(dispatches).toBe(1)
-      expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error', failure: { code: 'INVALID_PREPARED_CALL' } } })
     } finally {
       await ctx.fiber.dispose()
     }

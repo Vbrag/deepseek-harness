@@ -15,7 +15,7 @@ Use this tutorial after changing a declared Session persistence type in a contri
 - [Optional: inspect the change](#generate)
 - [1. Record the change](#acknowledge)
 - [2. Check, commit, and push](#verify)
-- [Update an unaccepted record](#competing-records)
+- [Reconcile competing records](#competing-records)
 - [Dev Note](#dev-note)
 
 -----
@@ -93,7 +93,7 @@ pnpm run doc-sync
 Record generation owns its catalog and record pairs; edits to a package README or other bilingual page still follow their normal pairing workflow. Review and stage the intended diff, then commit and push normally. The staged lint, pairing, and whitespace hooks and the pre-push Host/Client typecheck still apply.
 
 <a id="competing-records"></a>
-## Update an unaccepted record
+## Reconcile competing records
 
 If source changes after recording, review the compatibility explanation and refresh the same unaccepted terminal record:
 
@@ -103,7 +103,7 @@ pnpm --silent run persistence-changes --update 2026-09-11-poc-optional --prose .
 
 The command refreshes the machine declaration, schemas, catalogs, and pairing. Without `--prose`, it preserves the existing explanation. Reassess that explanation against the complete transition and supply `--decision same-version` for any flagged same-version update. Update refuses the initial baseline, records that another record depends on, and finalized checkpoint records. Outside finalized checkpoints, the tree does not infer review acceptance: preserve accepted history and create a successor instead.
 
-When integration creates competing terminal records, update the unaccepted record against the remaining history, then reassess the resulting diff. An unrelated root's acknowledgement does not need refreshing. The [mechanism decision](../../.agents/notes/implemented/process/2026-09-11-persistence-type-history.md) explains why complete snapshots and per-root predecessors are retained.
+When integration creates competing terminal records, update an unaccepted record against the remaining history, then reassess the resulting diff. If the records may already be accepted, preserve them and compare every branch tip with the current source. Supply the bilingual prose above and run `pnpm --silent run persistence-changes --reconcile ID --decision same-version --prose FILE --json`, replacing `ID` and `FILE` with your record and prose paths. The command joins all competing roots at the current schema and reports each predecessor's transition; inspect them and assess both reader directions. It requires an explicit decision and complete prose, and leaves changes to other roots for a separate `--record`. A reconciliation cannot be updated; add a successor instead. The [reconciliation decision](../../.agents/notes/implemented/process/2026-11-24-persistence-reconciliations.md) explains why the branches are retained.
 
 For an existing property value-type change requiring review, first revise the prose file’s Compatibility and Verification sections to explain the actual new transition and its executed checks. Do not reuse the earlier required-to-optional explanation for a different change. Then update the record with that prose and the explicit same-version choice:
 

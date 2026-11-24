@@ -159,6 +159,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Abstract compaction service. Implementations own trigger policy, retention, and summarization, and may consume a separate measurement service. A successful run replaces the selected surface span with one summary node and prevents concurrent compaction of the same session. The replacement user message uses compactCheckpointSource with the transaction identity so consumers recognize and correlate it independently of the backend. Load one implementation per context as `ctx.compaction`.
 
 ```ts cordis-catalog
+/** Inspect the enabled automatic TPM trigger for one route.
+ * @param _config - effective model route and controls.
+ * @param _tokenLimit - fixed per-minute budget for one request.
+ * @returns Trigger tokens, or undefined when this backend does not own TPM pressure.
+ */
+tpmThreshold(_config: LlmCallConfig, _tokenLimit: number): number | undefined
+
 /**
  * Inspect a proposed route's pressure policy without modifying the session or summarizing.
  * @param _agent - owner of the conversation being admitted.
@@ -228,7 +235,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
 abstract compactRegion( start: SessionSeq, end: SessionSeq, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```
 
-Types: [CommandId](commands.md) · [EpochHeader](session.md) · [SessionSeq](session.md)
+Types: [CommandId](commands.md) · [EpochHeader](session.md) · [LlmCallConfig](llm-streaming.md) · [SessionSeq](session.md)
 
 Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 

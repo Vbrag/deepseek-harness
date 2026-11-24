@@ -1,1 +1,16 @@
-# Pairing hashes are pending the repository translation-pairing generator.
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.3-alpha.2/tpm-aware-compaction/guide.md
+/:
+  en: 1d2b364b5fc10562
+  zh: a883ca18312e3399
+/update-prepared-calls-and-tpm-compaction:
+  en: a0654d0ed6e2e8b4
+  zh: 33222ada8c6c76ef
+/update-prepared-calls-and-tpm-compaction/change:
+  en: 6a089faf4fa56a5b
+  zh: 0d3ff8833aaf855c
+/update-prepared-calls-and-tpm-compaction/migration:
+  en: a87db02458b73e45
+  zh: fd1e3a45b68d4f31

@@ -26,6 +26,19 @@ const ctx: NormalizeContext = {
   cwd: '/tmp/acp-snap-cwd-abc123',
 }
 
+it('normalizes only enhancement result timing when writing and comparing fixtures', () => {
+  const log = [
+    { type: 'session', id: 'snapshot', createdAt: 0 },
+    { type: 'prompt-enhancement/result', data: { elapsedMs: 42, enhanced: 'hello' } },
+    { type: 'other/result', data: { elapsedMs: 37 } },
+  ].map(item => JSON.stringify(item)).join('\n') + '\n'
+  for (const output of [scrubSessionSnapshot(log), normalizeSessionLog(log, ctx)]) {
+    const rows = output.trim().split('\n').map(line => JSON.parse(line) as { type: string; data?: Record<string, unknown> })
+    expect(rows[1]?.data).toEqual({ elapsedMs: 0, enhanced: 'hello' })
+    expect(rows[2]?.data).toEqual({ elapsedMs: 37 })
+  }
+})
+
 describe('normalizeStdout', () => {
   it('rewrites JSON-RPC ids to a stable first-seen sequence', () => {
     const raw = [

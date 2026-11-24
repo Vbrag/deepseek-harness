@@ -894,7 +894,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-compaction-basic`
 
 - `inject`: `llm` · `tokenMeter` · `sessions` · `sessionProjections`
-- `source`: [`packages/compaction/compaction-basic/src/types.ts:46`](../packages/compaction/compaction-basic/src/types.ts)
+- `source`: [`packages/compaction/compaction-basic/src/types.ts:50`](../packages/compaction/compaction-basic/src/types.ts)
 
 ```ts config-catalog
 /** Basic compaction configuration with an optional exact-target policy table. */
@@ -909,6 +909,10 @@ export interface BasicCompactionConfig extends CompactionPolicyConfig {
 export interface CompactionPolicyConfig {
   /** Window fraction for pressure; capped at context window minus reserved output and `headroomTokens`. Defaults to `0.8`. */
   thresholdRatio?: number
+  /** Fraction of a per-minute request budget that triggers compaction; defaults to 0.9. */
+  tpmThresholdRatio?: number
+  /** Desired request fraction after TPM compaction; defaults to 0.8. */
+  tpmTargetRatio?: number
   /** Additional pressure headroom beyond the routed output reservation. Non-negative integer; defaults to `65536`. */
   headroomTokens?: number
   /** Recent context retained as a fraction of context window minus reserved output tokens. Defaults to `0.16`. */
@@ -2300,7 +2304,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:278`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:286`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2433,6 +2437,8 @@ export interface PiAiProviderProfile {
    * only when the deployment guarantees a common upstream budget.
    */
   rateLimitBudgetKey?: string
+  /** Shared billing-account identity; independent from the rate-limit budget. */
+  billingBudgetKey?: string
 }
 
 /** One configured model entry: an id plus the catalog fields it overrides. */
@@ -3038,13 +3044,17 @@ export interface Config {
 ## `@deepseek-ai/dsh-orchestration`
 
 - `inject`: `llm` · `subagents` · `sessionProjections` · `agents` · `systemPrompt` · `sessions`
-- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:49`](../packages/experimental/dsh-orchestration/src/types.ts)
+- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:60`](../packages/experimental/dsh-orchestration/src/types.ts)
 
 ```ts config-catalog
 /** Validated deployment policy; session selections take precedence over defaults. */
 export interface OrchestrationConfig {
   /** Default pool for new root-session model policies and the pool picker. */
   readonly pool?: PoolRoute[]
+  /** User-selected pool persisted through Settings; takes precedence over `pool`. */
+  readonly userPool?: PoolRoute[]
+  /** An explicit user override exists, including an intentionally empty pool. */
+  readonly userPoolConfigured?: boolean
   /** Exact-route specialties for models outside the curated gateway catalog. */
   readonly routeCapabilities?: RouteCapabilities[]
   /** Input-token allowance for child instructions, tool schemas, and request wrappers; defaults to 8192. */
@@ -3055,7 +3065,7 @@ export interface OrchestrationConfig {
   readonly availabilityPollMs?: number
   /** Initial mode logged for a session with no recorded selection; defaults to false. */
   readonly defaultToOrchestrator?: boolean
-  /** Maximum model changes per recovery episode; defaults to 2. Explicit phases start a new episode. */
+  /** Maximum child model changes per recovery episode; defaults to 2. Explicit phases start a new episode. */
   readonly maxAutomaticReassignments?: number
   /** Consecutive output-limit responses without text or tools before recovery; defaults to 2. */
   readonly maxEmptyOutputLimits?: number
@@ -3313,6 +3323,46 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-project-context -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-prompt-enhancement -->
+<a id="deepseek-aidsh-prompt-enhancement"></a>
+
+## `@deepseek-ai/dsh-prompt-enhancement`
+
+- `inject`: `llm` · `sessions` · `sessionProjections`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/context/prompt-enhancement/src/index.ts:41`](../packages/context/prompt-enhancement/src/index.ts)
+
+```ts config-catalog
+/** Limits applied to the complete auxiliary request. */
+export interface Config {
+  /** Maximum UTF-8 bytes for the auxiliary input. */
+  readonly maxInputBytes?: number
+  /** Maximum UTF-8 bytes of selected optional context. */
+  readonly maxContextBytes?: number
+  /** Maximum output tokens reserved for enhancement. */
+  readonly maxOutputTokens?: number
+  /** Maximum UTF-8 bytes accepted from the provider stream. */
+  readonly maxStreamBytes?: number
+  /** Deadline for one enhancement attempt, in milliseconds. */
+  readonly timeoutMs?: number
+  /** Whether eligible composer submissions are enhanced. */
+  readonly enabled?: boolean | Volatile<boolean>
+  /** Whether to send the result automatically or ask for review. */
+  readonly mode?: 'automatic' | 'review' | Volatile<'automatic' | 'review'>
+  /** Maximum word-like segments in an eligible prompt. */
+  readonly maxPromptWords?: number | Volatile<number>
+  /** Maximum Unicode code points in an eligible prompt. */
+  readonly maxPromptCharacters?: number | Volatile<number>
+  /** Dedicated provider, or an empty string for the Session route. */
+  readonly provider?: string | Volatile<string>
+  /** Dedicated model, or an empty string for the Session route. */
+  readonly model?: string | Volatile<string>
+  /** Provider endpoint identities approved by the owner. */
+  readonly approvedEgress?: readonly string[] | Volatile<readonly string[]>
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-prompt-enhancement -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-ptc-runtime-node -->
 <a id="deepseek-aidsh-ptc-runtime-node"></a>
@@ -4278,7 +4328,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 - `inject`: `workingDirectory` · `sessionProjections`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:209`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:211`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */
@@ -5714,6 +5764,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-webhook-github -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-wecom -->
+<a id="deepseek-aidsh-wecom"></a>
+
+## `@deepseek-ai/dsh-wecom`
+
+- `inject`: `cliAccounts` · `upstreamSkills`
+- `source`: [`packages/connector/wecom/src/index.ts:28`](../packages/connector/wecom/src/index.ts)
+
+```ts config-catalog
+/** Where wecom-cli and the upstream guides are. */
+export interface Config {
+  /** Absolute directory holding the `wecom-cli` executable; defaults to the installed platform package of `@wecom/cli`. */
+  binDir?: string
+  /** Absolute directory holding the upstream guides at their repository paths; when set, nothing is downloaded. */
+  skillsDir?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-wecom -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-work-handoff -->
 <a id="deepseek-aidsh-work-handoff"></a>
 
@@ -5744,24 +5813,6 @@ export interface WorkHandoffProjectionConfig {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-work-handoff -->
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-wecom -->
-<a id="deepseek-aidsh-wecom"></a>
-
-## `@deepseek-ai/dsh-wecom`
-
-- `inject`: `cliAccounts` · `upstreamSkills`
-- `source`: [`packages/connector/wecom/src/index.ts:28`](../packages/connector/wecom/src/index.ts)
-
-```ts config-catalog
-/** Where wecom-cli and the upstream guides are. */
-export interface Config {
-  /** Absolute directory holding the `wecom-cli` executable; defaults to the installed platform package of `@wecom/cli`. */
-  binDir?: string
-  /** Absolute directory holding the upstream guides at their repository paths; when set, nothing is downloaded. */
-  skillsDir?: string
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-wecom -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-workflow-ptc -->
 <a id="deepseek-aidsh-workflow-ptc"></a>
@@ -5883,6 +5934,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-plan` | — | [`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-plugin-market` | — | [`packages/client/ui-plugin-market/src/index.ts`](../packages/client/ui-plugin-market/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-plugin-recommendations` | — | [`packages/client/ui-plugin-recommendations/src/index.ts`](../packages/client/ui-plugin-recommendations/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-prompt-enhancement` | — | [`packages/client/ui-prompt-enhancement/src/index.ts`](../packages/client/ui-prompt-enhancement/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-reference` | — | [`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-renderer` | — | [`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-schedule` | — | [`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts) |

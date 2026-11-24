@@ -48,7 +48,10 @@ export function EnhancementToggle({ useSettings, useSession, saveSettings, t }:
 
 /** Minimal changed span, using Unicode code points so highlights do not split characters. */
 export function changedSpan(original: string, enhanced: string): {
-  readonly before: string; readonly removed: string; readonly changed: string; readonly after: string
+  readonly before: string
+  readonly removed: string
+  readonly changed: string
+  readonly after: string
 } {
   const left = Array.from(original)
   const right = Array.from(enhanced)
@@ -62,8 +65,11 @@ export function changedSpan(original: string, enhanced: string): {
     after: end === 0 ? '' : right.slice(right.length - end).join('') }
 }
 
-function Comparison({ original, enhanced, t }: { readonly original: string; readonly enhanced: string;
-  readonly t: PropsLocale<typeof NS>['t'] }) {
+function Comparison({ original, enhanced, t }: {
+  readonly original: string
+  readonly enhanced: string
+  readonly t: PropsLocale<typeof NS>['t']
+}) {
   const diff = changedSpan(original, enhanced)
   return <div className={css.comparison}>
     <div className={css.label}>{t('originalLabel')}</div>
@@ -73,7 +79,7 @@ function Comparison({ original, enhanced, t }: { readonly original: string; read
   </div>
 }
 
-function Review({ state, t }: { readonly state: Extract<PreparationState, { kind: 'review' }>;
+function Review({ state, t }: { readonly state: Extract<PreparationState, { kind: 'review' }>
   readonly t: PropsLocale<typeof NS>['t'] }) {
   const [text, setText] = useState(state.enhanced)
   return <section className={css.panel} aria-label={t('reviewTitle')}>
@@ -81,13 +87,19 @@ function Review({ state, t }: { readonly state: Extract<PreparationState, { kind
     <p>{t('reviewHelp')}</p>
     <Comparison original={state.original} enhanced={text} t={t} />
     <textarea className={css.editor} aria-label={t('enhancedLabel')} value={text}
-      onChange={event => { setText(event.target.value) }} />
+      onChange={(event) => { setText(event.target.value) }} />
     <div className={css.actions}>
       <Button variant="primary" disabled={text.trim() === ''} onClick={() => { state.choose({ kind: 'submit', text }) }}>{t('accept')}</Button>
       <Button variant="outline" onClick={() => { state.choose({ kind: 'original' }) }}>{t('original')}</Button>
       <Button onClick={() => { state.choose({ kind: 'cancel' }) }}>{t('cancel')}</Button>
     </div>
   </section>
+}
+
+function positiveInteger(value: string): number | null {
+  if (!/^\d+$/u.test(value)) return null
+  const number = Number(value)
+  return Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
 /** Consent, progress, review, or recovery feedback for the active submission. */
@@ -121,6 +133,8 @@ export function EnhancementSettings({ useSettings, saveSettings, refreshSettings
   const state = useSettings(value => value)
   const [draft, setDraft] = useState<PromptEnhancementPreferenceUpdate | null>(null)
   const [revision, setRevision] = useState<number | null>(null)
+  const [words, setWords] = useState('')
+  const [characters, setCharacters] = useState('')
   const dirty = useRef(false)
   const edits = useRef(0)
   useEffect(() => {
@@ -131,11 +145,15 @@ export function EnhancementSettings({ useSettings, saveSettings, refreshSettings
       const { revision: _revision, ...value } = state.preferences
       setDraft(value)
       setRevision(state.preferences.revision)
+      setWords(String(value.maxPromptWords))
+      setCharacters(String(value.maxPromptCharacters))
     }
   }, [state.preferences])
   if (draft === null) return <div role="status">{t('loadFailed')}
     <Button onClick={() => { void refreshSettings().catch((error: unknown) => { void error }) }}>{t('refresh')}</Button></div>
   const selected = draft.provider === '' ? '' : JSON.stringify([draft.provider, draft.model])
+  const maxPromptWords = positiveInteger(words)
+  const maxPromptCharacters = positiveInteger(characters)
   const available = state.catalog.some(group => group.provider === draft.provider && group.models.some(model => model.id === draft.model))
   const update = (next: Partial<PromptEnhancementPreferenceUpdate>): void => {
     dirty.current = true
@@ -146,13 +164,27 @@ export function EnhancementSettings({ useSettings, saveSettings, refreshSettings
     <h2>{t('title')}</h2>
     <p>{t('description')}</p>
     <p>{t('privacy')}</p>
+    <p>{t('lengthHelp')}</p>
+    <label>{t('maxWords')}
+      <input type="number" min="1" step="1" value={words} disabled={state.busy}
+        aria-invalid={maxPromptWords === null} onChange={(event) => {
+          dirty.current = true; edits.current++; setWords(event.target.value)
+        }} />
+    </label>
+    <label>{t('maxCharacters')}
+      <input type="number" min="1" step="1" value={characters} disabled={state.busy}
+        aria-invalid={maxPromptCharacters === null} onChange={(event) => {
+          dirty.current = true; edits.current++; setCharacters(event.target.value)
+        }} />
+    </label>
+    {(maxPromptWords === null || maxPromptCharacters === null) && <p role="alert">{t('invalidLimits')}</p>}
     <label>{t('mode')}
-      <select value={draft.mode} disabled={state.busy} onChange={event => {
+      <select value={draft.mode} disabled={state.busy} onChange={(event) => {
         update({ mode: event.target.value === 'review' ? 'review' : 'automatic' })
       }}><option value="automatic">{t('automatic')}</option><option value="review">{t('review')}</option></select>
     </label>
     <label>{t('model')}
-      <select value={selected} disabled={state.busy} onChange={event => {
+      <select value={selected} disabled={state.busy} onChange={(event) => {
         const choice = state.catalog.flatMap(group => group.models.map(model => ({ provider: group.provider, model: model.id })))
           .find(item => JSON.stringify([item.provider, item.model]) === event.target.value)
         update(choice ?? { provider: '', model: '' })
@@ -165,9 +197,9 @@ export function EnhancementSettings({ useSettings, saveSettings, refreshSettings
       </select>
     </label>
     <div className={css.actions}>
-      <Button variant="primary" disabled={state.busy || revision === null} onClick={() => {
-        if (revision === null) return
-        void saveSettings(draft, revision).then((saved) => {
+      <Button variant="primary" disabled={state.busy || revision === null || maxPromptWords === null || maxPromptCharacters === null} onClick={() => {
+        if (revision === null || maxPromptWords === null || maxPromptCharacters === null) return
+        void saveSettings({ ...draft, maxPromptWords, maxPromptCharacters }, revision).then((saved) => {
           if (!saved) return
           dirty.current = false
           const preferences = readPreferences()
@@ -175,6 +207,8 @@ export function EnhancementSettings({ useSettings, saveSettings, refreshSettings
           const { revision: nextRevision, ...next } = preferences
           setRevision(nextRevision)
           setDraft(next)
+          setWords(String(next.maxPromptWords))
+          setCharacters(String(next.maxPromptCharacters))
         })
       }}>{t('save')}</Button>
       <Button variant="outline" disabled={state.busy} onClick={() => {
@@ -187,6 +221,8 @@ export function EnhancementSettings({ useSettings, saveSettings, refreshSettings
           const { revision: nextRevision, ...next } = preferences
           setRevision(nextRevision)
           setDraft(next)
+          setWords(String(next.maxPromptWords))
+          setCharacters(String(next.maxPromptCharacters))
         }).catch((error: unknown) => { void error })
       }}>{t('refresh')}</Button>
       <Button disabled={state.busy} onClick={() => { void clearApprovals() }}>{t('revoke')}</Button>

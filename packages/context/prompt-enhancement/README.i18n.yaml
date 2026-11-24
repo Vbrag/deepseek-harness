@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/context/prompt-enhancement/README.md
+/:
+  en: 83cf7c4994a06036
+  zh: 1273006518568d8b
+/deepseek-ai-dsh-prompt-enhancement:
+  en: d7ad65fc9a55fa2d
+  zh: fd698f3596e12d28
+/deepseek-ai-dsh-prompt-enhancement/summary:
+  en: 9077c685c795b3a9
+  zh: 65474028a47b65f1
+/deepseek-ai-dsh-prompt-enhancement/table-of-contents:
+  en: 23386452a66b2fbd
+  zh: dc8dd4f5941b9f74
+/deepseek-ai-dsh-prompt-enhancement/use-this-package:
+  en: cbd550872da1dec8
+  zh: 1015b75f6691b8b3
+/deepseek-ai-dsh-prompt-enhancement/understand-the-implementation:
+  en: 7ea312460a061b4f
+  zh: bce21900d4f2e5cb
+/deepseek-ai-dsh-prompt-enhancement/further-exploration:
+  en: 0aae2bccffe44069
+  zh: b125620c40fc54de
+/deepseek-ai-dsh-prompt-enhancement/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-prompt-enhancement/model-experience/auxiliary-request:
+  en: f2195b20baa75a95
+  zh: 9e0ae4ae9573c141
+/deepseek-ai-dsh-prompt-enhancement/model-experience/auxiliary-request/what-the-model-sees:
+  en: 0136a3cb9864afe2
+  zh: a666791b163de138
+/deepseek-ai-dsh-prompt-enhancement/model-experience/auxiliary-request/token-effect:
+  en: 4dbc5a14890ff65a
+  zh: dad725861a4b09cd
+/deepseek-ai-dsh-prompt-enhancement/model-experience/auxiliary-request/kv-cache-effect:
+  en: 2a1e20a4b65ec707
+  zh: 5162b0af5f1f68d4
+/deepseek-ai-dsh-prompt-enhancement/known-limitations-and-deferred-work:
+  en: 558e8c8f1c7488fd
+  zh: 0ebc17bd99cf62cf
+/deepseek-ai-dsh-prompt-enhancement/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 8ec3e73528ddb1a6

@@ -164,6 +164,51 @@ Types: [Agent](core.zh.md) · [Session](session.zh.md)
 
 Source: [`packages/context/project-context/src/index.ts`](../../packages/context/project-context/src/index.ts)
 
+<a id="ctxpromptenhancement--promptenhancement"></a>
+
+### `ctx.promptEnhancement` — `PromptEnhancement`
+
+Session-owned enhancement service; it does not create or wake an Agent.
+
+```ts cordis-catalog
+/** Read effective user preferences.
+ * @returns Current settings and their revision.
+ */
+readPreferences(): PromptEnhancementPreferences
+
+/** Read the active profile entry identity.
+ * @returns Settings namespace.
+ */
+settingsNamespace(): string
+
+/** Read the current provider approvals.
+ * @returns Detached endpoint identities.
+ */
+approvedEgress(): readonly string[]
+
+/** Read the operation deadline.
+ * @returns Timeout in milliseconds.
+ */
+requestTimeout(): number
+
+/** Check whether this build can reopen Sessions containing the new records.
+ * @returns Catalog readiness.
+ */
+catalogReady(): boolean
+
+/** Prepare one submission once, reusing durable outcomes on replay.
+ * @param agent - Main Agent whose Session and scope own the request.
+ * @param request - Immutable prompt, attachment references, and selected route.
+ * @param signal - Caller cancellation.
+ * @returns The enhancement, an actionable failure code, cancellation, or an interrupted attempt.
+ */
+async enhance(agent: Agent, request: PromptEnhancementRequest, signal: AbortSignal): Promise<PromptEnhancementResult>
+```
+
+Types: [Agent](core.zh.md) · [PromptEnhancementPreferences](../../packages/context/prompt-enhancement/README.zh.md#use-this-package) · [PromptEnhancementRequest](../../packages/context/prompt-enhancement/README.zh.md#use-this-package) · [PromptEnhancementResult](../../packages/context/prompt-enhancement/README.zh.md#use-this-package)
+
+Source: [`packages/context/prompt-enhancement/src/index.ts`](../../packages/context/prompt-enhancement/src/index.ts)
+
 <a id="agent-instructions-events"></a>
 
 ### `agent-instructions/*` events
@@ -182,6 +227,27 @@ Read the instruction loader selected by the requesting Agent's scope.
  * @mode bail
  */
 'agent-instructions/discovery'(this: Scoped<Agent>, payload: { agent: Agent }): AgentInstructionDiscovery | undefined
+```
+
+Types: [Agent](core.zh.md) · [Scoped](scope.zh.md)
+
+Source: [`packages/context/agent-instructions/src/discovery.ts`](../../packages/context/agent-instructions/src/discovery.ts)
+
+<a id="agent-instructionspreview--bail"></a>
+
+#### `agent-instructions/preview` — bail
+
+Read the current bounded instruction baseline without admitting it to the Agent inbox.
+
+```ts cordis-catalog
+/**
+ * Read the current bounded instruction baseline without admitting it to the Agent inbox.
+ * @param payload.agent - Agent whose working directory and loader configuration apply.
+ * @param payload.signal - Cancellation for filesystem reads.
+ * @returns Rendered baseline, or undefined when the loader or filesystem is unavailable.
+ * @mode bail
+ */
+'agent-instructions/preview'(this: Scoped<Agent>, payload: { agent: Agent; signal: AbortSignal }): Promise<string | undefined> | undefined
 ```
 
 Types: [Agent](core.zh.md) · [Scoped](scope.zh.md)

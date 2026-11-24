@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-skill-frontend-patterns",
   "description": "Frontend and GUI authoring patterns for React and Next.js development",
-  "version": "0.2.2-rc.3",
+  "version": "0.2.3-alpha.2",
   "publishConfig": {
     "access": "public"
   },

@@ -91,7 +91,8 @@ describe('provider metadata', () => {
     expect(providerDefaultsOf({ ...provider, baseUrl: 'https://{ACCOUNT}.example' })).toEqual({})
   })
 
-  it('reports a resolver failure before using compatibility metadata, and refuses unknown metadata', async () => {
+  // Two independent resolver probes each have a two-second deadline.
+  it('reports a resolver failure before using compatibility metadata, and refuses unknown metadata', { timeout: 15_000 }, async () => {
     const provider: Provider = { ...catalogProvider('deepseek')!, auth: { apiKey: {
       name: 'fixture', resolve: () => Promise.reject(new Error('unsupported probe')),
     } } }

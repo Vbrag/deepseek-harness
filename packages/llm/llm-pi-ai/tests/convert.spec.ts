@@ -945,7 +945,7 @@ describe('mapStopReason / mapUsage', () => {
     expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: exhausted })))
       .toEqual({ kind: 'error', failure: { message: exhausted, code: 'BILLING_EXHAUSTED', status: 422 } })
     expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: '422: {"type":"invalid_request"}' })))
-      .toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR', status: 422 } })
+      .toMatchObject({ kind: 'error', failure: { code: 'INVALID_REQUEST', status: 422 } })
     expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: 'insufficient funds' })))
       .toMatchObject({ kind: 'error', failure: { code: 'BILLING_EXHAUSTED' } })
   })

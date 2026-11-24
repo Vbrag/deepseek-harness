@@ -1,9 +1,9 @@
 /** Profile patch edits and credential updates reach the next real adapter request. */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader, { type ModuleLoaderV2 } from '@deepseek-ai/cordis-plugin-loader'
@@ -43,6 +43,16 @@ afterEach(async () => {
 /** Boot the dormant composition: a bare `llm-pi-ai` row with no config at all. */
 async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }> {
   root = await mkdtemp(join(tmpdir(), 'dsh-pi-composition-'))
+  const manifests = [
+    ['dsh-credentials-local', '../../../credentials/credentials-local/package.json'],
+    ['dsh-authorization', '../../../credentials/authorization/package.json'],
+    ['dsh-llm-pi-ai', '../package.json'],
+  ] as const
+  for (const [name, source] of manifests) {
+    const directory = join(root, 'node_modules', '@deepseek-ai', name)
+    await mkdir(directory, { recursive: true })
+    await copyFile(fileURLToPath(new URL(source, import.meta.url)), join(directory, 'package.json'))
+  }
   await writeFile(join(root, '.credentials.yaml'), 'version: 1\nrefs:\n  PI_COMPOSITION_KEY: key-from-store\n', { mode: 0o600 })
 
   const configPath = join(root, 'cordis.yml')

@@ -83,10 +83,6 @@ type CompactionTrigger = 'pressure' | 'context-overflow'
 
 `CompactionEngine` 暴露 `compactIfNeeded(agent, trigger, signal)` 以执行自动 `pressure` 或 `context-overflow` 策略，暴露 `compactNow(agent, signal)` 以便即使未达到压力也对空闲会话进行一次有效缩减，还针对显式指定、两端均包含的平衡选区暴露 `compactRegion(...)`，不含开头的系统消息。`compactNow()` 作为轮次之间的 agent maintenance 运行；没有有效范围时返回 `null` 且不写入；在摘要前记录独立的 `turn: null` 标记对，并在后续排队提示词能够从新表层派生前 flush 已闭合尝试。每个后端都使用 `compactCheckpointSource(compactionId, sourceCommandId?)` 创建替换用 `user/message` 的源；client 与 wire 消费方从无 Cordis 的 `@deepseek-ai/dsh-compaction/checkpoint` 子路径导入该构造函数、`CompactionCheckpointSource` 和 `isCompactCheckpointSource()`，包根则为 host 消费方重新导出它们。必填的事务身份会关联替换检查点，而该判定函数使检查点识别不依赖任一特定后端。实现必须把传入的 signal 转发给摘要流程。该 seam 不拥有计价 API：单例 [`ctx.tokenMeter`](token-meter.zh.md) 直接拥有估算与回放，而 `dsh-compaction-basic` 拥有保留策略、事件排序、按路由执行的摘要调用及其配置。
 
-预期的手动失败使用 `ManualCompactionErrorCode`：
-
-`pressureBudget(agent, proposedHeader, signal)` 返回 `CompactionPressureBudget`，不修改历史或请求摘要；提供方未声明压力策略或容量未知时，默认实现返回 `undefined`。基础提供方的无效预算以 `COMPACTION_INVALID_BUDGET` 拒绝。
-
 ```ts type-equiv
 /** Read-only pressure limits for one proposed request route. */
 interface CompactionPressureBudget {
@@ -96,6 +92,10 @@ interface CompactionPressureBudget {
   readonly retainTokens: number
 }
 ```
+
+`pressureBudget(agent, proposedHeader, signal)` 返回 `CompactionPressureBudget`，不修改历史或请求摘要；提供方未声明压力策略或容量未知时，默认实现返回 `undefined`。基础提供方的无效预算以 `COMPACTION_INVALID_BUDGET` 拒绝。
+
+预期的手动失败使用 `ManualCompactionErrorCode`：
 
 ```ts type-equiv
 /** Expected failure classes for an explicit idle-session compaction request. */
@@ -159,6 +159,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Abstract compaction service. Implementations own trigger policy, retention, and summarization, and may consume a separate measurement service. A successful run replaces the selected surface span with one summary node and prevents concurrent compaction of the same session. The replacement user message uses compactCheckpointSource with the transaction identity so consumers recognize and correlate it independently of the backend. Load one implementation per context as `ctx.compaction`.
 
 ```ts cordis-catalog
+/** Inspect the enabled automatic TPM trigger for one route.
+ * @param _config - effective model route and controls.
+ * @param _tokenLimit - fixed per-minute budget for one request.
+ * @returns Trigger tokens, or undefined when this backend does not own TPM pressure.
+ */
+tpmThreshold(_config: LlmCallConfig, _tokenLimit: number): number | undefined
+
 /**
  * Inspect a proposed route's pressure policy without modifying the session or summarizing.
  * @param _agent - owner of the conversation being admitted.
@@ -228,7 +235,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
 abstract compactRegion( start: SessionSeq, end: SessionSeq, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```
 
-Types: [CommandId](commands.zh.md) · [EpochHeader](session.zh.md) · [SessionSeq](session.zh.md)
+Types: [CommandId](commands.zh.md) · [EpochHeader](session.zh.md) · [LlmCallConfig](llm-streaming.zh.md) · [SessionSeq](session.zh.md)
 
 Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 

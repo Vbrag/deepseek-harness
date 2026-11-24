@@ -23,13 +23,15 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-对一个提交标识调用一次 `ctx.promptEnhancement.enhance(agent, request, signal)`。请求提供原文、附件引用、所选提供方和模型，以及捕获的端点标识（`expectedEgress`，未知时为 `null`）。持久请求记录先于发送；中断记录会阻止自动重复发送。服务返回增强文本、失败代码、取消或中断结果。失败时由调用方决定是否提交原文。
+对一个提交标识调用一次 `ctx.promptEnhancement.enhance(agent, request, signal)`。请求提供原文、附件引用、所选提供方和模型，以及捕获的端点标识（`expectedEgress`，未知时为 `null`）。持久请求记录先于发送；中断记录会阻止自动重复发送。服务返回增强文本、因长度跳过、失败代码、取消或中断结果。跳过或失败时由调用方决定是否提交原文。
 
 服务读取有界指令预览和相关的近期用户、助手文本，不发送附件内容或可识别的凭据。凭据检测不能识别所有秘密。调用方必须在调用前取得必要的提供方同意并执行授权检查。
 
 即使用户在提交前取消，增强事件仍属于 Session 历史。有权读取历史的人员可以看到记录的提示词、所选上下文和响应。实时对比投影仅在提交后发布条目。
 
-配置默认值为 `maxInputBytes: 65536`、`maxContextBytes: 32768`、`maxOutputTokens: 4096`、`maxStreamBytes: 262144`、`timeoutMs: 30000`。这些限制仅适用于辅助请求，与 Agent 的模型和输出限制独立。`enabled` 默认值为 false；`mode` 默认值为 `automatic`，`provider` 与 `model` 为空时使用 Session 模型。
+配置保存的 `maxPromptWords` 和 `maxPromptCharacters` 默认值分别为 100 和 2000。显示的提示词以及包含展开引用的序列化提示词都必须符合限制。词按 Unicode 词语片段计算，字符按 Unicode 码点计算。附件名称和所选上下文不计入这两项限制。较长提示词会在查询提供方、收集上下文或记录请求之前跳过。
+
+其他配置默认值为 `maxInputBytes: 65536`、`maxContextBytes: 32768`、`maxOutputTokens: 4096`、`maxStreamBytes: 262144`、`timeoutMs: 30000`。这些限制仅适用于辅助请求，与 Agent 的模型和输出限制独立。`enabled` 默认值为 false；`mode` 默认值为 `automatic`，`provider` 与 `model` 为空时使用 Session 模型。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -49,7 +51,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-模型收到增强指令，以及包含原始提示词、所选上下文和附件引用的 JSON 用户输入。上下文是数据，不是指令来源。
+模型收到增强指令，以及包含 `original`、`context` 和 `attachments` 字段的 JSON 用户输入。上下文是数据，不是指令来源。
 
 #### Token 影响
 
@@ -59,16 +61,16 @@ kind: "package-reference"
 
 辅助请求不改变主对话的请求前缀。辅助调用的缓存复用取决于所选提供方。
 
-<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延期工作
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 尽管会验证字面内容，模型生成的文本仍可能改变含义；调用方应提供审核。
 - 上下文选择与凭据检测是启发式方法，不能确定语义相关性或识别所有秘密。
 - Session 无法成功执行持久检查点时不会发送增强请求。
-- 此暂定源码变更会拒绝增强，直到生成的 Session 事件目录包含所需记录。
 
 <a id="dev-note"></a>
-## 开发备注
+### 开发备注
 
 <details>
 <summary>维护者工作上下文 — 点击展开</summary>

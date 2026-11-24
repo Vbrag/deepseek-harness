@@ -942,6 +942,11 @@ interface PreparedLlmCall {
  * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
  */
 declare abstract class LlmAdapter {
+  /** Inspect the fixed per-request token budget without reserving capacity.
+   * @param _request - estimated input and effective output cap for one route.
+   * @returns The provider's token reservation, or undefined when unavailable.
+   */
+  requestTokenBudget(_request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined>;
   /**
      * Inspect shared request capacity without reserving it or performing provider I/O.
      * @param _request - estimated request work for an exact model route.
@@ -1233,6 +1238,12 @@ async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<Ll
  */
 queueAvailability(request: LlmQueueRequest): Promise<LlmQueueAvailability>
 
+/** Inspect one route's estimated per-request token reservation.
+ * @param request - exact route, estimated input, and optional output cap.
+ * @returns A fixed budget or undefined when the adapter does not declare one.
+ */
+requestTokenBudget(request: LlmQueueRequest): Promise<LlmRequestTokenBudget | undefined>
+
 /**
  * Resolve one call under its current adapter registration. The returned
  * one-shot handle keeps that registration across header logging and dispatch,
@@ -1261,7 +1272,7 @@ async prepareCall( config: LlmCallConfig, signal?: AbortSignal, configure?: Conf
 stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 ```
 
-Types: [FileAttachmentRef](attachment.zh.md) · [ImageAttachmentRef](attachment.zh.md) · [ImageRequestTarget](attachment.zh.md)
+Types: [FileAttachmentRef](attachment.zh.md) · [ImageAttachmentRef](attachment.zh.md) · [ImageRequestTarget](attachment.zh.md) · [LlmRequestTokenBudget](../../packages/llm/llm/README.zh.md#use-this-package)
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 

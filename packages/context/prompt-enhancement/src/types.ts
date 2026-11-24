@@ -76,6 +76,10 @@ export interface PromptEnhancementRequest {
 export interface PromptEnhancementPreferences {
   readonly enabled: boolean
   readonly mode: 'automatic' | 'review'
+  /** Largest prompt eligible for enhancement, in Unicode word-like segments. */
+  readonly maxPromptWords: number
+  /** Largest prompt eligible for enhancement, in Unicode code points. */
+  readonly maxPromptCharacters: number
   /** Empty provider and model select the Session model. */
   readonly provider: string
   readonly model: string
@@ -101,6 +105,8 @@ export type PromptEnhancementSaveResult =
 export interface PromptEnhancementPreflightRequest {
   readonly sessionId: SessionId
   readonly id: PromptEnhancementId
+  readonly original: string
+  readonly displayOriginal: string
 }
 
 /** The exact provider route the user agreed to use. */
@@ -113,14 +119,19 @@ export interface PromptEnhancementConsentRequest extends PromptEnhancementPrefli
 /** Route and consent state captured before an enhancement attempt. */
 export type PromptEnhancementPreflight =
   | { readonly status: 'disabled' }
-  | { readonly status: 'ready' | 'consent-required'; readonly provider: string; readonly model: string;
-    readonly mode: 'automatic' | 'review'; readonly egressId?: LlmEgressId; readonly egressLabel?: string }
+  | { readonly status: 'skipped'; readonly reason: 'length' }
+  | {
+    readonly status: 'ready' | 'consent-required'
+    readonly provider: string
+    readonly model: string
+    readonly mode: 'automatic' | 'review'
+    readonly egressId?: LlmEgressId
+    readonly egressLabel?: string
+  }
   | { readonly status: 'failed'; readonly code: string }
 
 /** Input accepted by the session-authorized enhancement Remote. */
 export interface PromptEnhancementRemoteRequest extends PromptEnhancementPreflightRequest {
-  readonly original: string
-  readonly displayOriginal: string
   readonly attachments: readonly string[]
   readonly provider: string
   readonly model: string
@@ -131,6 +142,7 @@ export interface PromptEnhancementRemoteRequest extends PromptEnhancementPreflig
 /** Result of preparing one user submission. */
 export type PromptEnhancementResult =
   | { readonly status: 'enhanced'; readonly text: string }
+  | { readonly status: 'skipped'; readonly reason: 'length' }
   | { readonly status: 'failed'; readonly code: string }
   | { readonly status: 'cancelled' }
   | { readonly status: 'interrupted' }
@@ -139,17 +151,14 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Exact log-only auxiliary request, recorded before dispatch.
      * @param data - Request identity and provider inputs.
-     * @mode emit
      */
     'prompt-enhancement/request': PromptEnhancementRequestEvent
     /** Log-only auxiliary request settlement.
      * @param data - Result status, duration, and optional usage.
-     * @mode emit
      */
     'prompt-enhancement/result': PromptEnhancementResultEvent
     /** Final user-selected prompt following enhancement.
      * @param data - Submission identity and selected text.
-     * @mode emit
      */
     'prompt-enhancement/accepted': PromptEnhancementAcceptedEvent
   }

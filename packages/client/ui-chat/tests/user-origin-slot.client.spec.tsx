@@ -124,7 +124,7 @@ describe('official user renderer origin seat', () => {
     const renderSlotChain = vi.fn(() => <span data-test-origin="" />)
     const view = render(<>
       <UserMessageNodeView {...viewProps(userData)} {...userSlots} renderSlotChain={renderSlotChain} />
-      <SteeringMessageNodeView {...viewProps(steeringData)} renderSlot={() => null} />
+      <SteeringMessageNodeView {...viewProps(steeringData)} renderSlot={() => null} SessionProvider={userSlots.SessionProvider} />
     </>)
     const steeringRow = view.container.lastElementChild!
     expect(steeringRow.textContent).toContain('steer')

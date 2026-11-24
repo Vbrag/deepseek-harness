@@ -93,7 +93,7 @@ Client export 通过 `ctx.remote.$mount` 挂载 `orchestrations` Remote contribu
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **模型池选择器受目录范围限制** — 面板只列出实时 LLM 注册表公布的提供商；模型仅在提供商报告时出现，目录变更在下次加载页面时生效。
+- **模型池选择器受目录范围限制** — 面板只列出实时 LLM 注册表公布的提供商；模型仅在提供商报告时出现，目录变更在下次打开面板时生效。
 - **需要 Host 服务** — 面板需要由 Orchestration 服务挂载的 `orchestrations` Remote 命名空间；缺失时读写会被拒绝，面板显示保存失败提示。
 - **配置档覆盖** — 优先级更高的主目录补丁或命令行覆盖可能拒绝模型池写入；面板会报告失败。
 - **无按会话覆盖** — 所选模型池是单一的共享主机值，不是按会话或按运行的覆盖。

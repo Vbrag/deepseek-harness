@@ -283,8 +283,9 @@ export function projectedPageContent(markdown: string, page: DocsPage): string {
  * link resolution needs, does not answer that.
  */
 export function publishableImage(absPath: string, repoRoot: string): string | undefined {
-  const real = realpathSync(absPath)
-  const inside = real === repoRoot || real.startsWith(`${repoRoot}${sep}`)
+  const real = realpathSync.native(absPath)
+  const realRoot = realpathSync.native(repoRoot)
+  const inside = real === realRoot || real.startsWith(`${realRoot}${sep}`)
   return inside && statSync(real).isFile() ? real : undefined
 }
 

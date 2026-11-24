@@ -90,7 +90,8 @@ function MessageItem({ node, t: translate, openCompaction, referenceLabels, skil
     case 'user':
       return <UserMessageNodeView {...props as ChatNodeViewProps<'user'>} {...userSlots} />
     case 'steering':
-      return <SteeringMessageNodeView {...props as ChatNodeViewProps<'steering'>} renderSlot={() => null} />
+      return <SteeringMessageNodeView {...props as ChatNodeViewProps<'steering'>}
+        renderSlot={() => null} SessionProvider={userSlots.SessionProvider} />
     case 'context':
       return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} />
     case 'compaction':

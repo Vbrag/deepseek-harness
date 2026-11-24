@@ -84,7 +84,7 @@ function linkPackage(pkg: WorkspacePackage, nodeModules: string): void {
   const parts = pkg.name.split('/')
   const link = resolve(nodeModules, ...parts)
   mkdirSync(dirname(link), { recursive: true })
-  symlinkSync(pkg.dir, link, 'dir')
+  symlinkSync(pkg.dir, link, 'junction')
 }
 
 const packages = workspacePackages()
@@ -117,7 +117,7 @@ try {
   if (existsSync(rootTypes)) {
     const typesDir = resolve(nodeModules, '@types')
     mkdirSync(typesDir, { recursive: true })
-    symlinkSync(rootTypes, resolve(typesDir, 'node'), 'dir')
+    symlinkSync(rootTypes, resolve(typesDir, 'node'), 'junction')
   }
 
   writeFileSync(resolve(tmp, 'package.json'), `${JSON.stringify({ type: 'module', private: true }, null, 2)}\n`)
@@ -156,7 +156,8 @@ try {
   failed = true
   const output = error as { stdout?: Buffer; stderr?: Buffer }
   console.error('verify-node-next-types: NodeNext consumer typecheck failed.\n')
-  console.error(`${output.stdout?.toString() ?? ''}${output.stderr?.toString() ?? ''}`)
+  const detail = `${output.stdout?.toString() ?? ''}${output.stderr?.toString() ?? ''}`
+  console.error(detail || (error instanceof Error ? error.message : String(error)))
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

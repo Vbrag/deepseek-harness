@@ -13,14 +13,7 @@ import type {} from '@deepseek-ai/dsh-prompt-enhancement/remote'
 import type { PromptEnhancementPreferenceUpdate } from '@deepseek-ai/dsh-prompt-enhancement/client'
 import { EnhancementController } from './controller.ts'
 import { EnhancementSettings, EnhancementToggle, PreparationDock, SteeringComparison, UserComparison } from './Components.tsx'
-import { de, en, es, fr, ja, NS, pt, ru, zh, type PromptEnhancementKey } from './locales.ts'
-
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface LocaleNamespaceMap {
-    /** Prompt enhancement settings and composer copy. */
-    promptEnhancement: PromptEnhancementKey
-  }
-}
+import { de, en, es, fr, ja, NS, pt, ru, zh } from './locales.ts'
 
 /** Required browser services. */
 export const inject = ['locale', 'slots', 'remote']

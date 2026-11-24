@@ -15,7 +15,7 @@ description: "在创建 PR 前，本地生成、确认并验证会话持久化�
 - [可选：检查变更](#generate)
 - [1. 记录变更](#acknowledge)
 - [2. 检查、提交并推送](#verify)
-- [更新尚未接受的记录](#competing-records)
+- [协调竞争记录](#competing-records)
 - [开发备注](#dev-note)
 
 -----
@@ -93,7 +93,7 @@ pnpm run doc-sync
 记录生成负责其目录和记录的双语对；包 README 或其他双语页面的编辑仍遵循常规配对流程。审阅并暂存预期差异，然后正常提交和推送。暂存 lint、配对、空白 hooks，以及 pre-push Host/Client 类型检查仍须执行。
 
 <a id="competing-records"></a>
-## 更新尚未接受的记录
+## 协调竞争记录
 
 记录后源码再次变化时，审阅兼容性说明，并刷新同一条尚未接受的末端记录：
 
@@ -103,7 +103,7 @@ pnpm --silent run persistence-changes --update 2026-09-11-poc-optional --prose .
 
 命令刷新机器声明、schema、目录和配对。没有 `--prose` 时，它保留已有说明。根据完整转换重新评估说明，并为任何被标记的同版本更新提供 `--decision same-version`。更新会拒绝初始基线、其他记录所依赖的记录，以及已被定稿检查点锁定的记录。定稿检查点之外，目录不会推断审阅接受状态：保留已接受历史，并创建后继。
 
-集成产生竞争末端记录时，根据剩余历史更新尚未接受的记录，再重新评估最终差异。无关根的确认无需刷新。[机制决策](../../.agents/notes/implemented/process/2026-09-11-persistence-type-history.zh.md)解释为何保留完整快照和逐根前驱。
+集成产生竞争末端记录时，根据剩余历史更新尚未接受的记录，再重新评估最终差异。如果记录可能已被接受，应保留它们，并将每个分支末端与当前源码比较。提供上述双语说明并运行 `pnpm --silent run persistence-changes --reconcile ID --decision same-version --prose FILE --json`，将 `ID` 和 `FILE` 替换为记录及说明文件路径。命令以当前 schema 合并所有竞争根，并报告每个前驱的转换；检查这些转换并评估两个方向的读取器行为。命令要求显式决策和完整说明，其他根的变更留待单独使用 `--record`。协调记录不能更新；应添加后继。[协调决策](../../.agents/notes/implemented/process/2026-11-24-persistence-reconciliations.zh.md)解释为何保留这些分支。
 
 若已有属性的值类型变化需要评审，先修改说明文件中的兼容性与验证部分，解释实际的新转换及已执行检查。不要为不同变更复用先前必选改可选的说明。然后使用该说明与显式同版本选择更新记录：
 

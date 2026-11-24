@@ -39,8 +39,8 @@ export function cleanDocSiteOutput(siteRoot: string, outDir: string): void {
     throw new Error(`website/build: output directory ${JSON.stringify(output)} must be a child of site root ${JSON.stringify(root)}.`)
   }
 
-  const realRoot = realpathSync(root)
-  const realParent = realpathSync(nearestExistingAncestor(dirname(output)))
+  const realRoot = realpathSync.native(root)
+  const realParent = realpathSync.native(nearestExistingAncestor(dirname(output)))
   if (escapesRoot(realRoot, realParent)) {
     throw new Error(`website/build: output directory ${JSON.stringify(output)} must resolve inside site root ${JSON.stringify(realRoot)}.`)
   }

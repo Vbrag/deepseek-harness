@@ -1,12 +1,17 @@
 /** Prompt enhancement interface copy. */
 export const NS = 'promptEnhancement'
 
+/** English feature copy. */
 export const en = {
   title: 'Prompt enhancement',
   toggle: 'Enhance prompts',
   description: 'Improve prompts with a separate model request before sending them. Relevant instructions and recent conversation text may be included.',
   privacy: 'Attempts may save the original prompt, selected context and response in session history, even when cancelled. Anyone who can read that history can see them.',
   mode: 'Before sending',
+  maxWords: 'Maximum prompt words',
+  maxCharacters: 'Maximum prompt characters',
+  lengthHelp: 'Longer prompts are sent unchanged. Both the displayed prompt and expanded references must fit.',
+  invalidLimits: 'Enter a positive whole number for each limit.',
   automatic: 'Send automatically',
   review: 'Review and edit',
   model: 'Enhancement model',
@@ -44,18 +49,30 @@ export const en = {
   noticeSensitive: 'Enhancement was skipped because the prompt or an attachment name may contain a credential. The original will be used.',
   noticeBilling: 'Enhancement was unavailable because the model’s billing budget is exhausted. The original will be used.',
   noticeTimeout: 'Enhancement took too long. The original will be used.',
+  noticeLength: 'Enhancement was skipped because the prompt or expanded references exceed your length limits.',
   noticeCatalog: 'The application’s session catalog needs updating before enhancement can be used. The original will be used.',
   noticeFailed: 'Enhancement was unavailable. The original will be used; check the selected model and try again.',
   dismiss: 'Dismiss',
 } as const
 
+/** Translation keys for prompt enhancement. */
 export type PromptEnhancementKey = keyof typeof en
 
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Prompt enhancement settings and composer copy. */
+    promptEnhancement: PromptEnhancementKey
+  }
+}
+
+/** Chinese feature copy. */
 export const zh: Record<PromptEnhancementKey, string> = {
   title: '提示词增强', toggle: '增强提示词',
   description: '发送前使用单独的模型请求改进提示词，可能包含相关项目说明和最近的对话文本。',
   privacy: '即使取消提交，增强尝试也可能将原始提示词、所选上下文和响应保存在会话历史中。有权读取历史的人员均可查看。',
-  mode: '发送前', automatic: '自动发送', review: '审核和编辑', model: '增强模型',
+  mode: '发送前', maxWords: '提示词的最大词数', maxCharacters: '提示词的最大字符数',
+  lengthHelp: '较长的提示词会按原样发送。显示的提示词和展开的引用均须符合限制。',
+  invalidLimits: '请为每项限制输入正整数。', automatic: '自动发送', review: '审核和编辑', model: '增强模型',
   sessionModel: '使用当前会话模型', dedicated: '选择模型', save: '保存设置', refresh: '重新加载设置',
   saveFailed: '无法保存设置。请检查当前配置并重试。', saveStale: '设置已在其他位置更改。请重新加载并检查选择。',
   saved: '设置已保存。', loadFailed: '设置不可用。请重新打开或重新连接。', revoke: '清除提供商授权',
@@ -70,14 +87,20 @@ export const zh: Record<PromptEnhancementKey, string> = {
   enhancedLabel: '增强后的提示词', submittedOriginal: '已发送原文', submittedEdited: '已发送编辑后的提示词',
   noticeSensitive: '提示词或附件名称可能包含凭据，已跳过增强并将使用原文。',
   noticeBilling: '模型的计费预算已用尽，无法增强，将使用原文。', noticeTimeout: '增强耗时过长，将使用原文。',
+  noticeLength: '提示词或展开的引用超过长度限制，已跳过增强。',
   noticeCatalog: '使用增强功能前需要更新应用的会话目录，将使用原文。',
   noticeFailed: '增强不可用，将使用原文。请检查所选模型后重试。', dismiss: '关闭',
 }
 
-// English is the fallback for locales without translated feature copy.
+/** English fallback for Japanese. */
 export const ja = en
+/** English fallback for Spanish. */
 export const es = en
+/** English fallback for French. */
 export const fr = en
+/** English fallback for German. */
 export const de = en
+/** English fallback for Russian. */
 export const ru = en
+/** English fallback for Portuguese. */
 export const pt = en

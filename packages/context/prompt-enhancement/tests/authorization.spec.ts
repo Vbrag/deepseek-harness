@@ -28,6 +28,7 @@ it('refuses settings and request access before reading the Session or provider',
   } satisfies RemoteInvocation
   const remote = new PromptEnhancementRemote(ctx.extend({ invocation }))
   expect(() => remote.preferences()).toThrow(expect.objectContaining({ code: 'prompt-enhancement/owner-required' }))
-  await expect(remote.preflight({ sessionId: SessionId('session'), id: brandString<SessionRequestId>('request') }, signal))
+  await expect(remote.preflight({ sessionId: SessionId('session'), id: brandString<SessionRequestId>('request'),
+    original: 'Prompt', displayOriginal: 'Prompt' }, signal))
     .rejects.toMatchObject({ code: 'prompt-enhancement/owner-required' })
 })

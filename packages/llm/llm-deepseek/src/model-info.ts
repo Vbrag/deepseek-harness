@@ -1,7 +1,7 @@
 /** Protocol-independent model capabilities and reasoning choices. */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm/types'
-import { describeLlmEgress } from '@deepseek-ai/dsh-llm'
+import { describeLlmEgress } from '@deepseek-ai/dsh-llm/egress'
 import type { LlmModelBadge, LlmModelInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './types.ts'
 

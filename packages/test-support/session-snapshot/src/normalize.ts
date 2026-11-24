@@ -413,6 +413,7 @@ export function normalizeSessionLog(
       const data = record.data as Record<string, unknown>
       if ('durationMs' in data) data.durationMs = 0
     }
+    normalizeEnhancementElapsed(record)
     normalizeFeedbackClocks(record)
     normalizeTimelineClocks(record)
     if ((record.type === 'job/registered' || record.type === 'job/settled')
@@ -606,8 +607,16 @@ export function scrubSessionSnapshot(rawLog: string): string {
     }
     normalizeFeedbackClocks(record)
     normalizeTimelineClocks(record)
+    normalizeEnhancementElapsed(record)
     return JSON.stringify(record)
   }).join('\n')
+}
+
+/** Normalize the elapsed duration produced by one auxiliary enhancement call. */
+function normalizeEnhancementElapsed(record: Record<string, unknown>): void {
+  if (record.type !== 'prompt-enhancement/result' || record.data === null || typeof record.data !== 'object') return
+  const data = record.data as Record<string, unknown>
+  if ('elapsedMs' in data) data.elapsedMs = 0
 }
 
 /** Normalize service-owned feedback clocks without touching user-authored payloads. */

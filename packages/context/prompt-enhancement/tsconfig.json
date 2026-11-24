@@ -4,11 +4,12 @@
   "include": ["src"],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/loader" },
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../core/agent" },
     { "path": "../agent-instructions" },
-    { "path": "../../api/session-controller" },
+    { "path": "../../api/session-controller/tsconfig.host.json" },
     { "path": "../../compaction/compaction" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },

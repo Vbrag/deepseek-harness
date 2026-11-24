@@ -31,6 +31,8 @@ Any composition that calls a model provider — an agent loop, a session-title g
 
 `billingHealth` shares process-local exhausted-budget observations among model consumers. Known-free routes remain available; paid or unknown routes are restricted when independence cannot be established. Reset it after correcting the account; observations do not persist across runtime restarts.
 
+Provider implementations import `describeLlmEgress` from `@deepseek-ai/dsh-llm/egress`; direct billing-health consumers import `LlmBillingHealth` from `@deepseek-ai/dsh-llm/billing-health`.
+
 Import message, tool-call, provider-request, attempt, and reasoning-effort identifier types from `@deepseek-ai/dsh-llm/types` or the package root using `import type`. Brand strings with `brandString<IdentifierType>(value)` from `@deepseek-ai/dsh-brand`; branding preserves the string without validation.
 
 ### When to choose it

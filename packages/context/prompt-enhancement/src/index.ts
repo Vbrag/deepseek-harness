@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
 import { isVolatile } from '@deepseek-ai/cosmokit'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import { agentCarrier, type Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-instructions/discovery'
@@ -16,13 +17,14 @@ import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { principalOf, Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
-import { containsCredential, ENHANCEMENT_SYSTEM, enhancementInput, instructionSections, retainsLiterals, selectContext } from './input.ts'
+import { containsCredential, ENHANCEMENT_SYSTEM, enhancementInput, instructionSections, retainsLiterals, selectContext,
+  withinPromptLimits } from './input.ts'
 import type { ContextCandidate } from './input.ts'
 import { promptEnhancementProjection } from './projection.ts'
 import type { PromptEnhancementState } from './projection.ts'
 import type {
-  PromptEnhancementCatalog, PromptEnhancementConsentRequest, PromptEnhancementPreferenceUpdate, PromptEnhancementPreferences, PromptEnhancementPreflight,
-  PromptEnhancementPreflightRequest, PromptEnhancementRemoteRequest, PromptEnhancementRequest,
+  PromptEnhancementCatalog, PromptEnhancementConsentRequest, PromptEnhancementPreferenceUpdate, PromptEnhancementPreferences,
+  PromptEnhancementPreflight, PromptEnhancementPreflightRequest, PromptEnhancementRemoteRequest, PromptEnhancementRequest,
   PromptEnhancementResult, PromptEnhancementResultEvent, PromptEnhancementSaveResult,
 } from './types.ts'
 
@@ -37,15 +39,29 @@ declare module '@deepseek-ai/cordis' {
 
 /** Limits applied to the complete auxiliary request. */
 export interface Config {
+  /** Maximum UTF-8 bytes for the auxiliary input. */
   readonly maxInputBytes?: number
+  /** Maximum UTF-8 bytes of selected optional context. */
   readonly maxContextBytes?: number
+  /** Maximum output tokens reserved for enhancement. */
   readonly maxOutputTokens?: number
+  /** Maximum UTF-8 bytes accepted from the provider stream. */
   readonly maxStreamBytes?: number
+  /** Deadline for one enhancement attempt, in milliseconds. */
   readonly timeoutMs?: number
+  /** Whether eligible composer submissions are enhanced. */
   readonly enabled?: boolean | Volatile<boolean>
+  /** Whether to send the result automatically or ask for review. */
   readonly mode?: 'automatic' | 'review' | Volatile<'automatic' | 'review'>
+  /** Maximum word-like segments in an eligible prompt. */
+  readonly maxPromptWords?: number | Volatile<number>
+  /** Maximum Unicode code points in an eligible prompt. */
+  readonly maxPromptCharacters?: number | Volatile<number>
+  /** Dedicated provider, or an empty string for the Session route. */
   readonly provider?: string | Volatile<string>
+  /** Dedicated model, or an empty string for the Session route. */
   readonly model?: string | Volatile<string>
+  /** Provider endpoint identities approved by the owner. */
   readonly approvedEgress?: readonly string[] | Volatile<readonly string[]>
 }
 
@@ -57,21 +73,31 @@ interface ResolvedConfig {
   readonly timeoutMs: number
 }
 
-function current<T>(value: T | Volatile<T> | undefined, fallback: T): T {
-  return value === undefined ? fallback : isVolatile(value) ? value.get() : value
+function current<T extends boolean | number | string>(value: T | Volatile<T> | undefined, fallback: T): T {
+  // Volatile snapshots leave scalar values unchanged.
+  return value === undefined ? fallback : isVolatile(value) ? value.get() as T : value
+}
+
+function operationError(reason: unknown): Error {
+  return reason instanceof Error ? reason : new Error('Prompt enhancement operation failed.', { cause: reason })
+}
+
+function cancellationError(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason
+  return reason instanceof Error ? reason : new DOMException('Prompt enhancement cancelled', 'AbortError')
 }
 
 /** Remove an abort listener when either the iterator or cancellation settles. */
 function nextChunk<T>(iterator: AsyncIterator<T>, signal: AbortSignal): Promise<IteratorResult<T>> {
   signal.throwIfAborted()
   return new Promise((resolve, reject) => {
-    const abort = (): void => { const reason: unknown = signal.reason; signal.removeEventListener('abort', abort); reject(reason) }
+    const abort = (): void => { signal.removeEventListener('abort', abort); reject(cancellationError(signal)) }
     signal.addEventListener('abort', abort, { once: true })
     let pending: Promise<IteratorResult<T>>
-    try { pending = iterator.next() } catch (error) { signal.removeEventListener('abort', abort); reject(error); return }
+    try { pending = iterator.next() } catch (error) { signal.removeEventListener('abort', abort); reject(operationError(error)); return }
     void pending.then(
-      value => { signal.removeEventListener('abort', abort); resolve(value) },
-      error => { signal.removeEventListener('abort', abort); reject(error) },
+      (value) => { signal.removeEventListener('abort', abort); resolve(value) },
+      (error: unknown) => { signal.removeEventListener('abort', abort); reject(operationError(error)) },
     )
     if (signal.aborted) abort()
   })
@@ -80,11 +106,11 @@ function nextChunk<T>(iterator: AsyncIterator<T>, signal: AbortSignal): Promise<
 function waitFor<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted()
   return new Promise((resolve, reject) => {
-    const abort = (): void => { const reason: unknown = signal.reason; signal.removeEventListener('abort', abort); reject(reason) }
+    const abort = (): void => { signal.removeEventListener('abort', abort); reject(cancellationError(signal)) }
     signal.addEventListener('abort', abort, { once: true })
     void work.then(
-      value => { signal.removeEventListener('abort', abort); resolve(value) },
-      error => { signal.removeEventListener('abort', abort); reject(error) },
+      (value) => { signal.removeEventListener('abort', abort); resolve(value) },
+      (error: unknown) => { signal.removeEventListener('abort', abort); reject(operationError(error)) },
     )
     if (signal.aborted) abort()
   })
@@ -128,6 +154,8 @@ export class PromptEnhancement extends Service {
     timeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(30_000),
     enabled: z.boolean().default(false).volatile(),
     mode: z.union(['automatic', 'review']).default('automatic').volatile(),
+    maxPromptWords: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(100).volatile(),
+    maxPromptCharacters: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(2000).volatile(),
     provider: z.string().default('').volatile(),
     model: z.string().default('').volatile(),
     approvedEgress: z.array(z.string()).default([]).volatile(),
@@ -163,6 +191,14 @@ export class PromptEnhancement extends Service {
         throw new HarnessError(`${name} is invalid.`, 'PROMPT_ENHANCEMENT_INVALID_CONFIG')
       }
     }
+    for (const [name, value] of [
+      ['maxPromptWords', current(config.maxPromptWords, 100)],
+      ['maxPromptCharacters', current(config.maxPromptCharacters, 2000)],
+    ] as const) {
+      if (!Number.isSafeInteger(value) || value < 1) {
+        throw new HarnessError(`${name} is invalid.`, 'PROMPT_ENHANCEMENT_INVALID_CONFIG')
+      }
+    }
   }
 
   protected async [Service.init](): Promise<void> {
@@ -183,28 +219,41 @@ export class PromptEnhancement extends Service {
     this.ctx.plugin(PromptEnhancementRemote)
   }
 
-  /** Read effective user preferences. @returns Current settings and their revision. */
+  /** Read effective user preferences.
+   * @returns Current settings and their revision.
+   */
   readPreferences(): PromptEnhancementPreferences {
     return {
       enabled: current(this.preferences.enabled, false),
       mode: current(this.preferences.mode, 'automatic'),
+      maxPromptWords: current(this.preferences.maxPromptWords, 100),
+      maxPromptCharacters: current(this.preferences.maxPromptCharacters, 2000),
       provider: current(this.preferences.provider, ''), model: current(this.preferences.model, ''),
       revision: this.ctx.get('settings')?.describe().find(item => item.ns === this.settingsNs)?.revision ?? null,
     }
   }
 
-  /** Read the active profile entry identity. @returns Settings namespace. */
+  /** Read the active profile entry identity.
+   * @returns Settings namespace.
+   */
   settingsNamespace(): string { return this.settingsNs }
 
-  /** Read the current provider approvals. @returns Detached endpoint identities. */
+  /** Read the current provider approvals.
+   * @returns Detached endpoint identities.
+   */
   approvedEgress(): readonly string[] {
-    return [...current(this.preferences.approvedEgress, [])]
+    const value = this.preferences.approvedEgress
+    return [...(value === undefined ? [] : isVolatile(value) ? value.get() : value)]
   }
 
-  /** Read the operation deadline. @returns Timeout in milliseconds. */
+  /** Read the operation deadline.
+   * @returns Timeout in milliseconds.
+   */
   requestTimeout(): number { return this.config.timeoutMs }
 
-  /** Check whether this build can reopen Sessions containing the new records. @returns Catalog readiness. */
+  /** Check whether this build can reopen Sessions containing the new records.
+   * @returns Catalog readiness.
+   */
   catalogReady(): boolean {
     return ['prompt-enhancement/request', 'prompt-enhancement/result', 'prompt-enhancement/accepted']
       .every(type => KNOWN_SESSION_EVENT_TYPES.has(type))
@@ -220,6 +269,12 @@ export class PromptEnhancement extends Service {
     if (agent.id !== request.sessionId || agent.session.header.origin === 'subagent'
       || (agent.session.header.delegationDepth ?? 0) > 0) {
       return { status: 'failed', code: 'PROMPT_ENHANCEMENT_INVALID_SESSION' }
+    }
+    if (signal.aborted) return { status: 'cancelled' }
+    const preferences = this.readPreferences()
+    if (!withinPromptLimits(request.original, preferences.maxPromptWords, preferences.maxPromptCharacters)
+      || !withinPromptLimits(request.displayOriginal, preferences.maxPromptWords, preferences.maxPromptCharacters)) {
+      return { status: 'skipped', reason: 'length' }
     }
     if (!this.catalogReady()) {
       return { status: 'failed', code: 'PROMPT_ENHANCEMENT_CATALOG_STALE' }
@@ -409,14 +464,18 @@ export class PromptEnhancementRemote extends TypertRemoteService {
     }
   }
 
-  /** Read the effective settings. @returns Current preferences. */
+  /** Read the effective settings.
+   * @returns Current preferences.
+   */
   @Remote('preferences')
   preferences(): PromptEnhancementPreferences {
     this.requireOwner()
     return this.ctx.promptEnhancement.readPreferences()
   }
 
-  /** List currently registered provider models. @returns Available routes. */
+  /** List currently registered provider models.
+   * @returns Available routes.
+   */
   @Remote('catalog')
   async catalog(): Promise<PromptEnhancementCatalog> {
     this.requireOwner()
@@ -441,6 +500,8 @@ export class PromptEnhancementRemote extends TypertRemoteService {
   async savePreferences(preferences: PromptEnhancementPreferenceUpdate, revision: number): Promise<PromptEnhancementSaveResult> {
     this.requireOwner()
     if ((preferences.provider === '') !== (preferences.model === '')) return { status: 'failed' }
+    if (!Number.isSafeInteger(preferences.maxPromptWords) || preferences.maxPromptWords < 1
+      || !Number.isSafeInteger(preferences.maxPromptCharacters) || preferences.maxPromptCharacters < 1) return { status: 'failed' }
     if (preferences.provider !== '') {
       try {
         const models = await this.ctx.llm.listModels(preferences.provider)
@@ -451,6 +512,7 @@ export class PromptEnhancementRemote extends TypertRemoteService {
       await this.ctx.settings.update(this.ctx.promptEnhancement.settingsNamespace(), preferences, revision)
       const next = this.preferences()
       if (next.enabled !== preferences.enabled || next.mode !== preferences.mode
+        || next.maxPromptWords !== preferences.maxPromptWords || next.maxPromptCharacters !== preferences.maxPromptCharacters
         || next.provider !== preferences.provider || next.model !== preferences.model) return { status: 'failed' }
       return { status: 'saved', preferences: next }
     } catch (error: unknown) {
@@ -470,6 +532,10 @@ export class PromptEnhancementRemote extends TypertRemoteService {
     if (request.id.length === 0) return { status: 'failed', code: 'PROMPT_ENHANCEMENT_INVALID_REQUEST' }
     const preferences = this.preferences()
     if (!preferences.enabled) return { status: 'disabled' }
+    if (!withinPromptLimits(request.original, preferences.maxPromptWords, preferences.maxPromptCharacters)
+      || !withinPromptLimits(request.displayOriginal, preferences.maxPromptWords, preferences.maxPromptCharacters)) {
+      return { status: 'skipped', reason: 'length' }
+    }
     if (!this.ctx.promptEnhancement.catalogReady()) return { status: 'failed', code: 'PROMPT_ENHANCEMENT_CATALOG_STALE' }
     using timer = deadline(signal, this.ctx.promptEnhancement.requestTimeout(), 'PROMPT_ENHANCEMENT_TIMEOUT')
     try {
@@ -484,12 +550,14 @@ export class PromptEnhancementRemote extends TypertRemoteService {
       const provider = preferences.provider || selected.provider
       const model = preferences.model || selected.model
       if (!this.ctx.llm.listProviders().some(item => item.id === provider)
-        || !(await waitFor(this.ctx.llm.listModels(provider), timer.signal)).some(item => item.id === model)) {
+        || (preferences.provider !== ''
+          && !(await waitFor(this.ctx.llm.listModels(provider), timer.signal)).some(item => item.id === model))) {
         return { status: 'failed', code: 'PROMPT_ENHANCEMENT_MODEL_UNAVAILABLE' }
       }
       const info = await waitFor(this.ctx.llm.resolveModelInfo(provider, model, timer.signal), timer.signal)
       const sameModel = provider === selected.provider && model === selected.model
-      const main = sameModel ? info : await waitFor(this.ctx.llm.resolveModelInfo(selected.provider, selected.model, timer.signal), timer.signal)
+      const main = sameModel ? info
+        : await waitFor(this.ctx.llm.resolveModelInfo(selected.provider, selected.model, timer.signal), timer.signal)
       const sameEndpoint = provider === selected.provider && info.egressId !== undefined && info.egressId === main.egressId
       const consentNeeded = !sameModel && !sameEndpoint
       const once = this.oneTime.get(agent.session)
@@ -531,7 +599,9 @@ export class PromptEnhancementRemote extends TypertRemoteService {
       const preferences = this.preferences()
       if (preferences.revision === null) return false
       const approvedEgress = [...new Set([...this.ctx.promptEnhancement.approvedEgress(), plan.egressId])]
-      await waitFor(this.ctx.settings.update(this.ctx.promptEnhancement.settingsNamespace(), { approvedEgress }, preferences.revision), timer.signal)
+      await waitFor(this.ctx.settings.update(
+        this.ctx.promptEnhancement.settingsNamespace(), { approvedEgress }, preferences.revision,
+      ), timer.signal)
       return this.ctx.promptEnhancement.approvedEgress().includes(plan.egressId)
     } catch {
       signal.throwIfAborted()
@@ -539,7 +609,9 @@ export class PromptEnhancementRemote extends TypertRemoteService {
     }
   }
 
-  /** Remove all saved provider approvals. @returns Whether the active settings were updated. */
+  /** Remove all saved provider approvals.
+   * @returns Whether the active settings were updated.
+   */
   @Remote('clearProviderApprovals')
   async clearProviderApprovals(): Promise<boolean> {
     this.requireOwner()
@@ -567,6 +639,7 @@ export class PromptEnhancementRemote extends TypertRemoteService {
   async prepare(request: PromptEnhancementRemoteRequest, signal: AbortSignal): Promise<PromptEnhancementResult> {
     this.requireOwner()
     const plan = await this.preflight(request, signal)
+    if (plan.status === 'skipped') return plan
     if (plan.status !== 'ready') return { status: 'failed', code: plan.status === 'consent-required'
       ? 'PROMPT_ENHANCEMENT_CONSENT_REQUIRED' : 'PROMPT_ENHANCEMENT_UNAVAILABLE' }
     if (plan.provider !== request.provider || plan.model !== request.model || plan.mode !== request.mode

@@ -40,10 +40,10 @@ import type {
 import {
   attributionHeaders,
   contentHasImage,
-  describeLlmEgress,
   LlmAdapter,
   LlmError,
 } from '@deepseek-ai/dsh-llm'
+import { describeLlmEgress } from '@deepseek-ai/dsh-llm/egress'
 import type {
   GenerateOptions,
   ImageAttachmentAccess,

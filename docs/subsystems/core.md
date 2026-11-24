@@ -1077,14 +1077,14 @@ Handle one failed model-request attempt before the loop retries or closes its st
  * @param payload.signal - the turn abort signal.
  * @param payload.stage - operation that failed; absent in older manually dispatched events.
  * @param payload.requestInterrupted - true for an explicit request-only interruption.
- * @param payload.messages - claimed input not yet admitted when preparation failed.
+ * @param payload.messages - claimed input not yet admitted when preparation failed; committed messages are excluded after repreparation.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode waterfall
  */
 'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal; stage?: 'step-preparation' | 'request-preparation' | 'stream'; requestInterrupted?: true; messages?: readonly UserMessage[] }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
 ```
 
-Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
+Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md) · [UserMessage](session.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 
@@ -1114,6 +1114,32 @@ Inspect a settled successful generation before accepting its message or executin
 ```
 
 Types: [ContentBlock](llm-streaming.md) · [FinishReason](llm-streaming.md) · [Scoped](scope.md) · [TokenUsage](llm-streaming.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
+<a id="agentrequest-ready--waterfall"></a>
+
+#### `agent/request-ready` — waterfall
+
+Inspect the frozen, logged request before the adapter starts. A listener that durably changes its inputs returns reprepare; otherwise it calls next().
+
+```ts cordis-catalog
+/**
+ * Inspect the frozen, logged request before the adapter starts. A listener
+ * that durably changes its inputs returns reprepare; otherwise it calls next().
+ * @param payload.agent - Agent owning the request.
+ * @param payload.turn - open turn number.
+ * @param payload.step - current step number.
+ * @param payload.request - frozen request derived from the session log.
+ * @param payload.preparedCall - captured adapter generation, when available.
+ * @param payload.signal - request cancellation signal.
+ * @param next - continue request admission.
+ * @mode waterfall
+ */
+'agent/request-ready'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; request: GenerateOptions; preparedCall: PreparedLlmCall | undefined; signal: AbortSignal }, next: () => Promise<RequestReadyAction>): Promise<RequestReadyAction>
+```
+
+Types: [GenerateOptions](llm-streaming.md) · [PreparedLlmCall](llm-streaming.md) · [RequestReadyAction](../../packages/core/agent/README.md#runtime-events) · [Scoped](scope.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 

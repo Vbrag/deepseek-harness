@@ -108,6 +108,14 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'promptEnhancement',
+    pkg: 'prompt-enhancement',
+    title: 'Bounded prompt enhancement',
+    mode: 'service',
+    consumers: ['client-ui-prompt-enhancement'],
+    note: 'Prepares and records an auxiliary prompt request; the client owns consent, review, and submission.',
+  },
+  {
     key: 'projectContext',
     pkg: 'project-context',
     title: 'Project documentation checkpoints',

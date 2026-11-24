@@ -16,6 +16,8 @@ EXPECTED_ROOT = Path(__file__).parent / "expected"
 @pytest.mark.parametrize("fixture, event_types", [
     ("cot-translation-projection.json", ("plugin:translator/request", "plugin:translator/result")),
     ("team-mode-projection.json", ("team/mode",)),
+    ("prompt-enhancement-projection.json", ("prompt-enhancement/request", "prompt-enhancement/result",
+                                            "prompt-enhancement/accepted")),
     ("orchestration-projection.json", ("orchestration/mode", "plugin:orchestration/route",
                                        "subagent/running-model-policy", "plugin:orchestration/routing-state")),
     ("todo-handoff-projection.json", ("todo/policy", "work-handoff/checkpoint", "work-handoff/captured", "work-handoff/saved",

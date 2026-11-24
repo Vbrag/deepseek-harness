@@ -7,6 +7,9 @@ A service can be a core spine service, a swappable capability seam, a bundle/com
 
 ```mermaid
 flowchart LR
+  pkg_prompt_enhancement["prompt-enhancement"]
+  svc_promptEnhancement["ctx.promptEnhancement<br/>Bounded prompt enhancement"]
+  pkg_client_ui_prompt_enhancement["client-ui-prompt-enhancement"]
   pkg_project_context["project-context"]
   svc_projectContext["ctx.projectContext<br/>Project documentation checkpoints"]
   pkg_todo_reconcile_driver["todo-reconcile-driver"]
@@ -468,6 +471,7 @@ flowchart LR
   pkg_plugin_package_inventory_deepseek --> svc_deepseekLlmApiExtensions
   pkg_plugin_recommendations --> svc_pluginRecommendations
   pkg_project_context --> svc_projectContext
+  pkg_prompt_enhancement --> svc_promptEnhancement
   pkg_ptc_runtime --> svc_ptcRuntime
   pkg_ptc_runtime_node --> svc_ptcRuntime
   pkg_pwsh_local --> svc_shell
@@ -622,6 +626,7 @@ flowchart LR
   svc_profileContext --> pkg_plugin_manager
   svc_projectContext --> pkg_client_ui_goal
   svc_projectContext --> pkg_todo_reconcile_driver
+  svc_promptEnhancement --> pkg_client_ui_prompt_enhancement
   svc_ptcRuntime --> pkg_tool_executor_ptc
   svc_ptcRuntime --> pkg_workflow_ptc
   svc_remoteAccess --> pkg_api_gateway
@@ -742,13 +747,14 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.promptEnhancement` | `service` | [`prompt-enhancement`](../packages/context/prompt-enhancement) | - | [`client-ui-prompt-enhancement`](../packages/client/ui-prompt-enhancement) | - | Prepares and records an auxiliary prompt request; the client owns consent, review, and submission. |
 | `ctx.projectContext` | `service` | [`project-context`](../packages/context/project-context) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | Owns logged turn-end documentation assessment and guarded project-guide updates. |
 | `ctx.todoPolicy` | `service` | [`tool-todo`](../packages/todo/tool-todo) | - | [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`work-handoff`](../packages/goal/work-handoff) | - | Owns list purpose, suspension, completion high-water marks and repair accounting. |
 | `ctx.workHandoffs` | `service` | [`work-handoff`](../packages/goal/work-handoff) | - | [`goal-round-driver`](../packages/goal/goal-round-driver), [`todo-reconcile-driver`](../packages/todo/todo-reconcile-driver), [`client-ui-goal`](../packages/client/ui-goal) | - | Saves checkpoints and host observations; explicit continuation retains source restrictions. |
+| `ctx.remoteConnection` | `service` | [`client-remote-connection`](../packages/client/remote-connection) | - | - | - | Owns QR invitations, approved pairing requests, Remote browser credentials and the anonymous login document; its Client provides approval controls and an independent Token-link shortcut. |
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/interaction/action-cards) | - | [`creation-recommendations`](../packages/extensions/creation-recommendations), [`client-ui-action-cards`](../packages/client/ui-action-cards) | - | Owns card state, user actions and status notices; card kinds register their actions and handlers. |
 | `ctx.orchestrations` | `service` | [`orchestration`](../packages/experimental/dsh-orchestration) | - | [`client-ui-orchestration`](../packages/experimental/client-ui-orchestration) | - | Owns logged session mode and pool settings; registers a model router on the subagent service, which retains child activation and teardown ownership. |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/extensions/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/client/ui-plugin-recommendations) | - | Reads the current catalog text of an official plugin card and enables the plugin through the profile plugin manager after a click. |
-| `ctx.remoteConnection` | `service` | [`client-remote-connection`](../packages/client/remote-connection) | - | - | - | Owns QR invitations, approved pairing requests, Remote browser credentials and the anonymous login document; its Client provides approval controls and an independent Token-link shortcut. |
 | `ctx.deepseekChatImport` | `service` | [`deepseek-chat-import`](../packages/experimental/deepseek-chat-import) | - | - | - | Serves the owner-only upload route that imports each conversation of a DeepSeek chat export as a Session, and the upload limits the browser checks first. |
 | `ctx.headlessStartup` | `core` | [`headless`](../packages/bundle/headless) | - | [`headless`](../packages/bundle/headless) | - | Supplies parsed task and run options to the headless runner and its sandbox-policy configuration. |
 | `ctx.cotTranslation` | `service` | [`experimental-client-ui-cot-translation`](../packages/experimental/client-ui-cot-translation) | - | - | - | Serves reasoning translations, reuses saved results, and joins ordinary Session activation for uncached inactive Sessions. |

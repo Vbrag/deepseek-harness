@@ -578,7 +578,7 @@ interface PoolRoute {
 type OrchestrationRouteExclusion =
   | 'unauthorized' | 'missing-required-capability' | 'missing-required-modality'
   | 'unknown-context' | 'context-capacity' | 'output-capacity' | 'rate-limit' | 'request-token-capacity'
-  | 'compaction-budget' | 'recovery-attempted'
+  | 'compaction-budget' | 'recovery-attempted' | 'billing-exhausted' | 'unsupported-reasoning' | 'route-unavailable'
 ```
 
 ```ts type-equiv

@@ -12,8 +12,8 @@
   en: 58040d6422d9ef9d
   zh: 7deda8fc45752e8c
 /cookbook-reviewing-persistence-type-changes/table-of-contents:
-  en: 5fca19ac2bb1ddac
-  zh: 00d78fe7e80ba4f7
+  en: d398abafc555ee7e
+  zh: eb55720e1566d7e1
 /cookbook-reviewing-persistence-type-changes/optional-inspect-the-change:
   en: 841a75ed33db17bd
   zh: ed4e80aae708bfb9
@@ -23,9 +23,9 @@
 /cookbook-reviewing-persistence-type-changes/2-check-commit-and-push:
   en: 91d39719ec40b0f7
   zh: 405116ae4c91b100
-/cookbook-reviewing-persistence-type-changes/update-an-unaccepted-record:
-  en: e3872db4ec9aad7d
-  zh: 18de4f6ebcb4b31c
+/cookbook-reviewing-persistence-type-changes/reconcile-competing-records:
+  en: 2db43c7d1e422e30
+  zh: 6b85733d77be26be
 /cookbook-reviewing-persistence-type-changes/dev-note:
   en: 5de1d6304e00c58f
   zh: 8d8225361cfa29e5

@@ -1,7 +1,7 @@
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
-import { chmod, mkdtemp, mkdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, rmdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -14,7 +14,7 @@ import LlmRuntime, { createUserMessage, type ToolCallId, type Message, type Mess
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import SessionStore, { type SessionId, SessionSeq, type SessionEvent, type SurfaceIntent, type UserMessage } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import AgentRegistry, { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentCarrier, agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { FileSystem, type FsTargetKey, type FsVersion } from '@deepseek-ai/dsh-fs'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -143,8 +143,30 @@ function claimInbox(agent: Agent, target: 'next-turn' | 'next-step'): UserMessag
 const requestTimeoutMs = process.platform === 'win32' ? 5_000 : 1_000
 
 async function tempRepo(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'dsh-workspace-context-'))
+  const root = await mkdtemp(join(tmpdir(), 'dsh-workspace-context-'))
+  // A temporary directory may itself be inside a contributor checkout.
+  await mkdir(join(root, '.git'))
+  return root
 }
+
+async function supportsFileSymlinks(): Promise<boolean> {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-file-symlink-probe-'))
+  try {
+    const target = join(root, 'target')
+    await writeFile(target, 'probe')
+    try {
+      await symlink(target, join(root, 'link'), 'file')
+      return true
+    } catch (error: unknown) {
+      if (process.platform === 'win32' && error instanceof Error && 'code' in error
+        && (error.code === 'EPERM' || error.code === 'EACCES')) return false
+      throw error
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+const fileSymlinksSupported = await supportsFileSymlinks()
 
 async function write(path: string, content: string): Promise<void> {
   await mkdir(join(path, '..'), { recursive: true })
@@ -433,7 +455,7 @@ describe('workspace context instruction discovery', () => {
     const home = await tempRepo()
     try {
       const cwd = join(root, 'pkg')
-      await mkdir(join(root, '.git'))
+      await mkdir(join(root, '.git'), { recursive: true })
       await write(join(home, 'AGENTS.md'), 'global guidance')
       await write(join(home, 'PROJECT_CONTEXT.md'), 'global knowledge is not a candidate')
       await write(join(root, 'PROJECT_CONTEXT.md'), 'project knowledge')
@@ -661,7 +683,7 @@ describe('workspace context instruction discovery', () => {
     }
   })
 
-  it('follows a symlinked instruction file to its target content', async () => {
+  it.skipIf(!fileSymlinksSupported)('follows a symlinked instruction file to its target content when supported', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
     const outside = await tempRepo()
@@ -685,7 +707,7 @@ describe('workspace context instruction discovery', () => {
     }
   })
 
-  it('follows a symlinked instruction file through ctx.fs to its target content', async () => {
+  it.skipIf(!fileSymlinksSupported)('follows a symlinked instruction file through ctx.fs when supported', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
     const outside = await tempRepo()
@@ -810,11 +832,16 @@ describe('workspace context instruction discovery', () => {
     if (process.platform === 'win32') vi.stubEnv('USERPROFILE', emptyHome)
     try {
       const cwd = join(root, 'child')
+      await rm(join(root, '.git'), { recursive: true })
       await mkdir(cwd, { recursive: true })
       await write(join(root, 'AGENTS.md'), 'parent without marker')
       await write(join(cwd, 'AGENTS.md'), 'cwd without marker')
 
-      const files = await discoverBaselineInstructionFiles({ cwd })
+      const checkoutRelative = relative(resolve(import.meta.dirname, '../../../..'), cwd)
+      const insideCheckout = checkoutRelative !== '..' && !checkoutRelative.startsWith(`..${sep}`) && !isAbsolute(checkoutRelative)
+      // Do not let an enclosing checkout's marker enter the no-marker fixture.
+      const files = await discoverBaselineInstructionFiles({ cwd,
+        ...(insideCheckout ? { projectRootMarkers: ['.dsh-missing-test-marker'] } : {}) })
 
       expect(files.map(file => file.displayPath)).toEqual(['AGENTS.md'])
       expect(files.map(file => file.absolutePath)).toEqual([join(cwd, 'AGENTS.md')])
@@ -1870,7 +1897,7 @@ describe('workspace context request injection', () => {
     try {
       const processHome = join(root, 'process-home')
       const rowHome = join(root, 'row-home')
-      await mkdir(join(root, '.git'))
+      await mkdir(join(root, '.git'), { recursive: true })
       await write(join(processHome, 'AGENTS.md'), 'process home instruction')
       await write(join(rowHome, 'AGENTS.md'), 'stale row instruction')
       pinHarnessHome(processHome)
@@ -4062,6 +4089,35 @@ describe('workspace context request injection', () => {
     }
   })
 
+  it('previews the bounded instructions without admitting a Session message', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'AGENTS.md'), 'Keep parser output stable.')
+      pinHarnessHome(home)
+      await mountAgentInstructions(ctx, { maxBytes: 65536 })
+      const agent = await stubAgent(root)
+      const before = agent.session.snapshotEvents()
+      const preview = await ctx.bail(agentCarrier(agent), 'agent-instructions/preview', {
+        agent, signal: new AbortController().signal,
+      })
+      expect(preview).toContain('Keep parser output stable.')
+      expect(agent.session.snapshotEvents()).toEqual(before)
+      const cancellation = new AbortController()
+      cancellation.abort(new Error('preview cancelled'))
+      await expect(ctx.bail(agentCarrier(agent), 'agent-instructions/preview', {
+        agent, signal: cancellation.signal,
+      })).rejects.toThrow('preview cancelled')
+    } finally {
+      vi.unstubAllEnvs()
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('keeps different session cwd instruction files isolated in one context', async () => {
     const repoA = await tempRepo()
     const repoB = await tempRepo()
@@ -4513,7 +4569,7 @@ describe('dynamic nested workspace context injection', () => {
     const home = await tempRepo()
     const ctx = new Context()
     try {
-      await mkdir(join(root, '.git'))
+      await mkdir(join(root, '.git'), { recursive: true })
       await write(join(root, 'PROJECT_CONTEXT.md'), 'Original project knowledge')
       await write(join(root, 'pkg/AGENTS.md'), 'Retained nested standing rules')
       pinHarnessHome(home)
@@ -5422,6 +5478,7 @@ describe('dynamic nested workspace context injection', () => {
   it('removes a previously loaded instruction file once it resolves to a directory through a symlink', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
+    let linked = false
     try {
       await mkdir(join(root, '.git'), { recursive: true })
       await write(join(root, 'pkg/AGENTS.md'), 'package rule')
@@ -5445,7 +5502,8 @@ describe('dynamic nested workspace context injection', () => {
       // removed; an unavailable classification would emit no change at all.
       await rm(join(root, 'pkg/AGENTS.md'))
       await mkdir(join(root, 'pkg/elsewhere'), { recursive: true })
-      await symlink(join(root, 'pkg/elsewhere'), join(root, 'pkg/AGENTS.md'))
+      await symlink(join(root, 'pkg/elsewhere'), join(root, 'pkg/AGENTS.md'), 'junction')
+      linked = true
       await executeToolFixture(ctx, {
         signal: testToolSignal,
         callId: brandString<ToolCallId>('read-after-symlink-dir'), name: 'read', arguments: { file_path: join('pkg', 'file.txt') }, agent,
@@ -5457,6 +5515,10 @@ describe('dynamic nested workspace context injection', () => {
       expect(blocksText(((await syncedAgentInstructions(ctx, agent))).content)).toContain(`Instructions removed: ${join('pkg', 'AGENTS.md')}`)
     } finally {
       vi.unstubAllEnvs()
+      if (linked) {
+        if (process.platform === 'win32') await rmdir(join(root, 'pkg/AGENTS.md'))
+        else await rm(join(root, 'pkg/AGENTS.md'))
+      }
       await rm(root, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })
     }

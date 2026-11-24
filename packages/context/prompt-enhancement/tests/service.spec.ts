@@ -2,20 +2,21 @@
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type {} from '@deepseek-ai/dsh-agent-instructions/discovery'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { LlmAdapter, type GenerateOptions, type LlmEgressId, type LlmResolvedModelInfo, type PreparedAdapterCall,
   type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import PromptEnhancement from '../src/index.ts'
+import PromptEnhancement, { PromptEnhancementRemote } from '../src/index.ts'
 import type { PromptEnhancementRequest } from '../src/types.ts'
 
 class Adapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
-  readonly entered = Promise.withResolvers<void>()
-  readonly release = Promise.withResolvers<void>()
-  readonly closed = Promise.withResolvers<void>()
+  readonly entered = Promise.withResolvers<undefined>()
+  readonly release = Promise.withResolvers<undefined>()
+  readonly closed = Promise.withResolvers<undefined>()
   hold = false
   output = 'Please fix the parser.'
   tokenLimit: number | undefined
@@ -41,26 +42,26 @@ class Adapter extends LlmAdapter {
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     try {
       this.requests.push(options)
-      this.entered.resolve()
+      this.entered.resolve(undefined)
       if (this.hold) await this.release.promise
       yield { type: 'block-end', index: 0, block: { type: 'text', text: this.output } }
       yield { type: 'finish', reason: { kind: 'stop' } }
-    } finally { this.closed.resolve() }
+    } finally { this.closed.resolve(undefined) }
   }
 }
 
-async function fixture() {
+async function fixture(config: { enabled?: boolean; maxPromptWords?: number; maxPromptCharacters?: number } = {}) {
   const ctx = new Context()
   const adapter = new Adapter()
   onTestFinished(async () => {
-    adapter.release.resolve()
+    adapter.release.resolve(undefined)
     if (adapter.requests.length > 0) await adapter.closed.promise
     await ctx.fiber.dispose()
   })
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['enhancer-test'], adapter)
-  await ctx.plugin(PromptEnhancement)
+  await ctx.plugin(PromptEnhancement, config)
   if (!ctx.promptEnhancement.catalogReady()) throw new Error('Generate the Session event catalog before running enhancement tests')
   const agent = (await ctx.agents.create({ sessionId: SessionId('enhancement-main'),
     agentOptions: { provider: 'enhancer-test', model: 'model' } })).agent
@@ -114,17 +115,45 @@ it('skips recognized credentials without logging or sending another copy', async
   expect(agent.session.snapshotEvents().some(event => event.type.startsWith('prompt-enhancement/'))).toBe(false)
 })
 
-it('coalesces simultaneous requests and preserves cancellation without dispatching a second call', async () => {
+it('skips an over-limit prompt before resolving the model or recording an attempt', async () => {
+  const { ctx, agent, adapter, request } = await fixture({ enabled: true })
+  const prompt = 'word '.repeat(101).trim()
+  const preview = vi.fn()
+  ctx.on('agent-instructions/preview', async () => { preview(); return undefined })
+  const providers = vi.spyOn(ctx.llm, 'listProviders')
+  const remote = new PromptEnhancementRemote(ctx)
+  const preflight = { sessionId: agent.id, id: request.id, original: prompt, displayOriginal: prompt }
+  expect(await remote.preflight(preflight, new AbortController().signal)).toEqual({ status: 'skipped', reason: 'length' })
+  expect(await ctx.promptEnhancement.enhance(
+    agent, { ...request, original: prompt, displayOriginal: prompt }, new AbortController().signal,
+  ))
+    .toEqual({ status: 'skipped', reason: 'length' })
+  expect(providers).not.toHaveBeenCalled()
+  expect(preview).not.toHaveBeenCalled()
+  expect(adapter.requests).toHaveLength(0)
+  expect(agent.session.snapshotEvents().some(event => event.type.startsWith('prompt-enhancement/'))).toBe(false)
+})
+
+it('applies configured limits to expanded as well as displayed text', async () => {
+  const { ctx, agent, adapter, request } = await fixture({ maxPromptWords: 2, maxPromptCharacters: 100 })
+  expect(await ctx.promptEnhancement.enhance(agent, { ...request, original: 'one two three', displayOriginal: 'one' }, new AbortController().signal))
+    .toEqual({ status: 'skipped', reason: 'length' })
+  expect(await ctx.promptEnhancement.enhance(agent, { ...request, original: 'one', displayOriginal: 'one two three' }, new AbortController().signal))
+    .toEqual({ status: 'skipped', reason: 'length' })
+  expect(adapter.requests).toHaveLength(0)
+})
+
+it.each([undefined, 'cancelled by the user'])('coalesces requests and preserves cancellation reason %s', async (reason) => {
   const { ctx, agent, adapter, request } = await fixture()
   adapter.hold = true
   const cancellation = new AbortController()
   const first = ctx.promptEnhancement.enhance(agent, request, cancellation.signal)
   await adapter.entered.promise
   const second = ctx.promptEnhancement.enhance(agent, request, cancellation.signal)
-  cancellation.abort()
+  cancellation.abort(reason)
   expect(await first).toEqual({ status: 'cancelled' })
   expect(await second).toEqual({ status: 'cancelled' })
-  adapter.release.resolve()
+  adapter.release.resolve(undefined)
   await adapter.closed.promise
   expect(adapter.requests).toHaveLength(1)
 })

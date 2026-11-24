@@ -17,6 +17,32 @@ function restore(source: unknown, version: 3 | 4 = 4) {
 }
 
 describe('V4 source admission', () => {
+  it.each([
+    { kind: 'user', clientTimeZone: 'Europe/Berlin' },
+    { kind: 'todo-reconcile' },
+    { kind: 'project-context', sourceTurn: 1 },
+    { kind: 'work-handoff', sourceSessionId: 'source-session', handoffId: 'handoff' },
+    { kind: 'cua-held-inputs', form: 'notice', summary: 'Input held.' },
+  ])('retains merged-branch attribution %j in every affected message slot', (source) => {
+    const message: SessionFormatJsonObject = { id: 'u', role: 'user', source, content: [{ type: 'text', text: 'hello' }] }
+    const rows: SessionFormatEvent[] = [
+      { type: 'user/message', seq: 0, time: 1, surfaceOp: 'append', data: message },
+      { type: 'developer/message', seq: 0, time: 1, surfaceOp: 'append',
+        data: { turn: 1, step: 1, message: { ...message, role: 'developer' } } },
+      { type: 'agent/inbox/spliced', seq: 0, time: 1, data: { target: 'next-turn', start: 0, inserted: [message] } },
+      { type: 'session/title-llm-request', seq: 0, time: 1,
+        data: { titleProvider: 'title', messageSeqs: [], route: { provider: 'mock', model: 'mock' },
+          system: 'title', messages: [message], maxTokens: 20 } },
+    ]
+    for (const row of rows) {
+      const encoded = sessionFormatCatalog.encodeCurrentEvent(row)
+      const decoder = releasedV4SessionFormatCodec.createDecoder(header, 'strict')
+      const output = new SessionFormatEventCollector()
+      decoder.decodeRow(encoded, output)
+      expect(output.values).toEqual([row])
+    }
+  })
+
   it.each(['constructor', 'toString', '__proto__'])('migrates external producer %s without interpreting inherited object keys', (plugin) => {
     const before = JSON.parse(`{"kind":"plugin","plugin":"${plugin}","__proto__":{"tag":"metadata"},"nested":{"kind":"plugin","plugin":"opaque"}}`) as SessionFormatJsonObject
     const expected = JSON.parse(`{"kind":"plugin:${plugin}","__proto__":{"tag":"metadata"},"nested":{"kind":"plugin","plugin":"opaque"}}`) as SessionFormatJsonObject
