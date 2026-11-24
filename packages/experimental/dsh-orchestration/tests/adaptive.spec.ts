@@ -796,20 +796,21 @@ it('retains a user selection made during a failing lead request for the next ste
   }, text('continued on the selected model')])
   test.adapter.facts.set('lead', { billing: { free: false } })
   test.adapter.facts.set('visual', { billing: { free: true } })
+  const selectedRoute = { provider: 'models', model: 'visual' }
   try {
     test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
     await entered.promise
-    test.parent.model.select({ provider: 'models', model: 'visual' })
+    test.parent.model.select(selectedRoute)
     release.resolve(undefined)
     await test.parent.whenIdle()
     expect(test.adapter.requests.map(request => request.model)).toEqual(['lead'])
-    expect(test.parent.model.current()).toMatchObject(pool[0])
-    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'BILLING_EXHAUSTED', route: pool[0] })
+    expect(test.parent.model.current()).toMatchObject(selectedRoute)
+    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'BILLING_EXHAUSTED', route: selectedRoute })
     expect(test.parent.session.snapshotEvents().filter(event => event.type === 'model/selection')).toHaveLength(1)
     test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue with my selection.' }], source: { kind: 'user' } }))
     await test.parent.whenIdle()
     expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual'])
-    expect(test.state(test.parent)).toMatchObject({ status: 'idle', route: pool[0] })
+    expect(test.state(test.parent)).toMatchObject({ status: 'idle', route: selectedRoute })
   } finally {
     release.resolve(undefined)
     await test.parent.whenIdle()
