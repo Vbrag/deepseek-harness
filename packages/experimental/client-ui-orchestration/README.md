@@ -38,7 +38,7 @@ The panel reports whether the write succeeded, failed, or became stale. A failed
 
 ### Follow model changes
 
-Open the conversation's session panel to see **Orchestration models**. The lead and each observed local child show the model used by the last recorded request, any selected next model or requested preference, the previous model, and the routing reason. Queued changes, **Changing model**, **Waiting for capacity**, and blocked changes have distinct labels. A selected or requested route becomes **Last used** only when the host publishes a request using it; a session with no recorded request says **No request yet**.
+Open the conversation's session panel to see **Orchestration models**. The lead and each observed local child show the model used by the last recorded request, any selected next model or requested preference, the previous model, and the routing reason. The lead keeps the model selected in the composer; if it is blocked, the panel suggests correcting the issue or selecting another model before retrying. Queued changes, **Changing model**, **Waiting for capacity**, and blocked changes have distinct labels. A selected or requested route becomes **Last used** only when the host publishes a request using it; a session with no recorded request says **No request yet**.
 
 -----
 

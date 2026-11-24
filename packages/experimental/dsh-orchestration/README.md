@@ -32,7 +32,7 @@ Select Orchestration in the conversation composer or run /orchestration on. Run 
 
 The selected mode is logged in each Session. Fresh local children inherit the parent's mode captured when their delegation was admitted, including through deeper delegation chains; changing the parent while a child is starting does not change that captured mode. Forks and external providers retain their existing routing behavior.
 
-Child selections must fit the recorded child-model authorization. The configured pool also bounds lead recovery. Saving another pool changes candidates without widening an existing child grant; a historical Session without recorded authorization permits only its parent route.
+The lead uses the session's selected model, including when it is outside the child pool. A user's later model selection takes effect at the next step. Child selections must fit the recorded child-model authorization. Saving another pool changes candidates without widening an existing child grant; a historical Session without recorded authorization permits only its parent route.
 
 ### Task assessment
 
@@ -58,9 +58,9 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 The service intersects the pool with recorded authorization, then checks strict task capabilities, anticipated modalities, and context capacity. A known maximum output capacity must also cover the response allowance; an unknown output capacity imposes no additional limit. The current transport admits text and images. Exact adapter metadata takes precedence over curated gateway facts: an explicitly text-only route cannot serve an image task. Curated facts apply only to the known gateway provider; another provider using the same model id requires its own verified specialty declarations and capacity metadata.
 
-Local children can accept an explicit assessed phase and durable checkpoint through `requestModelChange()`. Recoverable request failures can also select another eligible route for a lead or child without repeating completed tools. Billing exhaustion suppresses routes sharing the reported budget; unknown billing independence is treated conservatively, while known-free routes remain eligible. The settings panel can clear observed billing failures after account correction. `maxAutomaticReassignments` defaults to 2 per recovery episode; exhausted recovery records a blocked state and captures a handoff when available.
+Local children can accept an explicit assessed phase and durable checkpoint through `requestModelChange()`. Recoverable child failures can select another eligible route without repeating completed tools. The lead remains on its selected route: bounded same-model recovery is allowed, and an unrecoverable failure records a blocked state until the user retries or selects another model. Normal provider retry policies can delegate to compaction; unbounded `always` retry policies stop at the lead's first failure. Billing exhaustion suppresses routes sharing the reported budget; unknown billing independence is treated conservatively, while known-free routes remain eligible. The settings panel can clear observed billing failures after account correction. `maxAutomaticReassignments` defaults to 2 per child recovery episode; exhausted recovery captures a handoff when available.
 
-When an ongoing request itself approaches its TPM limit and automatic compaction is enabled, the current route gets the compaction attempt before reassignment. An irreducible oversized request can then select another eligible route; an ordinary shared-queue wait keeps the existing availability policy.
+When an ongoing request itself approaches its TPM limit and automatic compaction is enabled, the current route gets the compaction attempt before reassignment. An irreducible oversized child request can then select another eligible route; the lead remains blocked on its chosen route. An ordinary shared-queue wait keeps the existing availability policy.
 
 Capable routes with ready or unknown queue capacity rank by active assignments, confirmed readiness, preferred capabilities, recency, and stable pool order. Reservations and active turns contribute load across Sessions. Rate-limited routes do not block another eligible route. When all capable routes are busy, admission waits cancellably and rechecks the shared queue at most every `availabilityPollMs` milliseconds (default 1000). A route with a known unavailable model or credential is excluded; unexpected metadata failures remain visible.
 
@@ -93,7 +93,7 @@ The orchestration projection folds applied mode, durable pending requests, and h
 
 #### What the model sees
 
-The logged `orchestration-phase` context explains `reassign_subagent`, phase assessments, checkpoints, explicit generation caps, and request-only interruption. Automatic recovery can change the lead or a local child model within the configured pool and applicable permissions. Active mode adds logged guidance to prefer useful parallel delegation within the user’s instructions and existing delegation limits. The parent handles small or sequential work directly; routing adds no planning request.
+The logged `orchestration-phase` context explains `reassign_subagent`, phase assessments, checkpoints, explicit generation caps, and request-only interruption. Automatic recovery can change a local child model within the configured pool and applicable permissions; the lead retains the session's selected model. Active mode adds logged guidance to prefer useful parallel delegation within the user’s instructions and existing delegation limits. The parent handles small or sequential work directly; routing adds no planning request.
 
 ##### Orchestration runtime guidance
 

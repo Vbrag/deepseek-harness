@@ -74,7 +74,7 @@ export interface OrchestrationConfig {
   readonly availabilityPollMs?: number
   /** Initial mode logged for a session with no recorded selection; defaults to false. */
   readonly defaultToOrchestrator?: boolean
-  /** Maximum model changes per recovery episode; defaults to 2. Explicit phases start a new episode. */
+  /** Maximum child model changes per recovery episode; defaults to 2. Explicit phases start a new episode. */
   readonly maxAutomaticReassignments?: number
   /** Consecutive output-limit responses without text or tools before recovery; defaults to 2. */
   readonly maxEmptyOutputLimits?: number

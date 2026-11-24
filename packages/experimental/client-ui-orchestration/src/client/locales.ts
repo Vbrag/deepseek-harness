@@ -20,6 +20,9 @@ export const zh = {
   routingChanging: '正在切换模型',
   routingWaiting: '等待可用容量',
   routingBlocked: '模型切换受阻',
+  routingLeadBlocked: '编排主模型受阻',
+  routingLeadRetryHint: '请解决问题或选择其他模型，然后重试。',
+  routingLeadBillingHint: '请修正计费问题并在模型池设置中重置计费状态，或选择其他模型后重试。',
   routingReason: '原因',
   title: '编排模型池',
   subtitle: '从提供商目录中勾选用于多模型编排的模型池。',
@@ -72,6 +75,9 @@ export const en = {
   routingChanging: 'Changing model',
   routingWaiting: 'Waiting for capacity',
   routingBlocked: 'Model change blocked',
+  routingLeadBlocked: 'Orchestrator blocked',
+  routingLeadRetryHint: 'Correct the issue or select another model, then retry.',
+  routingLeadBillingHint: 'Correct billing and reset billing health in model-pool settings, or select another model and retry.',
   routingReason: 'Reason',
   title: 'Orchestration model pool',
   subtitle: 'Pick the multi-model pool for Orchestration mode from the provider catalog.',
@@ -120,6 +126,9 @@ export const ja = {
   routingChanging: 'モデルを変更中',
   routingWaiting: '利用可能な容量を待機中',
   routingBlocked: 'モデル変更がブロックされました',
+  routingLeadBlocked: 'オーケストレーターが停止しました',
+  routingLeadRetryHint: '問題を修正するか別のモデルを選択してから、再試行してください。',
+  routingLeadBillingHint: '請求を修正しモデルプール設定で請求状態をリセットするか、別のモデルを選んで再試行してください。',
   routingReason: '理由',
 } satisfies Record<OrchestrationKey, string>
 /** Spanish dictionary: reuse English pending a native pass. */
@@ -136,6 +145,9 @@ export const es = {
   routingChanging: 'Cambiando de modelo',
   routingWaiting: 'Esperando capacidad disponible',
   routingBlocked: 'Cambio de modelo bloqueado',
+  routingLeadBlocked: 'Orquestador bloqueado',
+  routingLeadRetryHint: 'Corrige el problema o selecciona otro modelo y vuelve a intentarlo.',
+  routingLeadBillingHint: 'Corrige la facturación y restablece su estado en los ajustes del grupo, o selecciona otro modelo y vuelve a intentarlo.',
   routingReason: 'Motivo',
 } satisfies Record<OrchestrationKey, string>
 /** French dictionary: reuse English pending a native pass. */
@@ -152,6 +164,9 @@ export const fr = {
   routingChanging: 'Changement de modèle en cours',
   routingWaiting: 'En attente de capacité disponible',
   routingBlocked: 'Changement de modèle bloqué',
+  routingLeadBlocked: 'Orchestrateur bloqué',
+  routingLeadRetryHint: 'Corrigez le problème ou choisissez un autre modèle, puis réessayez.',
+  routingLeadBillingHint: 'Corrigez la facturation et réinitialisez son état dans les paramètres du groupe, ou choisissez un autre modèle et réessayez.',
   routingReason: 'Motif',
 } satisfies Record<OrchestrationKey, string>
 /** German dictionary: reuse English pending a native pass. */
@@ -168,6 +183,9 @@ export const de = {
   routingChanging: 'Modell wird gewechselt',
   routingWaiting: 'Warten auf freie Kapazität',
   routingBlocked: 'Modellwechsel blockiert',
+  routingLeadBlocked: 'Orchestrator blockiert',
+  routingLeadRetryHint: 'Beheben Sie das Problem oder wählen Sie ein anderes Modell und versuchen Sie es erneut.',
+  routingLeadBillingHint: 'Korrigieren Sie die Abrechnung und setzen Sie deren Status in den Modellpool-Einstellungen zurück, oder wählen Sie ein anderes Modell.',
   routingReason: 'Grund',
 } satisfies Record<OrchestrationKey, string>
 /** Russian dictionary: reuse English pending a native pass. */
@@ -184,6 +202,9 @@ export const ru = {
   routingChanging: 'Смена модели',
   routingWaiting: 'Ожидание свободной мощности',
   routingBlocked: 'Смена модели заблокирована',
+  routingLeadBlocked: 'Оркестратор заблокирован',
+  routingLeadRetryHint: 'Устраните проблему или выберите другую модель и повторите попытку.',
+  routingLeadBillingHint: 'Исправьте оплату и сбросьте её состояние в настройках пула либо выберите другую модель и повторите попытку.',
   routingReason: 'Причина',
 } satisfies Record<OrchestrationKey, string>
 /** Portuguese dictionary: reuse English pending a native pass. */
@@ -200,5 +221,8 @@ export const pt = {
   routingChanging: 'Alterando o modelo',
   routingWaiting: 'Aguardando capacidade disponível',
   routingBlocked: 'Mudança de modelo bloqueada',
+  routingLeadBlocked: 'Orquestrador bloqueado',
+  routingLeadRetryHint: 'Corrija o problema ou selecione outro modelo e tente novamente.',
+  routingLeadBillingHint: 'Corrija o faturamento e redefina seu estado nas configurações do grupo, ou selecione outro modelo e tente novamente.',
   routingReason: 'Motivo',
 } satisfies Record<OrchestrationKey, string>

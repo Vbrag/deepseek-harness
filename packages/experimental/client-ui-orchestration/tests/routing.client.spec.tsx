@@ -27,7 +27,9 @@ function routing(patch: Partial<OrchestrationRoutingState> = {}): OrchestrationR
 }
 
 function fixture(value = routing(), dictionary = en) {
-  const sessions = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready',
+  const sessions = createSnapshotStore<SessionListState>({ ids: [], byId: {
+    [ROOT]: { id: ROOT, displayTitle: 'Lead', running: false, blank: false, retainedBy: {}, updatedAt: 0 },
+  }, phase: 'ready',
     projectionsBySession: {
       [ROOT]: { state: 'ready', error: null, values: { subagentCatalog: [
         { id: CHILD, createdAt: 0, mode: 'continuable', label: 'Implement change', name: 'coder' },
@@ -64,6 +66,38 @@ it('shows a blocked lead recovery alongside its child', () => {
   } } })
   expect(screen.getByRole('heading', { name: en.routingLead })).toBeTruthy()
   expect(screen.getByText(/BILLING_EXHAUSTED/u)).toBeTruthy()
+  expect(screen.getByText(en.routingLeadBlocked)).toBeTruthy()
+  expect(screen.getByText(en.routingLeadBillingHint)).toBeTruthy()
+  const lead = view.container.querySelector(`[data-orchestration-child="${ROOT}"]`)
+  expect(lead?.querySelector('[data-orchestration-current]')?.textContent).toBe('models/current')
+  expect(lead?.querySelector('[data-orchestration-selected]')?.textContent).toBe('models/selected-next')
+})
+
+it.each([en, zh, ja, es, fr, de, ru, pt])('localizes the blocked lead recovery guidance', (dictionary) => {
+  const view = fixture(routing(), dictionary)
+  const state = view.sessions.getSnapshot()
+  view.set({ ...state.projectionsBySession, [ROOT]: { state: 'ready', error: null, values: {
+    orchestrationRouting: routing({ status: 'blocked', reason: 'SERVER' }),
+    modelSelection: { lastUsed: CURRENT, next: CURRENT },
+  } } })
+  expect(screen.getByText(dictionary.routingLeadBlocked)).toBeTruthy()
+  expect(screen.getByText(dictionary.routingLeadRetryHint)).toBeTruthy()
+  expect(screen.queryByText(dictionary.routingLeadBillingHint)).toBeNull()
+})
+
+it('does not present a viewed subagent as a fixed lead', () => {
+  const view = fixture()
+  const state = view.sessions.getSnapshot()
+  const summary = state.byId[ROOT]
+  if (summary === undefined) throw new Error('Missing session summary')
+  act(() => { view.sessions.set({ ...state, byId: { ...state.byId, [ROOT]: { ...summary, origin: 'subagent' } },
+    projectionsBySession: { ...state.projectionsBySession, [ROOT]: { state: 'ready', error: null, values: {
+      orchestrationRouting: routing({ status: 'blocked', reason: 'SERVER' }),
+      modelSelection: { lastUsed: CURRENT, next: NEXT },
+    } } } }) })
+  expect(screen.getByText(en.routingBlocked)).toBeTruthy()
+  expect(screen.queryByText(en.routingLeadBlocked)).toBeNull()
+  expect(screen.queryByText(en.routingLeadRetryHint)).toBeNull()
 })
 
 it.each([

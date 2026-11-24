@@ -41,27 +41,33 @@ export function OrchestrationRouting({ sessionId, useSessions, t }: Orchestratio
     const routing = snapshot.values.orchestrationRouting
     if (routing === undefined || (routing.assessment === null && routing.status === 'idle')) return []
     return [{ id: child.id, name: 'name' in child ? child.name ?? child.id : summaries[child.id]?.displayTitle ?? child.id,
-      routing, current: snapshot.values.modelSelection?.lastUsed ?? null }]
+      routing, current: snapshot.values.modelSelection?.lastUsed ?? null, selectedRoute: routing.route, isLead: false }]
   })
   const lead = projections[sessionId]
+  const leadSummary = summaries[sessionId]
+  const isLead = leadSummary !== undefined && leadSummary.origin !== 'subagent'
   const leadRouting = lead?.state === 'ready' ? lead.values.orchestrationRouting : undefined
   if (leadRouting !== undefined && (leadRouting.assessment !== null || leadRouting.status !== 'idle')) {
     rows.unshift({ id: sessionId, name: t('routingLead'), routing: leadRouting,
-      current: lead?.state === 'ready' ? lead.values.modelSelection?.lastUsed ?? null : null })
+      current: lead?.state === 'ready' ? lead.values.modelSelection?.lastUsed ?? null : null,
+      selectedRoute: isLead && lead?.state === 'ready' ? lead.values.modelSelection?.next ?? leadRouting.route : leadRouting.route,
+      isLead })
   }
   if (rows.length === 0) return null
   return (
     <section className={css.section} aria-label={t('routingTitle')} data-orchestration-routing>
       <h3 className={css.title}>{t('routingTitle')}</h3>
       <ul className={css.list}>
-        {rows.map(({ id, name, routing, current }) => {
-          const selected = same(routing.route, current) ? null : routing.route
+        {rows.map(({ id, name, routing, current, selectedRoute, isLead }) => {
+          const selected = same(selectedRoute, current) ? null : selectedRoute
           const requested = routing.request?.preferredRoute
+          const leadBlocked = isLead && routing.status === 'blocked'
+          const billingBlocked = ['BILLING_EXHAUSTED', 'BILLING_UNAVAILABLE', 'ACCOUNT_QUOTA', 'QUOTA'].includes(routing.reason)
           return (
             <li key={id} className={css.row} data-orchestration-child={id} data-status={routing.status}>
               <div className={css.heading}>
                 <h4 className={css.name}>{name}</h4>
-                <span className={css.status}>{t(statusKeys[routing.status])}</span>
+                <span className={css.status}>{t(leadBlocked ? 'routingLeadBlocked' : statusKeys[routing.status])}</span>
               </div>
               <dl className={css.routes}>
                 <dt>{t('routingCurrent')}</dt><dd data-orchestration-current>{current === null ? t('routingNoRequest') : routeLabel(current)}</dd>
@@ -72,6 +78,7 @@ export function OrchestrationRouting({ sessionId, useSessions, t }: Orchestratio
                 {routing.previous !== null && <><dt>{t('routingPrevious')}</dt><dd>{routeLabel(routing.previous)}</dd></>}
               </dl>
               {routing.reason !== '' && <p className={css.reason}><span>{t('routingReason')}: </span>{routing.reason}</p>}
+              {leadBlocked && <p className={css.reason}>{t(billingBlocked ? 'routingLeadBillingHint' : 'routingLeadRetryHint')}</p>}
             </li>
           )
         })}

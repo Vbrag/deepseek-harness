@@ -303,7 +303,8 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
-  private async preStep(target: InboxTarget, position: { turn: number; step: number }, offered?: UserMessage[]): Promise<PreparedStep> {
+  private async preStep(target: InboxTarget, position: { turn: number; step: number }, offered?: UserMessage[],
+    admitted?: ReadonlySet<UserMessage['id']>): Promise<PreparedStep> {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
@@ -315,7 +316,8 @@ export class ReactLoopAgent implements Agent {
       } catch (error: unknown) {
         const selection = this.model.current() ?? previousSelection
         if (selection === undefined) throw error
-        const action = await this.requestError(error, selection, position, signal, 'step-preparation', undefined, undefined, claimed)
+        const pending = admitted === undefined ? claimed : claimed.filter(message => !admitted.has(message.id))
+        const action = await this.requestError(error, selection, position, signal, 'step-preparation', undefined, undefined, pending)
         if (action === undefined) throw error
         continue
       }
@@ -350,7 +352,8 @@ export class ReactLoopAgent implements Agent {
         return { ...decision, assembly, selection, toolSet }
       } catch (error: unknown) {
         toolSet?.dispose()
-        const action = await this.requestError(error, selection, position, signal, 'step-preparation', undefined, undefined, claimed)
+        const pending = admitted === undefined ? claimed : claimed.filter(message => !admitted.has(message.id))
+        const action = await this.requestError(error, selection, position, signal, 'step-preparation', undefined, undefined, pending)
         if (action === undefined) throw error
       }
     }
@@ -586,7 +589,7 @@ export class ReactLoopAgent implements Agent {
       const interruption = abort.signal.aborted ? reason instanceof Error ? reason.message : 'The model request was interrupted.' : undefined
       const action = await this.requestError(error, decision.selection, position, turnSignal,
         started ? 'stream' : 'request-preparation', preparedCall?.retryPolicy, interruption,
-        admissions.offerMessages ? decision.messages : undefined)
+        admissions.offerMessages ? decision.messages.filter(message => !admissions.ids.has(message.id)) : undefined)
       if (action === undefined) {
         if (interruption !== undefined) throw new HarnessError(interruption, 'REQUEST_INTERRUPTED', { cause: error })
         throw error
@@ -606,7 +609,7 @@ export class ReactLoopAgent implements Agent {
     let decision = initial
     const reprepare = async (): Promise<boolean> => {
       decision.toolSet.dispose()
-      const next = await this.preStep('next-step', { turn, step }, offered)
+      const next = await this.preStep('next-step', { turn, step }, offered, admissions.ids)
       if (next.kind === 'reject') return false
       decision = next
       admissions.offerMessages = true

@@ -20,6 +20,7 @@ import LlmRuntime, {
 } from '@deepseek-ai/dsh-llm'
 import type {
   LlmCallConfig,
+  LlmBillingBudgetId,
   ConfigureCall,
   LlmModelContext,
   LlmModelInfo,
@@ -1362,6 +1363,7 @@ describe('LlmRuntime', () => {
         return Promise.resolve({
           model: {
             provider, id: model, name: model, inputModalities: ['text'] as const,
+            billing: { free: captured === 'first', budgetId: brandString<LlmBillingBudgetId>(captured) },
             reasoning: {
               efforts: [{ id: brandString<ReasoningEffortId>(captured), name: captured }],
             },
@@ -1382,6 +1384,8 @@ describe('LlmRuntime', () => {
     expect(prepared.config.reasoningEffort).toBe('first')
     expect(prepared.inputModalities).toEqual(['text'])
     expect(Object.isFrozen(prepared.inputModalities)).toBe(true)
+    expect(prepared.billing).toEqual({ free: true, budgetId: 'first' })
+    expect(Object.isFrozen(prepared.billing)).toBe(true)
     await collect(prepared.stream({ ...prepared.config, messages: [] }))
     expect(dispatched).toBe('first')
   })

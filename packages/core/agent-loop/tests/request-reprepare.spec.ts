@@ -118,6 +118,35 @@ it('reprepares a logged request before dispatch without duplicating the user inp
   expect(test.agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
 })
 
+it.each(['step-preparation', 'request-preparation'] as const)(
+  'excludes admitted input from a %s failure after repreparation', async (stage) => {
+    const adapter = new MockAdapter([fail()])
+    const test = await fixture(adapter)
+    const failure = new LlmError('preparation failed', 'INVALID_MODEL_INFO')
+    let failPreparation = false
+    const pending: number[] = []
+    test.ctx.on('agent/step-preparing', () => {
+      if (failPreparation && stage === 'step-preparation') throw failure
+    })
+    test.ctx.on('agent/request', (_payload, next) => {
+      if (failPreparation && stage === 'request-preparation') throw failure
+      return next()
+    })
+    test.ctx.on('agent/request-error', ({ failure: result, messages }, next) => {
+      if (result.code === 'RATE_LIMIT') {
+        failPreparation = true
+        return Promise.resolve({ kind: 'reprepare' as const })
+      }
+      if (result.code === 'INVALID_MODEL_INFO') pending.push((messages ?? []).filter(message => message.source.kind === 'user').length)
+      return next()
+    })
+    await test.run()
+    expect(pending).toEqual([0])
+    expect(userInputs(test.agent)).toHaveLength(1)
+    expect(adapter.requests.map(request => request.model)).toEqual(['vision'])
+  },
+)
+
 it('keeps ordinary retry on its captured route even when a future selection changes', async () => {
   const adapter = new MockAdapter([fail(), textResponse('retried')])
   const test = await fixture(adapter)

@@ -74,7 +74,7 @@ const handle = await ctx.agents.create({
 
 每个步骤发送派生 Session 历史及其可见工具 schema。系统消息包含初始指令及后续段更新。工具调用经过受守卫的流水线，每项模型可见事实都在派生请求前记录。循环把完整的原始调用批次传给 `ctx.tools.execute()`；内置执行器保留模型顺序的结果和独占屏障。取消会中止当前活动，并在未设置 `keepInbox` 时清空待处理工作；中断的流会结算已送达文本。
 
-每次组装之前，循环先等待串行 `agent/step-preparing` 监听器，再捕获模型选择。结构化准备失败会在准入前连同已领取的输入交给 `agent/request-error`。记录并冻结请求后，`agent/request-ready` 可在分派前因持久变更请求重新准备。恢复动作 `retry` 复用已准入的组装结果；`reprepare` 在同一步骤内重新准备并组装工具与提示词，不重复已提交的用户消息或已完成工具。`agent/request-finished` 在成功响应提交或执行工具之前运行。`interruptRequest()` 仅取消活跃模型请求，并向恢复策略报告 `REQUEST_INTERRUPTED`；轮次取消仍然优先。
+每次组装之前，循环先等待串行 `agent/step-preparing` 监听器，再捕获模型选择。结构化准备失败会连同已领取但尚未准入的输入交给 `agent/request-error`，重新准备后也保持此规则。终态恢复负责人可以在 Session 中保留该输入。记录并冻结请求后，`agent/request-ready` 可在分派前因持久变更请求重新准备。恢复动作 `retry` 复用已准入的组装结果；`reprepare` 在同一步骤内重新准备并组装工具与提示词，不重复已提交的用户消息或已完成工具。`agent/request-finished` 在成功响应提交或执行工具之前运行。`interruptRequest()` 仅取消活跃模型请求，并向恢复策略报告 `REQUEST_INTERRUPTED`；轮次取消仍然优先。
 
 -----
 

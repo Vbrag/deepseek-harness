@@ -9,8 +9,8 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createUserMessage, LlmAdapter, ToolCallId, type GenerateOptions, type ImageBlock, type LlmBillingBudgetId, type LlmCallConfig, type LlmQueueAvailability,
-  type LlmQueueRequest, type LlmRequestTokenBudget, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmAdapter, LlmError, resolveRetryPolicy, ToolCallId, type GenerateOptions, type ImageBlock, type LlmBillingBudgetId, type LlmCallConfig, type LlmQueueAvailability,
+  type LlmQueueRequest, type LlmRequestTokenBudget, type LlmResolvedModelInfo, type ResolvedRetryPolicy, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { appendPluginRecord, pluginRecordOf, Session, SessionId, SessionLogOffset, type EpochHeader, type SessionSeq } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents, { type SubagentActivationSpec, type SubagentTaskAssessment } from '@deepseek-ai/dsh-subagent'
@@ -47,8 +47,12 @@ class Adapter extends LlmAdapter {
   readonly facts = new Map<string, Partial<LlmResolvedModelInfo>>()
   readonly queues = new Map<string, LlmQueueAvailability>()
   readonly tokenLimits = new Map<string, number>()
-  constructor(private readonly script: Script[]) { super() }
+  readonly failures = new Map<string, LlmError>()
+  constructor(private readonly script: Script[], private readonly retryPolicy?: ResolvedRetryPolicy) { super() }
+  override providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined { return this.retryPolicy }
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    const failure = this.failures.get(model)
+    if (failure !== undefined) throw failure
     return { provider, id: model, name: model, inputModalities: ['text', 'image'],
       context: { contextWindow: 400_000 }, defaultMaxTokens: 128_000, maxOutputTokens: 131_072, ...this.facts.get(model) }
   }
@@ -69,7 +73,8 @@ class Adapter extends LlmAdapter {
   }
 }
 
-async function fixture(script: Script[], config: OrchestrationConfig = {}, persistent = false, granted?: PoolRoute[]) {
+async function fixture(script: Script[], config: OrchestrationConfig = {}, persistent = false, granted?: PoolRoute[],
+  retryPolicy?: ResolvedRetryPolicy) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
@@ -85,7 +90,7 @@ async function fixture(script: Script[], config: OrchestrationConfig = {}, persi
   await ctx.plugin(Subagents)
   await ctx.plugin(Spawn, { providerName: 'spawn' })
   await ctx.plugin(ImageOffload)
-  const adapter = new Adapter(script)
+  const adapter = new Adapter(script, retryPolicy)
   ctx.llm.registerAdapter(['models'], adapter)
   const { routeCapabilities, ...policy } = config
   const defaults: NonNullable<OrchestrationConfig['routeCapabilities']> = [
@@ -517,7 +522,32 @@ it('shares billing failures between simultaneous children', async () => {
   }
 })
 
-it('moves an ongoing lead off a budget exhausted by a child before its next request', async () => {
+it('records the failed child billing budget from the dispatched adapter generation', async () => {
+  const exhausted = brandString<LlmBillingBudgetId>('exhausted')
+  const replacement = brandString<LlmBillingBudgetId>('replacement')
+  const free = { provider: 'models', model: 'free' }
+  let adapter: Adapter | undefined
+  const test = await fixture([async () => {
+    if (adapter === undefined) throw new Error('Adapter not ready')
+    adapter.facts.set('visual', { billing: { free: false, budgetId: replacement } })
+    return [{ type: 'finish', reason: { kind: 'error', failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }]
+  }, text('recovered')], {
+    pool: [...pool, free], routeCapabilities: [...pool, free].map(route => ({ ...route, capabilities: ['coding'] })),
+  })
+  adapter = test.adapter
+  adapter.facts.set('visual', { billing: { free: false, budgetId: exhausted } })
+  adapter.facts.set('solver', { billing: { free: false, budgetId: exhausted } })
+  adapter.facts.set('free', { billing: { free: true } })
+  const activation = await test.start()
+  try {
+    expect((await activation.result).stopReason).toBe('completed')
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['visual', 'free'])
+  } finally {
+    await activation.dispose()
+  }
+})
+
+it('blocks the selected lead after a child exhausts their shared budget and resumes it after reset', async () => {
   const test = await fixture([tool('hold_lead'), [{ type: 'finish', reason: { kind: 'error',
     failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }], text('child recovered'), text('lead recovered')])
   const budgetId = brandString<LlmBillingBudgetId>('shared-account')
@@ -536,8 +566,15 @@ it('moves an ongoing lead off a budget exhausted by a child before its next requ
     expect((await activation.result).stopReason).toBe('completed')
     release.resolve(undefined)
     await test.parent.whenIdle()
-    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual', 'solver', 'solver'])
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual', 'solver'])
     expect(test.parent.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'BILLING_UNAVAILABLE', route: { provider: 'models', model: 'lead' } })
+    test.ctx.orchestrations.resetBillingHealth()
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Resume after correcting billing.' }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual', 'solver', 'lead'])
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+    expect(test.state(test.parent)).toMatchObject({ status: 'idle', route: { provider: 'models', model: 'lead' } })
   } finally {
     release.resolve(undefined)
     await activation?.dispose()
@@ -545,7 +582,60 @@ it('moves an ongoing lead off a budget exhausted by a child before its next requ
   }
 })
 
-it('recovers the lead request within its original turn', async () => {
+it('records a new lead prompt before shared billing blocks dispatch', async () => {
+  const test = await fixture([[{ type: 'finish', reason: { kind: 'error',
+    failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }], text('child recovered'), text('lead resumed')])
+  const budgetId = brandString<LlmBillingBudgetId>('shared-account')
+  test.adapter.facts.set('lead', { billing: { free: false, budgetId } })
+  test.adapter.facts.set('visual', { billing: { free: false, budgetId } })
+  test.adapter.facts.set('solver', { billing: { free: true } })
+  const activation = await test.start()
+  try {
+    expect((await activation.result).stopReason).toBe('completed')
+    const prompt = 'Preserve this task while billing is blocked.'
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['visual', 'solver'])
+    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'BILLING_UNAVAILABLE' })
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'text' && block.text === prompt))).toHaveLength(1)
+    expect(test.parent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+      data: { reason: { kind: 'error', error: { code: 'ORCHESTRATION_BILLING_UNAVAILABLE' } } },
+    })
+    test.ctx.orchestrations.resetBillingHealth()
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Resume.' }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['visual', 'solver', 'lead'])
+    expect(test.adapter.requests.at(-1)?.messages.some(message => message.content.some(block => block.type === 'text' && block.text === prompt))).toBe(true)
+  } finally {
+    await activation.dispose()
+  }
+})
+
+it.each([true, false])('checks shared billing using the prepared lead model facts (free: %s)', async (preparedFree) => {
+  const test = await fixture([[{ type: 'finish', reason: { kind: 'error',
+    failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }], text('child recovered'), text('lead completed')])
+  const budgetId = brandString<LlmBillingBudgetId>('shared-account')
+  test.adapter.facts.set('visual', { billing: { free: false, budgetId } })
+  test.adapter.facts.set('solver', { billing: { free: true } })
+  test.adapter.facts.set('lead', { billing: { free: preparedFree, budgetId } })
+  const activation = await test.start()
+  try {
+    expect((await activation.result).stopReason).toBe('completed')
+    test.ctx.on('agent/request-ready', ({ agent }, next) => {
+      if (agent === test.parent) test.adapter.facts.set('lead', { billing: { free: !preparedFree, budgetId } })
+      return next()
+    }, { prepend: true })
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(preparedFree ? ['visual', 'solver', 'lead'] : ['visual', 'solver'])
+    expect(test.state(test.parent).status).toBe(preparedFree ? 'idle' : 'blocked')
+  } finally {
+    await activation.dispose()
+  }
+})
+
+it('keeps the selected lead after billing exhaustion until the user selects a new model', async () => {
   const test = await fixture([[{ type: 'finish', reason: { kind: 'error',
     failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }], text('lead recovered')])
   test.adapter.facts.set('lead', { billing: { free: false } })
@@ -553,9 +643,261 @@ it('recovers the lead request within its original turn', async () => {
   test.adapter.facts.set('solver', { billing: { free: true } })
   test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue the task' }], source: { kind: 'user' } }))
   await test.parent.whenIdle()
-  expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual'])
+  expect(test.adapter.requests.map(request => request.model)).toEqual(['lead'])
+  expect(test.parent.model.current()).toMatchObject({ provider: 'models', model: 'lead' })
+  expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'BILLING_EXHAUSTED' })
   expect(test.parent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
   expect(test.parent.session.snapshotEvents().filter(event => event.type === 'assistant/attempt')).toHaveLength(1)
+  test.parent.model.select({ provider: 'models', model: 'visual' })
+  test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Retry with my selected model.' }], source: { kind: 'user' } }))
+  await test.parent.whenIdle()
+  expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual'])
+  expect(test.state(test.parent)).toMatchObject({ status: 'idle', reason: '', route: pool[0] })
+})
+
+it('clears a blocked lead when an explicit retry is admitted after disabling orchestration', async () => {
+  const test = await fixture([[{ type: 'finish', reason: { kind: 'error',
+    failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }], text('continued')])
+  test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+  await test.parent.whenIdle()
+  expect(test.state(test.parent)).toMatchObject({ status: 'blocked' })
+  test.ctx.orchestrations.setMode(test.parent, false)
+  test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Retry.' }], source: { kind: 'user' } }))
+  await test.parent.whenIdle()
+  expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'lead'])
+  expect(test.state(test.parent)).toMatchObject({ status: 'idle', reason: '' })
+})
+
+it.each(['step-preparation', 'request-preparation'] as const)(
+  'retains a claimed lead prompt after %s fails before admission', async (stage) => {
+    const test = await fixture([text('continued')])
+    const failure = new LlmError('model preparation failed', 'INVALID_MODEL_INFO')
+    let failStep = stage === 'step-preparation'
+    if (stage === 'request-preparation') test.adapter.failures.set('lead', failure)
+    test.ctx.on('agent/step-preparing', ({ agent }) => {
+      if (agent === test.parent && failStep) throw failure
+    })
+    const prompt = 'Keep this task if preparation fails.'
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests).toHaveLength(0)
+    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'INVALID_MODEL_INFO' })
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'text' && block.text === prompt))).toHaveLength(1)
+    failStep = false
+    test.adapter.failures.delete('lead')
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Retry.' }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests).toHaveLength(1)
+    expect(test.adapter.requests[0]?.messages.some(message => message.content.some(block => block.type === 'text' && block.text === prompt))).toBe(true)
+  },
+)
+
+it.each(['step-preparation', 'request-preparation'] as const)(
+  'does not duplicate admitted input when %s fails during repreparation', async (stage) => {
+    const test = await fixture([[{ type: 'finish', reason: { kind: 'error', failure: { code: 'RATE_LIMIT', message: 'busy' } } }]])
+    const failure = new LlmError('model preparation failed', 'INVALID_MODEL_INFO')
+    let failStep = false
+    test.ctx.on('agent/step-preparing', ({ agent }) => {
+      if (agent === test.parent && failStep) throw failure
+    })
+    test.ctx.on('agent/request-error', ({ agent, failure: result }, next) => {
+      if (agent !== test.parent || result.code !== 'RATE_LIMIT') return next()
+      if (stage === 'step-preparation') failStep = true
+      else test.adapter.failures.set('lead', failure)
+      return Promise.resolve({ kind: 'reprepare' as const })
+    })
+    const prompt = 'Keep this task once.'
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead'])
+    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'INVALID_MODEL_INFO' })
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'text' && block.text === prompt))).toHaveLength(1)
+  },
+)
+
+it.each(['RATE_LIMIT', 'CONTEXT_WINDOW_EXCEEDED', 'RATE_LIMIT_REQUEST_TOO_LARGE', 'SERVER', 'AUTH'] as const)(
+  'blocks the selected lead after %s without selecting a pool route', async (code) => {
+    const test = await fixture([[{ type: 'finish', reason: { kind: 'error', failure: { code, message: 'request failed' } } }]])
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead'])
+    expect(test.parent.model.current()).toMatchObject({ provider: 'models', model: 'lead' })
+    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: code })
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'model/selection')).toHaveLength(0)
+    expect(test.parent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+      data: { reason: { kind: 'error', error: { code } } },
+    })
+  },
+)
+
+it.each(['RATE_LIMIT', 'CONTEXT_WINDOW_EXCEEDED'] as const)(
+  'allows bounded same-model recovery from %s without replaying a completed tool', async (code) => {
+    const test = await fixture([tool('lead_write_once'),
+      [{ type: 'finish', reason: { kind: 'error', failure: { code, message: 'request failed' } } }], text('recovered')])
+    const write = vi.fn(async () => [])
+    test.ctx.tools.register(defineContentToolFixture({ name: 'lead_write_once', description: 'Complete the effect once',
+      parameters: {}, execute: write }))
+    const recover = vi.fn()
+    test.ctx.on('agent/request-error', ({ agent, failure }, next) => {
+      if (agent !== test.parent || failure.code !== code) return next()
+      recover()
+      return Promise.resolve({ kind: 'retry' as const })
+    })
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(recover).toHaveBeenCalledOnce()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'lead', 'lead'])
+    expect(write).toHaveBeenCalledOnce()
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+    expect(test.parent.session.snapshotEvents().findLast(event => event.type === 'turn/end')).toMatchObject({
+      data: { reason: { kind: 'completed' } },
+    })
+  },
+)
+
+it('does not delegate an unbounded provider retry policy for a failed lead request', async () => {
+  const policy = resolveRetryPolicy({ mode: 'always' }, 'lead retry policy')
+  const test = await fixture([[{ type: 'finish', reason: { kind: 'error',
+    failure: { code: 'SERVER', message: 'server unavailable' } } }], text('unexpected')], {}, false, undefined, policy)
+  const downstream = vi.fn(() => Promise.resolve({ kind: 'retry' as const }))
+  test.ctx.on('agent/request-error', downstream)
+  test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+  await test.parent.whenIdle()
+  expect(downstream).not.toHaveBeenCalled()
+  expect(test.adapter.requests.map(request => request.model)).toEqual(['lead'])
+  expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'SERVER' })
+})
+
+it('keeps the lead fixed when its bounded same-model retry is exhausted', async () => {
+  const failure: StreamChunk[] = [{ type: 'finish', reason: { kind: 'error', failure: { code: 'SERVER', message: 'unavailable' } } }]
+  const test = await fixture([failure, failure])
+  let offered = 0
+  test.ctx.on('agent/request-error', ({ agent, failure: result }, next) => {
+    if (agent !== test.parent || result.code !== 'SERVER' || offered++ > 0) return next()
+    return Promise.resolve({ kind: 'retry' as const })
+  })
+  test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+  await test.parent.whenIdle()
+  expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'lead'])
+  expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'SERVER' })
+  expect(test.parent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+})
+
+it('retains a user selection made during a failing lead request for the next step', async () => {
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const test = await fixture([async () => {
+    entered.resolve(undefined)
+    await release.promise
+    return [{ type: 'finish', reason: { kind: 'error', failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }]
+  }, text('continued on the selected model')])
+  test.adapter.facts.set('lead', { billing: { free: false } })
+  test.adapter.facts.set('visual', { billing: { free: true } })
+  try {
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+    await entered.promise
+    test.parent.model.select({ provider: 'models', model: 'visual' })
+    release.resolve(undefined)
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead'])
+    expect(test.parent.model.current()).toMatchObject(pool[0])
+    expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'BILLING_EXHAUSTED', route: pool[0] })
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'model/selection')).toHaveLength(1)
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue with my selection.' }], source: { kind: 'user' } }))
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual'])
+    expect(test.state(test.parent)).toMatchObject({ status: 'idle', route: pool[0] })
+  } finally {
+    release.resolve(undefined)
+    await test.parent.whenIdle()
+  }
+})
+
+it('uses an explicit user selection on the next lead step without interrupting a running request', async () => {
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const test = await fixture([async () => {
+    entered.resolve(undefined)
+    await release.promise
+    return tool('lead_finish_step')
+  }, text('finished')])
+  const effect = vi.fn(async () => [])
+  test.ctx.tools.register(defineContentToolFixture({ name: 'lead_finish_step', description: 'Finish the current step',
+    parameters: {}, execute: effect }))
+  try {
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+    await entered.promise
+    test.parent.model.select({ provider: 'models', model: 'visual' })
+    release.resolve(undefined)
+    await test.parent.whenIdle()
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'visual'])
+    expect(effect).toHaveBeenCalledOnce()
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+    expect(test.parent.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+  } finally {
+    release.resolve(undefined)
+    await test.parent.whenIdle()
+  }
+})
+
+it('blocks the lead after the configured reasoning-only output limit without changing models', async () => {
+  const limited: StreamChunk[] = [{ type: 'block-start', index: 0, blockType: 'reasoning' },
+    { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'Still reasoning' } },
+    { type: 'finish', reason: { kind: 'max-tokens' } }]
+  const test = await fixture([limited, limited], { maxEmptyOutputLimits: 2 })
+  test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+  await test.parent.whenIdle()
+  expect(test.adapter.requests.map(request => request.model)).toEqual(['lead', 'lead'])
+  expect(test.state(test.parent)).toMatchObject({ status: 'blocked', reason: 'MAX_TOKENS' })
+  expect(test.parent.session.snapshotEvents().filter(event => event.type === 'assistant/attempt')).toHaveLength(1)
+})
+
+it('preserves lead blocked state through projection replay', async () => {
+  const test = await fixture([[{ type: 'finish', reason: { kind: 'error',
+    failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }]])
+  test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+  await test.parent.whenIdle()
+  const session = test.parent.session
+  const events = session.snapshotEvents()
+  const restored = Session.create(session.id, events, { ...session.header }, session.inheritedEventCount)
+  const checkpoint = test.ctx.sessionProjections.checkpoint(session)
+  const routing = checkpoint.orchestrationRouting
+  if (routing === undefined) throw new Error('Missing orchestration checkpoint')
+  expect(routing.ver).toBe(3)
+  expect(test.ctx.sessionProjections.snapshot(restored).values.orchestrationRouting).toEqual(test.state(test.parent))
+  const older = { ...checkpoint, orchestrationRouting: { ...routing, ver: 2 } }
+  expect(test.ctx.sessionProjections.restoreFloor(older)).toBe(0)
+  const replayed = test.ctx.sessionProjections.restore(older, events, SessionLogOffset(0), session.header, session.inheritedEventCount)
+  expect(replayed.snapshot.values.orchestrationRouting).toEqual(test.state(test.parent))
+  expect(replayed.checkpoint.orchestrationRouting?.ver).toBe(3)
+})
+
+it('does not mark the lead blocked when a same-model recovery is cancelled', async () => {
+  const entered = Promise.withResolvers<undefined>()
+  const test = await fixture([[{ type: 'finish', reason: { kind: 'error', failure: { code: 'RATE_LIMIT', message: 'busy' } } }]])
+  test.ctx.on('agent/request-error', async ({ agent, failure, signal }, next) => {
+    if (agent !== test.parent || failure.code !== 'RATE_LIMIT') return next()
+    await new Promise<void>((resolve) => {
+      if (signal.aborted) { resolve(); return }
+      signal.addEventListener('abort', () => { resolve() }, { once: true })
+      entered.resolve(undefined)
+    })
+    return next()
+  })
+  try {
+    test.parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }))
+    await entered.promise
+    test.parent.cancel({ kind: 'user' })
+    await test.parent.whenIdle()
+    expect(test.state(test.parent).status).not.toBe('blocked')
+    expect(test.adapter.requests.map(request => request.model)).toEqual(['lead'])
+  } finally {
+    test.parent.cancel({ kind: 'user' })
+    await test.parent.whenIdle()
+  }
 })
 
 it('changes models after two reasoning-only output-limit generations and preserves the one task turn', async () => {

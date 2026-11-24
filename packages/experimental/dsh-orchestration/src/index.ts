@@ -230,7 +230,6 @@ export class OrchestrationService extends TypertRemoteService {
     this.projection = await this.ctx.sessionProjections.register(orchestrationProjectionDefinition)
     this.adaptive = await AdaptiveRouting.create(this.ctx, {
       modeOf: agent => this.modeOf(agent),
-      pool: () => this.getPool(),
       preparingEnabled: (agent) => {
         const state = this.stateOf(agent.session)
         return state.active && state.wanted !== false

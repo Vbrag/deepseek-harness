@@ -161,6 +161,8 @@ export interface PreparedLlmCall {
   readonly context?: LlmModelContext
   /** Exact model modalities captured with the adapter dispatch generation. */
   readonly inputModalities?: readonly ModelModality[]
+  /** Billing facts captured with the adapter dispatch generation, when supplied. */
+  readonly billing?: LlmResolvedModelInfo['billing']
   /** Exact model system prompt update mode captured with the adapter dispatch generation. */
   readonly systemPromptUpdate?: SystemPromptUpdate
   /** Exact model tool update mode captured with the adapter dispatch generation. */
@@ -1064,6 +1066,7 @@ export class LlmRuntime extends TypertRemoteService {
       ...modelInfo.inputModalities === undefined
         ? {}
         : { inputModalities: Object.freeze([...modelInfo.inputModalities]) },
+      ...modelInfo.billing === undefined ? {} : { billing: Object.freeze({ ...modelInfo.billing }) },
       ...modelInfo.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: modelInfo.systemPromptUpdate },
       ...modelInfo.toolUpdate === undefined ? {} : { toolUpdate: modelInfo.toolUpdate },
       requestTokenBudget: (options: GenerateOptions): LlmRequestTokenBudget | undefined => {

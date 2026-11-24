@@ -50,7 +50,7 @@ const stateSchema: z.ZodType<AdaptiveProjectionState> = z.object({
 
 /** Fixed-size phase state; replay does not admit requests or switch a model. */
 export const adaptiveRoutingProjection = {
-  key: 'orchestrationRouting', stateVersion: 2, stateSchema,
+  key: 'orchestrationRouting', stateVersion: 3, stateSchema,
   init: (_header, inheritedEventCount): AdaptiveProjectionState => ({ inheritedEventCount, value: {
     revision: 0, assessment: null, request: null, route: null, previous: null,
     status: 'idle', reason: '', checkpoint: '', maxTokens: null,
