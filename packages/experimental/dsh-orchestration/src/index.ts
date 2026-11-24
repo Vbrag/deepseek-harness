@@ -631,8 +631,8 @@ export class OrchestrationService extends TypertRemoteService {
       }
       const ready: ReadyRoute[] = availability.flatMap(({ route, queue }) =>
         !this.adaptiveRouting().billingAvailable(route.billing) ? [] :
-        queue.kind === 'ready' || queue.kind === 'unknown' ? [{ route, readiness: queue.kind,
-          active: load.get(routeKey(route)) ?? 0, lastAssigned: this.lastAssigned.get(routeKey(route)) ?? 0 }] : [])
+          queue.kind === 'ready' || queue.kind === 'unknown' ? [{ route, readiness: queue.kind,
+            active: load.get(routeKey(route)) ?? 0, lastAssigned: this.lastAssigned.get(routeKey(route)) ?? 0 }] : [])
       const preferred = admission?.preferredRoute
       const available = preferred === undefined ? ready : ready.filter(item => routeKey(item.route) === routeKey(preferred))
       const selected = selectReadyRoute(available, assessment)

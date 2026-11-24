@@ -99,7 +99,9 @@ function routeFromKey(key: string): PoolRoute {
  * @param props - settings runtime, the injected pool and setter, and localized copy.
  * @returns The Orchestration settings section.
  */
-export function OrchestrationPanel({ pool, catalog: initialCatalog, revision: initialRevision, refresh, setPool, resetBillingHealth, t }: OrchestrationPanelProps) {
+export function OrchestrationPanel({
+  pool, catalog: initialCatalog, revision: initialRevision, refresh, setPool, resetBillingHealth, t,
+}: OrchestrationPanelProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(pool.map(routeKey)))
   const [catalog, setCatalog] = useState(initialCatalog)
   const [revision, setRevision] = useState(initialRevision)
@@ -156,7 +158,8 @@ export function OrchestrationPanel({ pool, catalog: initialCatalog, revision: in
   }
 
   const selectAll = (): void => {
-    setSelection(new Set(catalog.groups.flatMap(group => group.models.map(model => routeKey({ provider: model.provider, model: model.id })))))
+    setSelection(new Set(catalog.groups.flatMap(group =>
+      group.models.map(model => routeKey({ provider: model.provider, model: model.id })))))
   }
 
   const clear = (): void => {

@@ -502,10 +502,16 @@ export class BasicCompactionEngine extends CompactionEngine {
         selected, agent, conversation, signal)
       const budget = prepared.requestTokenBudget({ ...proposed, ...prepared.config })
       if (budget === undefined || budget.estimatedTokens <= budget.tokenLimit) {
-        return { start: range.start, end: nodes[last]!, ...maxTokens === undefined ? {} : { maxTokens } }
+        const lastNode = nodes[last]
+        if (lastNode === undefined) return null
+        return { start: range.start, end: lastNode, ...maxTokens === undefined ? {} : { maxTokens } }
       }
       let next = first + Math.floor((last - first - 1) / 2)
-      while (next >= first && !toolPairingBalancedAfter(agent.session, nodes[next]!)) next--
+      while (next >= first) {
+        const node = nodes[next]
+        if (node !== undefined && toolPairingBalancedAfter(agent.session, node)) break
+        next--
+      }
       if (next >= first) {
         last = next
         continue

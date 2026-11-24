@@ -140,7 +140,7 @@ providers:
 
 配置的 `maxTokens` 不只是模型的输出上限，也是适配器发出请求的输出默认值；按请求声明输出量计费的网关会据此扣减其 token 预算。声明发布的最大输出（这些模型最高 384,000 token）会让单个请求占用 500,000 token 分钟额度的大部分，并使并发请求被限流。随附的 Uni Paderborn 路由把每个模型的 `maxTokens` 设为发布最大输出与网关每分钟份额（`tpm / maxParallel`，50,000 token）中的较小值，并把该路由的 `rateLimitOutputTokens` 设为同一值，使本地账本预留网关实际扣减的额度；发布的最大值仍留在 [`UPB_GATEWAY_CATALOG`](src/upb-gateway-catalog.ts) 中作为模型能力。
 
-本模块随附一条开箱即用的 Uni Paderborn AI-Gateway 路由，带其完整聊天模型目录，位于 [`UPB_GATEWAY_PROFILE`](src/upb-gateway.ts)（作为 `UPB_GATEWAY_MODELS`、`UPB_GATEWAY_PROVIDER`、`UPB_GATEWAY_BASE_URL`、`UPB_GATEWAY_API_KEY_ENV`、`UPB_GATEWAY_REQUEST_OUTPUT_TOKENS` 重新导出）。只需以 `UPB_AI_GATEWAY_KEY` 导出 API key 即可启用；随附目录已从网关的公共模型列表为每个模型声明 `rpm` / `tpm` 预算以及网关可接受的请求上限。
+本模块随附一条开箱即用的 Uni Paderborn AI-Gateway 路由，带其完整聊天模型目录，位于 [`UPB_GATEWAY_PROFILE`](src/upb-gateway.ts)（同时导出 `UPB_GATEWAY_MODELS`、`UPB_GATEWAY_PROVIDER`、`UPB_GATEWAY_BASE_URL` 和 `UPB_GATEWAY_API_KEY_ENV`）。只需以 `UPB_AI_GATEWAY_KEY` 导出 API key 即可启用；随附目录已从网关的公共模型列表为每个模型声明 `rpm` / `tpm` 预算以及网关可接受的请求上限。从 `@deepseek-ai/dsh-llm-pi-ai/upb-gateway` 导入 `UPB_GATEWAY_REQUEST_OUTPUT_TOKENS`，从 `@deepseek-ai/dsh-llm-pi-ai/upb-gateway-catalog` 导入目录值。
 
 
 同一适配器实例按 provider/model 维护滚动 60 秒账本，供每个会话和步骤共享。分派时预留一次请求、估算的输入 token，以及提供方的 `rateLimitOutputTokens` 输出预留量（默认 4096，不超过有效输出上限）。额度耗尽时调用排队；估算超出整个 TPM 预算时立即以 `RATE_LIMIT_REQUEST_TOO_LARGE` 失败。分派前取消会归还预留；已分派但用量未知的调用保留估算。提供方报告的用量会替换估算，包括超额欠账，并在结算后继续计入 60 秒。活动调用在结算前保留 token 预留。配置变更保留已有扣减。只声明 `rpm` 或 `tpm` 可限制单个维度；两者都不声明时直接分派。`ctx.llm.queueAvailability()` 查询同一账本，不预留额度。

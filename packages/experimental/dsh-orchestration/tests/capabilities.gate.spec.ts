@@ -12,8 +12,7 @@
  * @module dsh-orchestration/tests/capabilities.gate
  */
 import { describe, expect, it } from 'vitest'
-import { UPB_CHAT_ROUTE_MODELS } from '@deepseek-ai/dsh-llm-pi-ai/src/upb-gateway-catalog.ts'
-import { upbEntryOf } from '@deepseek-ai/dsh-llm-pi-ai/src/upb-gateway-catalog.ts'
+import { UPB_CHAT_ROUTE_MODELS, upbEntryOf } from '@deepseek-ai/dsh-llm-pi-ai/upb-gateway-catalog'
 import { PADERBORN_CATALOG } from '../src/capabilities.ts'
 
 /** Single conservative pacing scalar: a published range is pinned to its lower bound. */

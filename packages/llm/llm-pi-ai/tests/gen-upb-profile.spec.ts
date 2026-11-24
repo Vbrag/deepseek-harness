@@ -13,7 +13,6 @@ import {
   UPB_PROFILE_ROUTE,
   applyModelsToPatch,
   profileModels,
-  type UpbProfileModel,
 } from '../scripts/gen-upb-profile.ts'
 import { upbEntryOf } from '../src/upb-gateway-catalog.ts'
 
@@ -72,7 +71,7 @@ describe('gen-upb-profile: catalogue derivation', () => {
   })
 
   it('maps the Vision badge to image input and leaves text-only models text-only', () => {
-    const byId = new Map(profileModels().map(m => [m.id, m as UpbProfileModel]))
+    const byId = new Map(profileModels().map(m => [m.id, m]))
     expect(byId.get('gwdg.deepseek-v4.1-flash-1017')?.input).toEqual(['text', 'image'])
     expect(byId.get('gwdg.mistral-large-4-1t-a52b')?.input).toEqual(['text', 'image'])
     expect(byId.get('gwdg.glm-5.3')?.input).toBeUndefined()
@@ -130,8 +129,10 @@ describe('gen-upb-profile: patch application', () => {
 
   it('updates catalogue facts while keeping deployment-owned per-model fields', () => {
     const { text } = applyModelsToPatch(provider, UPB_PROFILE_ROUTE, profileModels())
-    const row = parse(text).find((entry: { id?: string }) => entry.id === UPB_PROFILE_PLUGIN)
-    const models = row.config.providers[UPB_PROFILE_ROUTE].models as Record<string, unknown>[]
+    const rows = parse(text) as { id: string; config: { providers: Record<string, { models: Record<string, unknown>[] }> } }[]
+    const row = rows.find(entry => entry.id === UPB_PROFILE_PLUGIN)
+    const models = row?.config.providers[UPB_PROFILE_ROUTE]?.models
+    if (models === undefined) throw new Error('Generated provider models missing')
     const flash = models.find(model => model['id'] === 'gwdg.deepseek-v4-flash-0731')
     const entry = upbEntryOf('gwdg.deepseek-v4-flash-0731')!
     // Catalogue-owned facts win: the stale name and capacities are corrected,
@@ -156,7 +157,7 @@ describe('gen-upb-profile: patch application', () => {
 
   it('rejects a patch with no llm-pi-ai row', () => {
     expect(() => applyModelsToPatch(otherRow, UPB_PROFILE_ROUTE, profileModels()))
-      .toThrowError(new RegExp(`no "${UPB_PROFILE_PLUGIN}" row`))
+      .toThrow(new RegExp(`no "${UPB_PROFILE_PLUGIN}" row`))
   })
 
   it('targets the deployment chat route key by default', () => {

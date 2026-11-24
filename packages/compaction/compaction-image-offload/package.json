@@ -19,6 +19,10 @@
       "default": "./lib/index.js"
     },
     "./package.json": "./package.json",
+    "./image-offload": {
+      "types": "./lib/types/image-offload.d.ts",
+      "default": "./lib/types/image-offload.js"
+    },
     "./projection": {
       "types": "./lib/types/projection.d.ts",
       "default": "./lib/types/projection.js"

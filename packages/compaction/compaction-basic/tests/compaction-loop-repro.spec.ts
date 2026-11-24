@@ -811,7 +811,7 @@ describe('TPM-aware compaction before dispatch', () => {
     test.adapter.holdSummary = request => new Promise<void>((_resolve, reject) => {
       const signal = request.signal
       if (signal === undefined) throw new Error('Expected summary cancellation')
-      const abort = (): void => { reject(signal.reason) }
+      const abort = (): void => { reject(signal.reason instanceof Error ? signal.reason : new Error('Summary cancelled')) }
       if (signal.aborted) { abort(); return }
       signal.addEventListener('abort', abort, { once: true })
       entered.resolve(undefined)

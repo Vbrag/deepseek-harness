@@ -15,7 +15,7 @@ import {
   UPB_GATEWAY_SNAPSHOT,
   UPB_REFERENCE_ONLY,
   upbEntryOf,
-} from '@deepseek-ai/dsh-llm-pi-ai'
+} from '@deepseek-ai/dsh-llm-pi-ai/upb-gateway-catalog'
 
 describe('UPB AI-Gateway canonical catalogue', () => {
   it('holds unique, non-empty ids and a balanced complete inventory', () => {

@@ -1077,7 +1077,7 @@ Handle one failed model-request attempt before the loop retries or closes its st
  * @param payload.signal - the turn abort signal.
  * @param payload.stage - operation that failed; absent in older manually dispatched events.
  * @param payload.requestInterrupted - true for an explicit request-only interruption.
- * @param payload.messages - claimed input not yet admitted when preparation failed; committed messages are excluded after repreparation.
+ * @param payload.messages - claimed input not admitted when preparation failed; committed messages are excluded after repreparation.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode waterfall
  */

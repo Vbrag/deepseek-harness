@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-work-handoff'
 import type {} from '@deepseek-ai/dsh-compaction'
 import type { LlmCallConfig, LlmResolvedModelInfo, UserMessage } from '@deepseek-ai/dsh-llm'
 import { estimateRequestInputTokens } from '@deepseek-ai/dsh-llm/input-estimate'
-import { offloadOldestImages } from '@deepseek-ai/dsh-compaction-image-offload'
+import { offloadOldestImages } from '@deepseek-ai/dsh-compaction-image-offload/image-offload'
 import { appendPluginRecord, type Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {
@@ -278,7 +278,7 @@ export class AdaptiveRouting {
         routing.release?.()
         this.write(agent, { status: 'idle', route: { provider: current.provider, model: current.model } })
         await this.flush(agent)
-        return this.choose(agent, signal, reason, options)
+        return await this.choose(agent, signal, reason, options)
       }
       agent.model.select({ ...route, ...selected.reasoningEffort === undefined ? {} : { reasoningEffort: selected.reasoningEffort } })
       this.write(agent, { assessment, request: null, route, previous: changed ? current : before.previous,

@@ -1,4 +1,4 @@
-/** Default-off Host settings read at each delegation and discovery call. */
+/** Default-off Host settings recorded for new Sessions and inherited by children. */
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 
@@ -122,6 +122,7 @@ describe('SubagentModelSelectionConfig', () => {
     const ctx = ownContext(new Context())
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(SubagentModelSelectionConfig, { enabled: true, allowedModels: ALLOWED_MODELS })
     expect(await capturePolicy(ctx)).toEqual(ALLOWED_MODELS)
@@ -132,6 +133,7 @@ describe('SubagentModelSelectionConfig', () => {
     const ctx = ownContext(new Context())
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     selectionConfigs.set(ctx, await liveConfig(ctx, SubagentModelSelectionConfig))
     expect(await capturePolicy(ctx)).toBeUndefined()
@@ -146,6 +148,7 @@ describe('SubagentModelSelectionConfig', () => {
     const ctx = ownContext(new Context())
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     selectionConfigs.set(ctx, await liveConfig(ctx, SubagentModelSelectionConfig))
     // Disabled with valid routes records no policy.
@@ -163,7 +166,7 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
-  it('applies setting edits to the next delegation in existing parent and child Sessions', async () => {
+  it('applies setting edits to new roots while preserving existing parent and child policies', async () => {
     const ctx = await boot()
     const parent = await createAgent(ctx, 'live-parent')
     const child = await createAgent(ctx, 'live-child', { meta: { parentSession: parent.id, origin: 'subagent' } })
@@ -175,14 +178,24 @@ describe('SubagentModelSelectionConfig', () => {
 
     await selectionConfigs.get(ctx)!.update({ enabled: true, allowedModels: ALLOWED_MODELS })
     for (const agent of [parent, child]) {
-      const allowed = await delegate(ctx, agent, `${agent.id}-enabled`)
+      const denied = await delegate(ctx, agent, `${agent.id}-still-denied`)
+      expect(denied.error?.info).toEqual({ name: 'SubagentError', code: 'MODEL_ROUTE_NOT_ALLOWED' })
+    }
+
+    const enabledParent = await createAgent(ctx, 'enabled-parent')
+    const enabledChild = await createAgent(ctx, 'enabled-child', { meta: { parentSession: enabledParent.id, origin: 'subagent' } })
+    for (const agent of [enabledParent, enabledChild]) {
+      expect(ctx.subagents.modelSelectionPolicyOf(agent.session)).toEqual(ALLOWED_MODELS)
+      const allowed = await delegate(ctx, agent, `${agent.id}-allowed`)
       expect(allowed.error?.info).not.toMatchObject({ code: 'MODEL_ROUTE_NOT_ALLOWED' })
       const other = await delegate(ctx, agent, `${agent.id}-other`, 'other-model')
       expect(other.error?.info).toEqual({ name: 'SubagentError', code: 'MODEL_ROUTE_NOT_ALLOWED' })
     }
-
     await selectionConfigs.get(ctx)!.update({ enabled: false })
-    const disabled = await delegate(ctx, parent, 'live-parent-disabled')
+    const retained = await delegate(ctx, enabledParent, 'enabled-parent-retained')
+    expect(retained.error?.info).not.toMatchObject({ code: 'MODEL_ROUTE_NOT_ALLOWED' })
+    const disabledRoot = await createAgent(ctx, 'disabled-parent')
+    const disabled = await delegate(ctx, disabledRoot, 'disabled-parent-route')
     expect(disabled.error?.info).toEqual({ name: 'SubagentError', code: 'MODEL_ROUTE_NOT_ALLOWED' })
     for (const agent of [parent, child]) {
       expect(agent.session.snapshotEvents().some(event => event.type === 'subagent/model-selection-policy')).toBe(false)
@@ -190,14 +203,16 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.fiber.dispose()
   })
 
-  it('ignores a policy recorded in a resumed Session', async () => {
+  it('retains the policy recorded in a resumed Session', async () => {
     const ctx = await boot()
     const seed = Session.create(brandString<SessionId>('legacy-seed'))
     seed.append('subagent/model-selection-policy', { allowedModels: ALLOWED_MODELS })
     const resumed = await createAgent(ctx, 'legacy-resumed', { seed: seed.snapshotEvents() })
     const result = await delegate(ctx, resumed, 'legacy-route')
-    expect(text(result)).toContain('explicit selection is limited to the parent route')
-    expect(result.error?.info).toEqual({ name: 'SubagentError', code: 'MODEL_ROUTE_NOT_ALLOWED' })
+    expect(ctx.subagents.modelSelectionPolicyOf(resumed.session)).toEqual(ALLOWED_MODELS)
+    expect(result.error?.info).not.toMatchObject({ code: 'MODEL_ROUTE_NOT_ALLOWED' })
+    const denied = await delegate(ctx, resumed, 'legacy-denied', 'other-model')
+    expect(denied.error?.info).toEqual({ name: 'SubagentError', code: 'MODEL_ROUTE_NOT_ALLOWED' })
     await ctx.fiber.dispose()
   })
 
@@ -218,7 +233,7 @@ describe('SubagentModelSelectionConfig', () => {
       setup: async (agentCtx, agent) => {
         prepared = agent
         const fiber = agentCtx.inject(tool.inject, (runtimeCtx) => {
-          tool.apply(runtimeCtx, {
+          return tool.apply(runtimeCtx, {
             provider: 'spawn',
             modelSelection: true,
             modelDiscovery: true,
@@ -256,7 +271,7 @@ describe('SubagentModelSelectionConfig', () => {
     })
 
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('is not allowed by the current subagent model selection setting')
+    expect(text(result)).toContain('is not allowed for this Session')
     expect(result.error?.info).toEqual({ name: 'SubagentError', code: 'MODEL_ROUTE_NOT_ALLOWED' })
     await ctx.fiber.dispose()
   })

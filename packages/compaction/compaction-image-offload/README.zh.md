@@ -51,6 +51,8 @@ kind: "package-reference"
 
 本包拥有事件声明、引用校验、不可变图片投影、选图和重试策略。它在接受图片省略事件前向 Session 注册 `imageOffloadProjection`。相同的浏览器安全处理器通过 `./projection` 导出，供独立回放使用，当前格式目录为离线读取器装配该处理器。缺少注册时拒绝实时恢复，卸载已经使用的处理器后拒绝继续派生消息。token 测量应用同一份选择，不依赖替换影子价格。
 
+需要直接记录图片省略的调用方可以从 `@deepseek-ai/dsh-compaction-image-offload/image-offload` 导入 `offloadOldestImages`。
+
 摘要失败使用同步的 `compaction/summary-error` waterfall。插件只在传入的摘要选区内选图，记录省略后返回 true。压缩后端重新派生该选区并计价，然后重试。每次重试都会继续省略保留的图片，没有可省略的位置时结束恢复。取消或无关的选区变更会使摘要失败。已经记录的省略在后续失败或取消后仍然有效。
 
 纯投影在 Session 提交事件前拒绝无效或重复省略的图片引用，执行器不维护独立可变的省略状态。

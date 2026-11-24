@@ -29,10 +29,11 @@ const CATALOG: OrchestrationCatalog = {
   }],
 }
 
-function fixture(pool: readonly PoolRoute[] = [], setPool = vi.fn<(pool: readonly PoolRoute[], revision: number) => Promise<PoolSaveResult>>(
-  async (next, revision) => ({ status: 'saved', pool: next, revision: revision + 1 }),
-), refresh: () => Promise<{ pool: readonly PoolRoute[]; catalog: OrchestrationCatalog; revision: number | null }>
-  = async () => ({ pool, catalog: CATALOG, revision: 0 })) {
+function fixture(pool: readonly PoolRoute[] = [],
+  setPool = vi.fn<(pool: readonly PoolRoute[], revision: number) => Promise<PoolSaveResult>>(
+    async (next, revision) => ({ status: 'saved', pool: next, revision: revision + 1 }),
+  ), refresh: () => Promise<{ pool: readonly PoolRoute[]; catalog: OrchestrationCatalog; revision: number | null }>
+    = async () => ({ pool, catalog: CATALOG, revision: 0 })) {
   const props = {
     t: makeTranslate(zh), pool, catalog: CATALOG, revision: 0, setPool,
     refresh,

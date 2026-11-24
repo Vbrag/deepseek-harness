@@ -13,6 +13,9 @@
   name: '@deepseek-ai/dsh-agent-instructions'
   disabled: true
 
+- id: project-context
+  disabled: true
+
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:

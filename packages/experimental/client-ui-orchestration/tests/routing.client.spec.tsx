@@ -30,13 +30,13 @@ function fixture(value = routing(), dictionary = en) {
   const sessions = createSnapshotStore<SessionListState>({ ids: [], byId: {
     [ROOT]: { id: ROOT, displayTitle: 'Lead', running: false, blank: false, retainedBy: {}, updatedAt: 0 },
   }, phase: 'ready',
-    projectionsBySession: {
-      [ROOT]: { state: 'ready', error: null, values: { subagentCatalog: [
-        { id: CHILD, createdAt: 0, mode: 'continuable', label: 'Implement change', name: 'coder' },
-      ] } },
-      [CHILD]: { state: 'ready', error: null, values: { orchestrationRouting: value,
-        modelSelection: { lastUsed: CURRENT, next: NEXT } } },
-    } })
+  projectionsBySession: {
+    [ROOT]: { state: 'ready', error: null, values: { subagentCatalog: [
+      { id: CHILD, createdAt: 0, mode: 'continuable', label: 'Implement change', name: 'coder' },
+    ] } },
+    [CHILD]: { state: 'ready', error: null, values: { orchestrationRouting: value,
+      modelSelection: { lastUsed: CURRENT, next: NEXT } } },
+  } })
   const props = { sessionId: ROOT, useSessions: bindSnapshotSelector(sessions), t: makeTranslate(dictionary) } as OrchestrationRoutingProps
   const view = render(<OrchestrationRouting {...props} />)
   const set = (values: SessionListState['projectionsBySession']) => {

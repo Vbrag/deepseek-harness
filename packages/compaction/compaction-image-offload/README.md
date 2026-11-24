@@ -51,6 +51,8 @@ The plugin acts only on `IMAGE_OFFLOAD_REQUIRED` failures that carry `offloadIma
 
 This package owns the event declaration, reference validation, immutable image projection, selection, and retry policy. It registers `imageOffloadProjection` with Session before accepting image-offload events. The same browser-safe definition is exported from `./projection` for detached replay; the installed format catalog assembles it for offline readers. Missing registration rejects live restore, and unloading a used definition blocks further message derivation. Token measurement folds the same selections without replacement shadow prices.
 
+Consumers that need to record image omissions directly can import `offloadOldestImages` from `@deepseek-ai/dsh-compaction-image-offload/image-offload`.
+
 Summary failures use the synchronous `compaction/summary-error` waterfall. The plugin selects only the supplied summary region and returns true after recording an omission. The compaction backend re-derives and re-prices that region before retrying; each retry omits additional retained occurrences, so recovery ends when none remain. Cancellation and unrelated selection changes reject the summary. Recorded omissions survive later failure or cancellation.
 
 The pure projection rejects invalid or repeated image references before Session commits the event, and this executor retains no separate mutable offload state.

@@ -95,7 +95,8 @@ export class ModelRateLimiter {
    * @param budgetKey - optional shared-budget identity overriding the route+model ledger key.
    * @returns current advisory admission state.
    */
-  availability(provider: string, model: string, limits: ModelRateLimit | undefined, tokens: number, budgetKey?: string): LlmQueueAvailability {
+  availability(provider: string, model: string, limits: ModelRateLimit | undefined, tokens: number,
+    budgetKey?: string): LlmQueueAvailability {
     limits ??= {}
     if (limits.tpm !== undefined && tokens > limits.tpm) {
       return { kind: 'impossible', estimatedTokens: tokens, tokenLimit: limits.tpm }

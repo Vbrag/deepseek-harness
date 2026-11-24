@@ -63,7 +63,7 @@ describe('pool picker catalog', () => {
     expect(catalog.groups.find(group => group.provider === 'mock')).toBeUndefined()
     const pooled = catalog.groups.find(entry => entry.provider === POOL_PROVIDER)
     expect(pooled?.models[0]?.offlineCurated).toBe(true)
-    ctx.fiber.dispose()
+    await ctx.fiber.dispose()
   })
 
   it('annotates known Paderborn routes with curated facts and keeps live capacity', async () => {
@@ -75,7 +75,7 @@ describe('pool picker catalog', () => {
     expect(row?.domains).toContain('coding')
     // Live adapter capacity wins over the curated table where both are present.
     expect(row?.contextWindow).toBe(1_000_000)
-    ctx.fiber.dispose()
+    await ctx.fiber.dispose()
   })
 
   it('drops provider groups that fail to list models', async () => {
@@ -92,6 +92,6 @@ describe('pool picker catalog', () => {
     if (register.mock.calls[0]?.[0] === undefined) throw new Error('router registration missing')
     const catalog = await ctx.orchestrations.getCatalog()
     expect(catalog.groups).toEqual([])
-    ctx.fiber.dispose()
+    await ctx.fiber.dispose()
   })
 })

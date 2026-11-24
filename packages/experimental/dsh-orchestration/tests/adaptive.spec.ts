@@ -9,7 +9,8 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createUserMessage, LlmAdapter, LlmError, resolveRetryPolicy, ToolCallId, type GenerateOptions, type ImageBlock, type LlmBillingBudgetId, type LlmCallConfig, type LlmQueueAvailability,
+import { createUserMessage, LlmAdapter, LlmError, resolveRetryPolicy, ToolCallId,
+  type GenerateOptions, type ImageBlock, type LlmBillingBudgetId, type LlmCallConfig, type LlmQueueAvailability,
   type LlmQueueRequest, type LlmRequestTokenBudget, type LlmResolvedModelInfo, type ResolvedRetryPolicy, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { appendPluginRecord, pluginRecordOf, Session, SessionId, SessionLogOffset, type EpochHeader, type SessionSeq } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -63,7 +64,8 @@ class Adapter extends LlmAdapter {
     const tokenLimit = this.tokenLimits.get(request.model)
     if (tokenLimit === undefined) return Promise.resolve(undefined)
     const outputTokens = request.maxTokens ?? 0
-    return Promise.resolve({ tokenLimit, inputTokens: request.inputTokens, outputTokens, estimatedTokens: request.inputTokens + outputTokens })
+    return Promise.resolve({ tokenLimit, inputTokens: request.inputTokens, outputTokens,
+      estimatedTokens: request.inputTokens + outputTokens })
   }
   override async * stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(request)
@@ -526,15 +528,13 @@ it('records the failed child billing budget from the dispatched adapter generati
   const exhausted = brandString<LlmBillingBudgetId>('exhausted')
   const replacement = brandString<LlmBillingBudgetId>('replacement')
   const free = { provider: 'models', model: 'free' }
-  let adapter: Adapter | undefined
   const test = await fixture([async () => {
-    if (adapter === undefined) throw new Error('Adapter not ready')
-    adapter.facts.set('visual', { billing: { free: false, budgetId: replacement } })
+    test.adapter.facts.set('visual', { billing: { free: false, budgetId: replacement } })
     return [{ type: 'finish', reason: { kind: 'error', failure: { code: 'BILLING_EXHAUSTED', message: 'budget exhausted' } } }]
   }, text('recovered')], {
     pool: [...pool, free], routeCapabilities: [...pool, free].map(route => ({ ...route, capabilities: ['coding'] })),
   })
-  adapter = test.adapter
+  const adapter = test.adapter
   adapter.facts.set('visual', { billing: { free: false, budgetId: exhausted } })
   adapter.facts.set('solver', { billing: { free: false, budgetId: exhausted } })
   adapter.facts.set('free', { billing: { free: true } })

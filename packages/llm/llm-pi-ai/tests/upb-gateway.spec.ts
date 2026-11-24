@@ -5,16 +5,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  UPB_CHAT_ROUTE_MODELS,
   UPB_GATEWAY_API_KEY_ENV,
   UPB_GATEWAY_BASE_URL,
-  UPB_GATEWAY_CATALOG,
   UPB_GATEWAY_MODELS,
   UPB_GATEWAY_PROFILE,
   UPB_GATEWAY_PROVIDER,
-  UPB_GATEWAY_REQUEST_OUTPUT_TOKENS,
-  upbEntryOf,
 } from '@deepseek-ai/dsh-llm-pi-ai'
+import { UPB_CHAT_ROUTE_MODELS, UPB_GATEWAY_CATALOG, upbEntryOf } from '@deepseek-ai/dsh-llm-pi-ai/upb-gateway-catalog'
+import { UPB_GATEWAY_REQUEST_OUTPUT_TOKENS } from '@deepseek-ai/dsh-llm-pi-ai/upb-gateway'
 
 describe('UPB AI-Gateway shipped route', () => {
   it('exposes the expected provider identity', () => {
