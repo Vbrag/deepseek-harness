@@ -87,6 +87,21 @@
         "emptyLimits": 0,
         "observedInputTokens": 0
       }
+    },
+    {
+      "type": "orchestration/pool-snapshot",
+      "seq": 8,
+      "time": 0,
+      "data": {
+        "pending": false,
+        "members": [
+          {
+            "provider": "snapshot-workers",
+            "model": "coder",
+            "membershipId": "pool-member-1"
+          }
+        ]
+      }
     }
   ],
   "auditNotifications": [
@@ -189,6 +204,24 @@
           "tried": [],
           "emptyLimits": 0,
           "observedInputTokens": 0
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "event": {
+        "type": "orchestration/pool-snapshot",
+        "seq": 8,
+        "time": 0,
+        "data": {
+          "pending": false,
+          "members": [
+            {
+              "provider": "snapshot-workers",
+              "model": "coder",
+              "membershipId": "pool-member-1"
+            }
+          ]
         }
       }
     }

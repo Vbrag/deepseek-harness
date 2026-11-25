@@ -71,6 +71,7 @@ async function buildCtx(options: {
   const persistPool = vi.fn<(pool: readonly PoolRoute[], revision: number) => Promise<RemoteResult<PoolSaveResult>>>(
     options.persistPool ?? (async (pool, revision) => ({ ok: true, value: { status: 'saved', pool, revision: revision + 1 } })),
   )
+  const activatePool = vi.fn(async () => ({ ok: true as const, value: { status: 'applied' as const } }))
   ctx.provide('remote.orchestrations', {
     getCatalog: vi.fn(async () => ({ ok: true as const, value: CATALOG })),
     getPoolConfiguration: async () => {
@@ -85,6 +86,7 @@ async function buildCtx(options: {
         pool: result.value.pool, revision: result.value.revision, capabilityOverrides: overrides,
       } } }
     },
+    activatePool,
     resetBillingHealth: vi.fn(async () => ({ ok: true as const, value: undefined })),
   })
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -100,7 +102,7 @@ async function buildCtx(options: {
     'conversation.input.left': { kind: 'list', scope: 'session' },
     'conversation.session.panel.section': { kind: 'list', scope: 'session' },
   } } as never, () => null)
-  return { ctx, unmount, persistPool, warn }
+  return { ctx, unmount, persistPool, activatePool, warn }
 }
 
 async function mount(options: { getPool?: () => Promise<RemoteResult<PoolSettingsState>> } = {}) {
@@ -137,6 +139,8 @@ it('mounts a session-bound composer selector and withdraws it with the Remote mo
   const value = callInject(sessionId)
   assert(typeof value.selectMode === 'function')
   const face = value as Record<string, unknown> & OrchestrationModeInjected
+  await expect(face.activatePool()).resolves.toEqual({ status: 'applied' })
+  expect(built.activatePool).toHaveBeenCalledWith(sessionId)
   await expect(face.selectMode(true)).resolves.toBe(true)
   expect(execute).toHaveBeenLastCalledWith(sessionId, '/orchestration on', [])
   execute.mockResolvedValueOnce({ ok: true, value: { commandId: CommandId('mode-error'), result: { kind: 'error', text: 'refused' } } })

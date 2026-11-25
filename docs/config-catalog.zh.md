@@ -3046,7 +3046,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-orchestration`
 
 - `inject`: `llm` · `subagents` · `sessionProjections` · `agents` · `systemPrompt` · `sessions`
-- `source`: [`packages/subagent/orchestration/src/types.ts:92`](../packages/subagent/orchestration/src/types.ts)
+- `source`: [`packages/subagent/orchestration/src/types.ts:109`](../packages/subagent/orchestration/src/types.ts)
 
 ```ts config-catalog
 /** Validated deployment policy; session selections take precedence over defaults. */
@@ -3057,6 +3057,11 @@ export interface OrchestrationConfig {
   readonly userPool?: PoolRoute[]
   /** An explicit user override exists, including an intentionally empty pool. */
   readonly userPoolConfigured?: boolean
+  /** Durable identities for the current pool memberships. */
+  readonly userPoolMemberships?: Array<PoolRoute & {
+    /** Identity retained while this route stays in the pool. */
+    readonly membershipId: string
+  }>
   /** Exact-route specialties for models outside the curated gateway catalog. */
   readonly routeCapabilities?: RouteCapabilities[]
   /** User-saved exact-route specialty overrides. */

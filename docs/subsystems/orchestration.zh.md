@@ -16,9 +16,9 @@
 
 ## 模式与授权
 
-已提交的会话模式会记录并投影。轮次中的选择在下一个被接受且未取消的步骤生效。新建子代理在准入等待前保存父代理已提交的模式，并在第一次请求前记录此选择。之后修改父代理模式不会改变现有子代理的模式。
+已提交的会话模式和所选模型池会记录并投影。轮次中的选择在下一个被接受且未取消的步骤生效。新建子代理在准入等待前保存父代理已提交的模式和模型池，并在第一次请求前记录此选择。之后修改父代理模式不会改变现有子代理的模式。
 
-已有模型权限限制路由，历史记录中缺少策略时仅允许父路由。图形界面会检查并持久授权当前根 Session 的新增路由；已有子代理保留其已记录授权。仅修改模型池不会扩大已有会话的权限。授权检查点失败时，新委派保持受阻，直到重试存储。
+已有模型权限限制路由，历史记录中缺少策略时仅允许父路由。开启主会话开关会持久授权所选模型池。新增路由需要重新启用；删除的路由立即不再用于新任务和恢复，同一次启用中重新加入后也不例外。已有子代理保留其授权。缺少快照的旧版活跃 Session 必须关闭并重新开启才能开始新的编排任务。检查点失败时，新委派保持受阻，直到重试存储。
 
 主机目录端点返回按实时提供方分组的 `OrchestrationCatalog`。Web 面板通过 Remote 读取目录，并可为精确路由保存用户指定的专长。
 
@@ -85,6 +85,12 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
  */
 @Remote({ name: 'activateReviewed', resources: { session: sessionId => sessionId } }) async activateReviewed(sessionId: SessionId, reviewId: OrchestrationReviewId, authorize: boolean): Promise<OrchestrationActivationResult>
 
+/** Enable a root conversation using the current pool as the owner's selection.
+ * @param sessionId - Conversation to activate.
+ * @returns Applied or queued selection, or an actionable setup failure.
+ */
+@Remote({ name: 'activatePool', resources: { session: sessionId => sessionId } }) async activatePool(sessionId: SessionId): Promise<OrchestrationPoolActivationResult>
+
 /** Retry a failed authorization checkpoint without writing another approval.
  * @param sessionId - Conversation whose checkpoint failed.
  * @returns Whether the Session's checkpoint is now durable.
@@ -124,7 +130,7 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
 @Remote('persistPoolConfiguration') async persistPoolConfiguration(pool: readonly PoolRoute[], capabilityOverrides: readonly RouteCapabilities[], revision: number): Promise<PoolConfigurationSaveResult>
 ```
 
-Types: [Agent](core.zh.md) · [OrchestrationActivationPreflight](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [OrchestrationActivationResult](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [OrchestrationReviewId](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolConfiguration](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolConfigurationSaveResult](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolSaveResult](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolSettingsState](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [RouteCapabilities](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [SessionId](core.zh.md)
+Types: [Agent](core.zh.md) · [OrchestrationActivationPreflight](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [OrchestrationActivationResult](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [OrchestrationPoolActivationResult](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [OrchestrationReviewId](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolConfiguration](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolConfigurationSaveResult](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolSaveResult](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [PoolSettingsState](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [RouteCapabilities](../../packages/subagent/orchestration/README.zh.md#use-this-package) · [SessionId](core.zh.md)
 
 Source: [`packages/subagent/orchestration/src/index.ts`](../../packages/subagent/orchestration/src/index.ts)
 <!-- END GENERATED cordis-surface -->

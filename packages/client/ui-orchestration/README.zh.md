@@ -28,7 +28,7 @@ Web 应用组合包挂载本包，基础配置提供编排服务。Web Client lo
 
 ### 选择会话模式
 
-使用输入栏的编排开关更改当前会话。模型池为空时先选择并保存模型。出现提示时检查并授权新增路由；已有子代理的授权保持不变。等待生效的更改显示“从下一步生效”；请求失败时保留主机投影中的选择以便重试。
+使用主会话输入栏的编排开关启用所选模型池。模型池为空时先选择并保存模型。开启开关即授权当前会话使用所选路由。子代理会话不显示此开关。等待生效的更改显示“从下一步生效”；请求失败时保留主机投影中的选择以便重试。
 
 ### 选择模型池
 
@@ -48,7 +48,7 @@ Web 应用组合包挂载本包，基础配置提供编排服务。Web Client lo
 <details>
 <summary>实现细节——点击展开</summary>
 
-Client export 通过 `ctx.remote.$mount` 挂载 `orchestrations` Remote contribution，然后注册设置面板、附加的 `conversation.input.left` 输入栏控件和 `conversation.session.panel.section` 区域。开关读取 `orchestration` 投影，通过主机检查启用请求，并通过会话绑定的命令服务提交关闭命令。该区域读取已发布的主会话和子代理 `orchestrationRouting` 与 `modelSelection` 投影；它不打开会话，也不扫描日志。面板的目录来自 Host 的 `getCatalog` Remote。
+Client export 通过 `ctx.remote.$mount` 挂载 `orchestrations` Remote contribution，然后注册设置面板、附加的 `conversation.input.left` 输入栏控件和 `conversation.session.panel.section` 区域。开关读取 `orchestration` 投影，通过主机启用所选模型池，并通过会话绑定的命令服务提交关闭命令。该区域读取已发布的主会话和子代理 `orchestrationRouting` 与 `modelSelection` 投影；它不打开会话，也不扫描日志。面板的目录来自 Host 的 `getCatalog` Remote。
 
 | 文件 | 职责 |
 |---|---|

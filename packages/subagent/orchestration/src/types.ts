@@ -14,6 +14,15 @@ export interface PoolRoute {
   readonly model: string
 }
 
+/** Identity of one uninterrupted membership in the configured pool. */
+export type PoolMembershipId = Branded<'OrchestrationPoolMembershipId'>
+
+/** A route and the identity of its current pool membership. */
+export interface PoolMembership extends PoolRoute {
+  /** Identity retained while this route stays in the pool. */
+  readonly membershipId: PoolMembershipId
+}
+
 /** A model row shown by the pool settings client, grouped by its registered provider. */
 export interface OrchestrationCatalogModel extends ModelCapability {
   /** Exact registered LLM provider that serves this route; the route is `{provider, id}`. */
@@ -79,6 +88,10 @@ export type OrchestrationActivationResult =
   | { readonly status: 'applied' | 'queued' }
   | { readonly status: 'stale' | 'failed' | 'authorization-required' }
 
+/** Result of enabling orchestration with the current selected pool. */
+export type OrchestrationPoolActivationResult =
+  | { readonly status: 'applied' | 'queued' | 'needs-pool' | 'unavailable' | 'durability' | 'stale' | 'failed' }
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** Only the owner may approve child model routes. */
@@ -100,6 +113,11 @@ export interface OrchestrationConfig {
   readonly userPool?: PoolRoute[]
   /** An explicit user override exists, including an intentionally empty pool. */
   readonly userPoolConfigured?: boolean
+  /** Durable identities for the current pool memberships. */
+  readonly userPoolMemberships?: Array<PoolRoute & {
+    /** Identity retained while this route stays in the pool. */
+    readonly membershipId: string
+  }>
   /** Exact-route specialties for models outside the curated gateway catalog. */
   readonly routeCapabilities?: RouteCapabilities[]
   /** User-saved exact-route specialty overrides. */
@@ -174,6 +192,8 @@ export interface OrchestrationRouteDecision {
 export interface OrchestrationProjection {
   active: boolean
   pending: boolean
+  /** An older activation needs to be switched off and on to capture its pool. */
+  requiresReactivation?: boolean | undefined
 }
 
 /** Explicitly assessed next phase, applied only at a model-request boundary. */
@@ -215,12 +235,18 @@ export interface OrchestrationUnitState {
   running: { commandId: CommandId; wanted: boolean } | null
   /** Whether an explicit or default mode was logged. */
   entered: boolean
+  /** Pool captured for the applied activation; null for older Sessions. */
+  activePool: readonly PoolMembership[] | null
+  /** Pool captured for an activation waiting for the next step. */
+  wantedPool: readonly PoolMembership[] | null
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Durable mode selection queued during an open turn. */
     'orchestration/mode-request': { active: boolean }
+    /** Pool captured when an activation is applied or queued. */
+    'orchestration/pool-snapshot': { pending: boolean; members: readonly PoolMembership[] }
     /** Informational routing evidence; never changes model history. */
     'orchestration/route': OrchestrationRouteDecision
     /** Full bounded routing state; informational until the runtime admits its requested route. */

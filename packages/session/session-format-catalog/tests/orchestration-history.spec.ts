@@ -5,7 +5,7 @@ import { restoreReleasedV4Artifact } from '@deepseek-ai/dsh-session-format-v3-to
 import type { SessionFormatArtifact } from '@deepseek-ai/dsh-session-format'
 
 it.each([
-  'orchestration/mode-request', 'orchestration/route', 'orchestration/routing-state',
+  'orchestration/mode-request', 'orchestration/pool-snapshot', 'orchestration/route', 'orchestration/routing-state',
   'subagent/model-selection-policy-authorized',
 ])('rejects %s when an older reader does not recognize it', (type) => {
   const artifact: SessionFormatArtifact = {

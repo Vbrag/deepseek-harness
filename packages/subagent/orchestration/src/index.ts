@@ -33,6 +33,7 @@ import type {
   OrchestrationConfig, OrchestrationProjection, OrchestrationRouteAlternative, OrchestrationUnitState, PoolRoute,
   PoolSettingsState, PoolSaveResult, PoolConfiguration, PoolConfigurationSaveResult, RouteCapabilities,
   OrchestrationActivationPreflight, OrchestrationActivationResult, OrchestrationReviewId,
+  OrchestrationPoolActivationResult, PoolMembership, PoolMembershipId,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -54,23 +55,44 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 const commandIdSchema: ZodType<CommandId> = zod.string().transform(value => brandString<CommandId>(value))
 const modeRequestSchema = zod.object({ active: zod.boolean() }).strict()
+const membershipSchema: ZodType<PoolMembership> = zod.object({
+  provider: zod.string().min(1), model: zod.string().min(1),
+  membershipId: zod.string().min(1).transform(value => brandString<PoolMembershipId>(value)),
+}).strict()
+const poolSnapshotSchema = zod.object({ pending: zod.boolean(), members: zod.array(membershipSchema) }).strict()
 const stateSchema: ZodType<OrchestrationUnitState> = zod.object({
   active: zod.boolean(),
   wanted: zod.boolean().nullable(),
   running: zod.object({ commandId: commandIdSchema, wanted: zod.boolean() }).strict().nullable(),
   entered: zod.boolean(),
+  activePool: zod.array(membershipSchema).nullable(),
+  wantedPool: zod.array(membershipSchema).nullable(),
 }).strict()
-const viewSchema: ZodType<OrchestrationProjection> = zod.object({ active: zod.boolean(), pending: zod.boolean() })
+const viewSchema: ZodType<OrchestrationProjection> = zod.object({
+  active: zod.boolean(), pending: zod.boolean(), requiresReactivation: zod.boolean().optional(),
+})
 
 /** Restores pending selections without retaining process-local Session state. */
 const orchestrationProjectionDefinition = {
   key: 'orchestration',
-  stateVersion: 3,
+  stateVersion: 4,
   stateSchema,
-  init: (): OrchestrationUnitState => ({ active: false, wanted: null, running: null, entered: false }),
+  init: (): OrchestrationUnitState => ({ active: false, wanted: null, running: null, entered: false,
+    activePool: null, wantedPool: null }),
   apply: (state: OrchestrationUnitState, event) => {
     if (event.type === 'orchestration/mode') {
-      return { active: event.data.active, wanted: null, running: null, entered: true }
+      return { ...state, active: event.data.active, wanted: null, running: null, entered: true,
+        activePool: null, wantedPool: null }
+    }
+    if (event.type === 'orchestration/pool-snapshot') {
+      const value = poolSnapshotSchema.safeParse(event.data)
+      if (!value.success || new Set(value.data.members.map(routeKey)).size !== value.data.members.length
+        || new Set(value.data.members.map(member => member.membershipId)).size !== value.data.members.length) {
+        throw new OrchestrationError('stored orchestration pool snapshot is invalid', 'ORCHESTRATION_INVALID_RECORD')
+      }
+      if (value.data.pending) return { ...state, wanted: true, wantedPool: value.data.members, running: null }
+      return { ...state, active: true, activePool: value.data.members, wanted: null, wantedPool: null,
+        running: null, entered: true }
     }
     const record = pluginRecordOf(event)
     if (event.type === 'orchestration/mode-request' || record?.type === 'plugin:orchestration/mode-request') {
@@ -78,7 +100,8 @@ const orchestrationProjectionDefinition = {
       if (!value.success) {
         throw new OrchestrationError('stored orchestration mode selection is invalid', 'ORCHESTRATION_INVALID_RECORD')
       }
-      return { ...state, wanted: value.data.active === state.active ? null : value.data.active, running: null }
+      return { ...state, wanted: value.data.active === state.active ? null : value.data.active,
+        wantedPool: null, running: null }
     }
     // Historical logs represent queued mode changes through command settlement.
     if (event.type === 'command/run' && event.data.name === 'orchestration') {
@@ -97,6 +120,7 @@ const orchestrationProjectionDefinition = {
       active: state.active,
       pending: (state.running?.wanted ?? state.wanted) !== null
         && (state.running?.wanted ?? state.wanted) !== state.active,
+      ...(state.active && state.activePool === null ? { requiresReactivation: true } : {}),
     }),
   },
 } satisfies ProjectionDefinition<'orchestration', OrchestrationUnitState>
@@ -157,6 +181,9 @@ export class OrchestrationService extends TypertRemoteService {
     // configured `pool` default (which a shipped profile layer may own).
     userPool: z.array(routeSchema).default([]).volatile(),
     userPoolConfigured: z.boolean().default(false).volatile(),
+    userPoolMemberships: z.array(z.object({
+      provider: z.string(), model: z.string(), membershipId: z.string().min(1),
+    })).default([]).volatile(),
     routeCapabilities: z.array(z.object({
       provider: z.string(), model: z.string(), capabilities: z.array(specialtySchema),
     })).default([]),
@@ -173,12 +200,15 @@ export class OrchestrationService extends TypertRemoteService {
     maxEmptyOutputLimits: z.number().step(1).min(1).default(2),
   })
 
-  private readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool' | 'userPoolConfigured' | 'userRouteCapabilities'>>
+  private readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool' | 'userPoolConfigured' | 'userPoolMemberships' | 'userRouteCapabilities'>>
   private readonly poolConfig: Volatile<readonly PoolRoute[]> | readonly PoolRoute[] | undefined
   private readonly userPoolConfig: Volatile<readonly PoolRoute[]> | readonly PoolRoute[] | undefined
   private readonly userPoolConfigured: Volatile<boolean> | boolean | undefined
+  private readonly membershipConfig: Volatile<readonly (PoolRoute & { readonly membershipId: string })[]>
+    | readonly (PoolRoute & { readonly membershipId: string })[] | undefined
   private readonly userCapabilitiesConfig: Volatile<readonly RouteCapabilities[]> | readonly RouteCapabilities[] | undefined
   private poolValue: readonly PoolRoute[]
+  private poolMemberships: readonly PoolMembership[]
   private projection: ProjectionHandle<OrchestrationUnitState> | undefined
   private readonly pendingAssignments = new Map<SessionId, PoolRoute>()
   private readonly lastAssigned = new Map<string, number>()
@@ -187,6 +217,7 @@ export class OrchestrationService extends TypertRemoteService {
     id: OrchestrationReviewId
     pool: readonly PoolRoute[]
     poolRevision: number
+    members: readonly PoolMembership[]
     policy: readonly PoolRoute[] | null
     parent: PoolRoute | null
     modeGeneration: number
@@ -203,8 +234,11 @@ export class OrchestrationService extends TypertRemoteService {
     this.poolConfig = config.pool
     this.userPoolConfig = config.userPool
     this.userPoolConfigured = config.userPoolConfigured
+    this.membershipConfig = config.userPoolMemberships
     this.userCapabilitiesConfig = config.userRouteCapabilities
     this.poolValue = [...this.effectivePool()]
+    const savedMemberships = this.configuredMemberships()
+    this.poolMemberships = this.makeMemberships(this.poolValue, this.validMemberships(savedMemberships) ? savedMemberships : [])
     this.config = {
       routeCapabilities: config.routeCapabilities ?? [],
       contextOverheadTokens: config.contextOverheadTokens ?? 8192,
@@ -231,6 +265,28 @@ export class OrchestrationService extends TypertRemoteService {
     if (new Set(keys).size !== keys.length) {
       throw new OrchestrationError('routeCapabilities must not repeat an exact provider/model', 'ORCHESTRATION_INVALID_CONFIG')
     }
+  }
+
+  private configuredMemberships(): readonly PoolMembership[] {
+    const source = this.membershipConfig
+    const members = source === undefined ? [] : isVolatile(source) ? source.get() : source
+    return members.map(member => ({ ...member, membershipId: brandString<PoolMembershipId>(member.membershipId) }))
+  }
+
+  private validMemberships(members: readonly PoolMembership[]): boolean {
+    return new Set(members.map(routeKey)).size === members.length
+      && new Set(members.map(member => member.membershipId)).size === members.length
+      && members.every(member => member.provider.length > 0 && member.model.length > 0 && member.membershipId.length > 0)
+  }
+
+  private membershipsMatch(pool: readonly PoolRoute[], members: readonly PoolMembership[]): boolean {
+    return members.length === pool.length && this.validMemberships(members)
+      && members.every(member => pool.some(route => routeKey(route) === routeKey(member)))
+  }
+
+  private makeMemberships(pool: readonly PoolRoute[], previous: readonly PoolMembership[]): readonly PoolMembership[] {
+    return pool.map(route => ({ ...route, membershipId: previous.find(member => routeKey(member) === routeKey(route))?.membershipId
+      ?? brandString<PoolMembershipId>(randomUUID()) }))
   }
 
   private poolOf(): readonly PoolRoute[] {
@@ -288,6 +344,7 @@ export class OrchestrationService extends TypertRemoteService {
     this.ctx.on('subagent/end', (run) => { this.pendingAssignments.delete(run.id) })
     this.ctx.on('session/event', (session, event) => {
       if (event.type === 'orchestration/mode' || event.type === 'orchestration/mode-request'
+        || event.type === 'orchestration/pool-snapshot'
         || pluginRecordOf(event)?.type === 'plugin:orchestration/mode-request') {
         this.modeGenerations.set(session, (this.modeGenerations.get(session) ?? 0) + 1)
       }
@@ -300,13 +357,18 @@ export class OrchestrationService extends TypertRemoteService {
       const decision = await next()
       if (decision.kind === 'reject' || signal.aborted) return decision
       if (decision.messages.length === 0 && (step === 1 || messages.length > 0)) return decision
-      const wanted = this.stateOf(agent.session).wanted
-      if (wanted !== null) this.commit(agent, wanted)
+      const state = this.stateOf(agent.session)
+      if (state.wanted !== null) this.commit(agent, state.wanted, state.wantedPool)
       return decision
     }, { prepend: true })
     this.ctx.on('loader/volatile-update', (paths) => {
-      if (paths.some(path => path.length === 1 && (path[0] === 'pool' || path[0] === 'userPool' || path[0] === 'userPoolConfigured'))) {
-        this.setPool(this.effectivePool())
+      if (paths.some(path => path.length === 1 && (path[0] === 'pool' || path[0] === 'userPool'
+        || path[0] === 'userPoolConfigured' || path[0] === 'userPoolMemberships'))) {
+        const pool = this.effectivePool()
+        const memberships = this.configuredMemberships()
+        if (paths.some(path => path.length === 1 && path[0] === 'userPoolMemberships')
+          && this.membershipsMatch(pool, memberships)) this.poolMemberships = memberships.map(member => ({ ...member }))
+        this.setPool(pool)
       }
     })
     this.ctx.systemPrompt.context({
@@ -356,8 +418,9 @@ export class OrchestrationService extends TypertRemoteService {
     }
   }
 
-  private commit(agent: Agent, active: boolean): void {
-    agent.session.append('orchestration/mode', { active })
+  private commit(agent: Agent, active: boolean, members: readonly PoolMembership[] | null = this.poolMemberships): void {
+    if (active && members !== null) agent.session.append('orchestration/pool-snapshot', { pending: false, members })
+    else agent.session.append('orchestration/mode', { active })
   }
 
   /** Count each assigned child once across its reservation and any published live work. */
@@ -403,7 +466,9 @@ export class OrchestrationService extends TypertRemoteService {
     const state = this.stateOf(agent.session)
     if (active === (state.wanted ?? state.active)) return 'noop'
     if (this.ctx.agents.turnBoundaryOf(agent.session).openTurnStartSeq !== null) {
-      agent.session.append('orchestration/mode-request', { active })
+      if (active && active !== state.active) {
+        agent.session.append('orchestration/pool-snapshot', { pending: true, members: this.poolMemberships })
+      } else agent.session.append('orchestration/mode-request', { active })
       return active === state.active ? 'cancelled' : 'queued'
     }
     this.commit(agent, active)
@@ -487,7 +552,8 @@ export class OrchestrationService extends TypertRemoteService {
     const additionalRoutes = pool.filter(route => !allowed.some(item => routeKey(item) === routeKey(route)))
     if (isChild && additionalRoutes.length === pool.length) return { status: 'child-restricted' }
     const id = brandString<OrchestrationReviewId>(randomUUID())
-    this.activationReviews.set(session, { id, pool, poolRevision: revision, policy: policy ?? null,
+    this.activationReviews.set(session, { id, pool, poolRevision: revision,
+      members: this.poolMemberships.map(member => ({ ...member })), policy: policy ?? null,
       parent: parentRoute, modeGeneration: this.modeGenerations.get(session) ?? 0,
       additionalRoutes: isChild ? [] : additionalRoutes })
     return { status: !isChild && additionalRoutes.length > 0 ? 'authorize' : 'ready', reviewId: id,
@@ -517,6 +583,7 @@ export class OrchestrationService extends TypertRemoteService {
       const policy = session.header.origin === 'subagent'
         ? this.ctx.subagents.runningModelPolicyOf(session) : this.ctx.subagents.modelSelectionPolicyOf(session)
       return state.revision === review.poolRevision && isDeepStrictEqual(state.pool, review.pool)
+        && isDeepStrictEqual(this.poolMemberships, review.members)
         && isDeepStrictEqual(policy ?? null, review.policy) && isDeepStrictEqual(route, review.parent)
         && (this.modeGenerations.get(session) ?? 0) === review.modeGeneration
     }
@@ -539,12 +606,60 @@ export class OrchestrationService extends TypertRemoteService {
       const expectedPolicy = [...review.policy ?? [], ...additions]
       const actualPolicy = this.ctx.subagents.modelSelectionPolicyOf(session)
       if (after.revision !== review.poolRevision || !isDeepStrictEqual(after.pool, review.pool)
+        || !isDeepStrictEqual(this.poolMemberships, review.members)
         || (this.modeGenerations.get(session) ?? 0) !== review.modeGeneration
         || this.ctx.agents.get(sessionId) !== agent || !isDeepStrictEqual(routeAfter, review.parent)
         || !isDeepStrictEqual(actualPolicy, expectedPolicy)) return { status: 'stale' }
     }
-    const outcome = this.select(agent, true)
-    return { status: outcome === 'queued' ? 'queued' : 'applied' }
+    const state = this.stateOf(session)
+    const requested = state.wanted === null ? state.active : state.wanted
+    if (requested) return { status: 'applied' }
+    const pending = this.ctx.agents.turnBoundaryOf(session).openTurnStartSeq !== null
+    try {
+      if (pending && state.active) {
+        await this.ctx.sessions.appendDurably(session, [['orchestration/mode-request', { active: true }]])
+      } else {
+        await this.ctx.sessions.appendDurably(session, [['orchestration/pool-snapshot', { pending, members: review.members }]])
+      }
+    } catch (error: unknown) {
+      this.ctx.logger.warn('orchestration: activation could not be persisted', error)
+      return { status: 'failed' }
+    }
+    return { status: pending && !state.active ? 'queued' : 'applied' }
+  }
+
+  /** Enable a root conversation using the current pool as the owner's selection.
+   * @param sessionId - Conversation to activate.
+   * @returns Applied or queued selection, or an actionable setup failure.
+   */
+  @Remote({ name: 'activatePool', resources: { session: sessionId => sessionId } })
+  async activatePool(sessionId: SessionId): Promise<OrchestrationPoolActivationResult> {
+    this.requireOwner()
+    const agent = await this.activationAgent(sessionId)
+    if (agent === undefined || agent.session.header.origin === 'subagent') return { status: 'unavailable' }
+    if (this.ctx.sessions.durableAppendPending(agent.session)) return { status: 'durability' }
+    const initial = this.getPoolSettingsState()
+    if (initial.pool.length === 0) return { status: 'needs-pool' }
+    if (initial.revision === null) return { status: 'unavailable' }
+    if (!isDeepStrictEqual(this.configuredMemberships(), this.poolMemberships)) {
+      const settings = this.ctx.get('settings')
+      if (settings === undefined) return { status: 'unavailable' }
+      const members = this.poolMemberships.map(member => ({ ...member }))
+      try {
+        await settings.update(POOL_SETTINGS_NS, { userPoolMemberships: members }, initial.revision)
+      } catch (error: unknown) {
+        this.ctx.logger.warn('orchestration: pool membership could not be persisted', error)
+        return { status: error instanceof Error && 'code' in error && error.code === 'SETTINGS_CONFLICT' ? 'stale' : 'failed' }
+      }
+      const after = this.getPoolSettingsState()
+      if (!isDeepStrictEqual(after.pool, initial.pool) || !isDeepStrictEqual(this.configuredMemberships(), members)
+        || !isDeepStrictEqual(this.poolMemberships, members)) return { status: 'stale' }
+    }
+    const preflight = await this.prepareActivation(sessionId)
+    if (!('reviewId' in preflight)) return { status: preflight.status === 'child-restricted' ? 'unavailable' : preflight.status }
+    const result = await this.activateReviewed(sessionId, preflight.reviewId, true)
+    if (result.status === 'failed' && this.ctx.sessions.durableAppendPending(agent.session)) return { status: 'durability' }
+    return { status: result.status === 'authorization-required' ? 'failed' : result.status }
   }
 
   /** Retry a failed authorization checkpoint without writing another approval.
@@ -635,6 +750,7 @@ export class OrchestrationService extends TypertRemoteService {
    */
   @Remote('setPool')
   setPool(pool: readonly PoolRoute[]): void {
+    this.poolMemberships = this.makeMemberships(pool, this.poolMemberships)
     this.poolValue = pool.map(route => ({ ...route }))
     const keys = new Set(pool.map(routeKey))
     for (const key of this.lastAssigned.keys()) if (!keys.has(key)) this.lastAssigned.delete(key)
@@ -656,9 +772,11 @@ export class OrchestrationService extends TypertRemoteService {
       if (pool.some(route => route.provider.length === 0 || route.model.length === 0) || new Set(keys).size !== keys.length) {
         return { status: 'failed', message: 'The model pool contains an invalid or repeated route.' }
       }
-      await settings.update(POOL_SETTINGS_NS, { userPool: pool, userPoolConfigured: true }, revision)
+      const members = this.makeMemberships(pool, this.poolMemberships)
+      await settings.update(POOL_SETTINGS_NS, { userPool: pool, userPoolConfigured: true, userPoolMemberships: members }, revision)
       const current = this.getPoolSettingsState()
-      if (current.revision === null || !isDeepStrictEqual(current.pool, pool)) {
+      if (current.revision === null || !isDeepStrictEqual(current.pool, pool)
+        || !isDeepStrictEqual(this.configuredMemberships(), members) || !isDeepStrictEqual(this.poolMemberships, members)) {
         return { status: 'failed', message: 'The saved pool is not the active configuration. Reload settings.' }
       }
       return { status: 'saved', pool: current.pool, revision: current.revision }
@@ -691,10 +809,12 @@ export class OrchestrationService extends TypertRemoteService {
       return { status: 'failed', message: 'The model pool or specialties contain invalid or repeated entries.' }
     }
     try {
+      const members = this.makeMemberships(pool, this.poolMemberships)
       await settings.update(POOL_SETTINGS_NS, { userPool: pool, userPoolConfigured: true,
-        userRouteCapabilities: capabilityOverrides }, revision)
+        userPoolMemberships: members, userRouteCapabilities: capabilityOverrides }, revision)
       const configuration = this.getPoolConfiguration()
       if (configuration.revision === null || !isDeepStrictEqual(configuration.pool, pool)
+        || !isDeepStrictEqual(this.configuredMemberships(), members) || !isDeepStrictEqual(this.poolMemberships, members)
         || !isDeepStrictEqual(configuration.capabilityOverrides, capabilityOverrides)) {
         return { status: 'failed', message: 'The saved configuration is not active. Reload settings.' }
       }
@@ -714,11 +834,24 @@ export class OrchestrationService extends TypertRemoteService {
     admission?: AdaptiveAdmission,
   ): Promise<SubagentModelRouting> {
     signal.throwIfAborted()
+    const capturedPool = this.stateOf(request.parent.session).activePool
+    let admitted: PoolRoute | undefined
+    const belongs = (route: PoolRoute): boolean => {
+      const captured = capturedPool?.find(member => routeKey(member) === routeKey(route))
+      return captured !== undefined && this.poolMemberships.some(member => routeKey(member) === routeKey(route)
+        && member.membershipId === captured.membershipId)
+    }
     const setup = (child: Agent): void => {
-      this.commit(child, active)
+      if (active && admitted !== undefined && !belongs(admitted)) {
+        throw new OrchestrationError('The selected model was removed before the child started.', 'ORCHESTRATION_NO_CAPABLE_ROUTE')
+      }
+      this.commit(child, active, capturedPool)
       if (active && request.taskAssessment !== undefined) this.adaptiveRouting().initialize(child, request.taskAssessment)
     }
     if (!active) return this.config.recordDisabledDefault ? { setup } : {}
+    if (capturedPool === null) {
+      throw new OrchestrationError('Turn orchestration off and on to capture the selected model pool.', 'ORCHESTRATION_NO_CAPABLE_ROUTE')
+    }
     const declared = request.taskAssessment
     if (declared === undefined) {
       throw new OrchestrationError('orchestration mode requires task_assessment for each fresh local delegation', 'ORCHESTRATION_ASSESSMENT_REQUIRED')
@@ -736,8 +869,8 @@ export class OrchestrationService extends TypertRemoteService {
     const parent = request.parent.model.current()
     const allowed = admission?.allowedModels ?? policy ?? (parent === undefined ? [] : [{ provider: parent.provider, model: parent.model }])
     const configuredPool = this.getPool()
-    const pool = configuredPool.filter(route =>
-      allowed.some(item => item.provider === route.provider && item.model === route.model))
+    const pool = configuredPool.filter(route => belongs(route)
+      && allowed.some(item => item.provider === route.provider && item.model === route.model))
     const unavailable = new Set<string>()
     const inspected = await Promise.allSettled(pool.map(async (route): Promise<CapabilityRoute | undefined> => {
       try {
@@ -807,6 +940,7 @@ export class OrchestrationService extends TypertRemoteService {
     while (true) {
       signal.throwIfAborted()
       if (admission?.isCurrent?.() === false) throw new OrchestrationError('A newer phase replaced this admission.', 'ORCHESTRATION_REASSIGNMENT_STALE')
+      if (!capable.some(belongs)) throw new OrchestrationError('No selected model remains in the current pool.', 'ORCHESTRATION_NO_CAPABLE_ROUTE')
       const availability = await Promise.all(capable.map(async (route) => {
         const cap = caps.get(routeKey(route))
         if (cap === undefined) throw new Error('A capable route has no resolved generation cap')
@@ -826,7 +960,7 @@ export class OrchestrationService extends TypertRemoteService {
         load.set(oldKey, Math.max(0, (load.get(oldKey) ?? 0) - 1))
       }
       const ready: ReadyRoute[] = availability.flatMap(({ route, queue }) =>
-        !this.adaptiveRouting().billingAvailable(route.billing) ? [] :
+        !belongs(route) || !this.adaptiveRouting().billingAvailable(route.billing) ? [] :
           queue.kind === 'ready' || queue.kind === 'unknown' ? [{ route, readiness: queue.kind,
             active: load.get(routeKey(route)) ?? 0, lastAssigned: this.lastAssigned.get(routeKey(route)) ?? 0 }] : [])
       const preferred = admission?.preferredRoute
@@ -866,6 +1000,7 @@ export class OrchestrationService extends TypertRemoteService {
           outputTokens: Math.max(cap, assessment.outputTokens ?? this.config.outputReserveTokens),
         })
         const assignment = { provider: selected.route.provider, model: selected.route.model }
+        admitted = assignment
         this.pendingAssignments.set(request.childId, assignment)
         this.lastAssigned.set(key, ++this.sequence)
         return {

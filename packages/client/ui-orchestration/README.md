@@ -28,7 +28,7 @@ The Web application bundle mounts this package and the base profile supplies the
 
 ### Select the session mode
 
-Use the composer's Orchestration switch to change the current conversation. If the pool is empty, select and save models first. Review and authorize additional routes when prompted; existing child grants remain unchanged. A queued change shows “Applies from the next step”; a failed request leaves the host-projected choice visible for retry.
+Use the main conversation's Orchestration switch to activate the selected pool. If the pool is empty, select and save models first. Enabling the switch authorizes the selected routes for that conversation. Subagent conversations do not show this switch. A queued change shows “Applies from the next step”; a failed request leaves the host-projected choice visible for retry.
 
 ### Pick the model pool
 
@@ -48,7 +48,7 @@ Open the conversation's session panel to see **Orchestration models**. The lead 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel, an additive `conversation.input.left` composer control, and a `conversation.session.panel.section` section. The switch reads the `orchestration` projection, reviews activation through the Host, and submits the off command through the session-bound command service. The section reads published lead and child `orchestrationRouting` and `modelSelection` projections; it neither opens Sessions nor scans logs. The panel derives its catalog from the Host `getCatalog` Remote.
+The Client export mounts the `orchestrations` Remote contribution through `ctx.remote.$mount`, then registers the settings panel, an additive `conversation.input.left` composer control, and a `conversation.session.panel.section` section. The switch reads the `orchestration` projection, activates the selected pool through the Host, and submits the off command through the session-bound command service. The section reads published lead and child `orchestrationRouting` and `modelSelection` projections; it neither opens Sessions nor scans logs. The panel derives its catalog from the Host `getCatalog` Remote.
 
 | File | Role |
 |---|---|

@@ -18,7 +18,7 @@ EXPECTED_ROOT = Path(__file__).parent / "expected"
     ("team-mode-projection.json", ("team/mode",)),
     ("prompt-enhancement-projection.json", ("prompt-enhancement/request", "prompt-enhancement/result",
                                             "prompt-enhancement/accepted")),
-    ("orchestration-projection.json", ("orchestration/mode", "orchestration/route",
+    ("orchestration-projection.json", ("orchestration/mode", "orchestration/pool-snapshot", "orchestration/route",
                                        "subagent/running-model-policy", "orchestration/routing-state")),
     ("todo-handoff-projection.json", ("todo/policy", "work-handoff/checkpoint", "work-handoff/captured", "work-handoff/saved",
                                       "project-context/status", "project-context/document-observed",

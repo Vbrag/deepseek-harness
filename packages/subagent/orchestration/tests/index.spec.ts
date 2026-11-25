@@ -146,6 +146,124 @@ function routeRecords(agent: Agent) {
 }
 
 describe('session-scoped normal delegation routing', () => {
+  it('keeps additions and re-added routes out until the next activation', async () => {
+    const f = await fixture({ pool: [pool[0]!] })
+    f.service.setMode(f.parent, true)
+    f.service.setPool(pool)
+    let route = await f.resolve()
+    expect(route.agentOptions?.model).toBe('code')
+    route.release?.()
+    f.service.setPool([pool[1]!])
+    f.service.setPool(pool)
+    await expect(f.resolve()).rejects.toMatchObject({ code: 'ORCHESTRATION_NO_CAPABLE_ROUTE' })
+    f.service.setMode(f.parent, false)
+    f.service.setMode(f.parent, true)
+    route = await f.resolve()
+    expect(['code', 'mixed']).toContain(route.agentOptions?.model)
+    route.release?.()
+  })
+
+  it('retains removal and re-addition restrictions after service replacement', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const prior = f.parent.session.snapshotEvents()
+    f.service.setPool([pool[1]!])
+    f.service.setPool(pool)
+    f.service.setMode(f.parent, false)
+    f.service.setMode(f.parent, true)
+    const latest = f.parent.session.snapshotEvents().findLast(event => event.type === 'orchestration/pool-snapshot')
+    if (latest?.type !== 'orchestration/pool-snapshot') throw new Error('activation snapshot missing')
+    await f.mount.dispose()
+    const register = vi.spyOn(f.ctx.subagents, 'registerModelRouter')
+    await f.ctx.plugin(OrchestrationService, { pool, userPoolMemberships: [...latest.data.members],
+      routeCapabilities: pool.map(route => ({ ...route, capabilities: ['coding' as const] })) })
+    const restored = (await f.ctx.agents.create({ sessionId: SessionId('restored-pool'), seed: prior,
+      agentOptions: { provider: 'mock', model: 'lead' } })).agent
+    const router = register.mock.calls.at(-1)?.[0]
+    if (router === undefined) throw new Error('replacement router missing')
+    const route = await router.resolve(f.request({ parent: restored }))
+    if (route === undefined) throw new Error('replacement router did not admit the child')
+    expect(route.agentOptions?.model).toBe('mixed')
+    route.release?.()
+  })
+
+  it('rechecks pool membership after model metadata is loaded', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    f.adapter.lookup = async (provider, model) => {
+      entered.resolve(undefined)
+      await release.promise
+      return { provider, id: model, name: model, inputModalities: ['text'], context: { contextWindow: 100_000 } }
+    }
+    const pending = f.resolve()
+    try {
+      await entered.promise
+      f.service.setPool([pool[1]!])
+    } finally { release.resolve(undefined) }
+    const route = await pending
+    expect(route.agentOptions?.model).toBe('mixed')
+    route.release?.()
+  })
+
+  it('refuses to start an admitted child after its selected model is removed', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const admission = await f.resolve()
+    const child = (await f.ctx.agents.create({ sessionId: SessionId('removed-before-start'),
+      agentOptions: { provider: 'mock', model: 'code' } })).agent
+    f.service.setPool(pool.filter(route => route.model !== admission.agentOptions?.model))
+    await expect(Promise.resolve().then(() => admission.setup?.(child)))
+      .rejects.toThrow('The selected model was removed before the child started.')
+    admission.release?.()
+  })
+
+  it('keeps unchanged memberships after a configured pool grows during restart', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const snapshot = f.parent.session.snapshotEvents().find(event => event.type === 'orchestration/pool-snapshot')
+    if (snapshot?.type !== 'orchestration/pool-snapshot') throw new Error('activation snapshot missing')
+    await f.mount.dispose()
+    const register = vi.spyOn(f.ctx.subagents, 'registerModelRouter')
+    const extra = { provider: 'mock', model: 'added' }
+    await f.ctx.plugin(OrchestrationService, { pool: [...pool, extra], userPoolMemberships: [...snapshot.data.members],
+      routeCapabilities: [...pool, extra].map(route => ({ ...route, capabilities: ['coding' as const] })) })
+    const router = register.mock.calls.at(-1)?.[0]
+    if (router === undefined) throw new Error('replacement router missing')
+    const route = await router.resolve(f.request())
+    expect(['code', 'mixed']).toContain(route?.agentOptions?.model)
+    route?.release?.()
+  })
+
+  it('gives an admitted child the captured pool even if the parent later changes mode', async () => {
+    const f = await fixture()
+    f.service.setMode(f.parent, true)
+    const admission = await f.resolve()
+    f.service.setMode(f.parent, false)
+    const child = (await f.ctx.agents.create({ sessionId: SessionId('captured-child'),
+      agentOptions: { provider: 'mock', model: 'code' } })).agent
+    child.session.append('subagent/model-selection-policy', { allowedModels: pool })
+    await admission.setup?.(child)
+    expect(f.service.modeOf(child)).toBe(true)
+    const delegated = await f.resolve({ parent: child })
+    expect(['code', 'mixed']).toContain(delegated.agentOptions?.model)
+    delegated.release?.()
+    admission.release?.()
+  })
+
+  it('asks for reactivation before routing an older active session', async () => {
+    const f = await fixture()
+    f.parent.session.append('orchestration/mode', { active: true })
+    expect(f.ctx.sessionProjections.snapshot(f.parent.session).values.orchestration)
+      .toEqual({ active: true, pending: false, requiresReactivation: true })
+    await expect(f.resolve()).rejects.toMatchObject({ code: 'ORCHESTRATION_NO_CAPABLE_ROUTE' })
+    f.service.setMode(f.parent, false)
+    f.service.setMode(f.parent, true)
+    const route = await f.resolve()
+    route.release?.()
+  })
+
   it('guides proactive parallel delegation only while Orchestration mode is active', async () => {
     const f = await fixture()
     expect(await orchestrationContext(f.ctx)).toEqual({ name: 'orchestration', text: '' })
@@ -642,10 +760,13 @@ describe('session-scoped normal delegation routing', () => {
     child.followup(createUserMessage({ content: prompt, source: { kind: 'user' } }))
     try {
       await started.promise
+      const snapshot = f.parent.session.snapshotEvents().find(event => event.type === 'orchestration/pool-snapshot')
+      if (snapshot?.type !== 'orchestration/pool-snapshot') throw new Error('activation snapshot missing')
       await f.mount.dispose()
       const register = vi.spyOn(f.ctx.subagents, 'registerModelRouter')
       await f.ctx.plugin(OrchestrationService, {
-        pool, routeCapabilities: pool.map(route => ({ ...route, capabilities: ['coding' as const] })),
+        pool, userPoolMemberships: [...snapshot.data.members],
+        routeCapabilities: pool.map(route => ({ ...route, capabilities: ['coding' as const] })),
       })
       const replacement = register.mock.calls.at(-1)?.[0]
       if (replacement === undefined) throw new Error('replacement router missing')
@@ -814,6 +935,12 @@ describe('durable mode selections', () => {
     expect(() => f.service.modeOf(f.parent)).toThrow()
   })
 
+  it('rejects malformed stored pool snapshots', async () => {
+    const f = await fixture()
+    f.parent.session.append('orchestration/pool-snapshot', Object.assign({ pending: false, members: [] }, { newer: true }))
+    expect(() => f.service.modeOf(f.parent)).toThrow('stored orchestration pool snapshot is invalid')
+  })
+
   it('replays a legacy experimental pending-mode record', async () => {
     const f = await fixture()
     appendPluginRecord(f.parent.session, 'plugin:orchestration/mode-request', { active: true })
@@ -824,6 +951,53 @@ describe('durable mode selections', () => {
 })
 
 describe('GUI activation authorization', () => {
+  it('cancels a queued disable without replacing the current activation', async () => {
+    const f = await fixture({ userPoolMemberships: pool.map((route, i) => ({ ...route, membershipId: String(i) })) })
+    f.service.setMode(f.parent, true)
+    const original = f.parent.session.snapshotEvents().findLast(event => event.type === 'orchestration/pool-snapshot')
+    f.parent.session.append('turn/start', { turn: 0 })
+    expect(f.service.select(f.parent, false)).toBe('queued')
+    f.ctx.provide('settings', { describe: () => [{ ns: 'orchestration', revision: 1 }] } as never)
+    vi.spyOn(f.ctx.sessions, 'flush').mockResolvedValue(true)
+    await expect(f.service.activatePool(f.parent.id)).resolves.toEqual({ status: 'applied' })
+    expect(f.ctx.sessionProjections.snapshot(f.parent.session).values.orchestration).toEqual({ active: true, pending: false })
+    expect(f.parent.session.snapshotEvents().findLast(event => event.type === 'orchestration/pool-snapshot')).toEqual(original)
+  })
+
+  it('enables the selected pool and durably grants its additional routes', async () => {
+    const extra = { provider: 'mock', model: 'other' }
+    const selected = [...pool, extra]
+    const f = await fixture({ pool: selected, seedPoolAsRootPolicy: false,
+      userPoolMemberships: selected.map((route, i) => ({ ...route, membershipId: String(i) })) })
+    f.ctx.provide('settings', { describe: () => [{ ns: 'orchestration', revision: 4 }] } as never)
+    const flush = vi.spyOn(f.ctx.sessions, 'flush').mockResolvedValue(true)
+    await expect(f.service.activatePool(f.parent.id)).resolves.toEqual({ status: 'applied' })
+    expect(f.ctx.subagents.modelSelectionPolicyOf(f.parent.session)).toEqual(selected)
+    expect(f.parent.session.snapshotEvents().find(event => event.type === 'orchestration/pool-snapshot'))
+      .toMatchObject({ data: { pending: false, members: selected } })
+    expect(flush).toHaveBeenCalledTimes(2)
+  })
+
+  it('blocks routing if the activation snapshot cannot be flushed', async () => {
+    const f = await fixture({ userPoolMemberships: pool.map((route, i) => ({ ...route, membershipId: String(i) })) })
+    f.ctx.provide('settings', { describe: () => [{ ns: 'orchestration', revision: 1 }] } as never)
+    vi.spyOn(f.ctx.sessions, 'flush').mockRejectedValueOnce(new Error('storage offline')).mockResolvedValue(true)
+    await expect(f.service.activatePool(f.parent.id)).resolves.toEqual({ status: 'durability' })
+    await expect(f.resolve()).rejects.toMatchObject({ code: 'PERSISTENCE_UNAVAILABLE' })
+    await expect(f.service.retryActivationStorage(f.parent.id)).resolves.toBe(true)
+    const route = await f.resolve()
+    route.release?.()
+  })
+
+  it('does not grant routes through activation of a child conversation', async () => {
+    const f = await fixture()
+    const child = (await f.ctx.agents.create({ sessionId: SessionId('restricted-child'), meta: { origin: 'subagent' },
+      agentOptions: { provider: 'mock', model: 'code' } })).agent
+    const before = f.ctx.subagents.modelSelectionPolicyOf(child.session)
+    await expect(f.service.activatePool(child.id)).resolves.toEqual({ status: 'unavailable' })
+    expect(f.ctx.subagents.modelSelectionPolicyOf(child.session)).toEqual(before)
+  })
+
   it('requires explicit approval and durably adds the new routes', async () => {
     const f = await fixture()
     const extra = { provider: 'mock', model: 'other' }
@@ -838,7 +1012,7 @@ describe('GUI activation authorization', () => {
     const next = await f.service.prepareActivation(f.parent.id)
     if (next.status !== 'authorize') throw new Error('Expected authorization review')
     await expect(f.service.activateReviewed(f.parent.id, next.reviewId, true)).resolves.toEqual({ status: 'applied' })
-    expect(flush).toHaveBeenCalledOnce()
+    expect(flush).toHaveBeenCalledTimes(2)
     expect(f.ctx.subagents.modelSelectionPolicyOf(f.parent.session)).toEqual([...pool, extra])
     expect(f.parent.session.snapshotEvents().filter(event => event.type === 'subagent/model-selection-policy-authorized')).toHaveLength(1)
     expect(f.service.modeOf(f.parent)).toBe(true)
@@ -924,7 +1098,7 @@ describe('pool settings and configuration', () => {
     expect(f.service.getPool()).toEqual(original)
   })
 
-  it('confirms saved routes and specialties regardless of object key order', async () => {
+  it('rejects a save when settings did not apply the membership identities', async () => {
     const f = await fixture()
     const route = { provider: 'mock', model: 'worker' }
     f.ctx.provide('settings', { update: vi.fn().mockResolvedValue(undefined),
@@ -934,7 +1108,7 @@ describe('pool settings and configuration', () => {
       capabilityOverrides: [{ capabilities: ['coding'], model: 'worker', provider: 'mock' }],
     })
     await expect(f.service.persistPoolConfiguration([route], [{ ...route, capabilities: ['coding'] }], 1))
-      .resolves.toMatchObject({ status: 'saved' })
+      .resolves.toMatchObject({ status: 'failed' })
   })
 
   it('rejects invalid allowances and duplicate exact specialty declarations', async () => {

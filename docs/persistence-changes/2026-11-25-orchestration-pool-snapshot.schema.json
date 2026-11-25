@@ -1,0 +1,18 @@
+{
+  "formatVersion": 2,
+  "roots": [
+    {"key":"event:orchestration/pool-snapshot","kind":"event","event":"orchestration/pool-snapshot","surface":false,"digest":"b6ae9be32d8f1971015bc524b8d1dbda437bce855e9a3ff79c67f156a9b2d611"}
+  ],
+  "types": [],
+  "nodes": {
+    "0657d3ca5ac4e7bf": {"kind":"primitive","type":"number"},
+    "0735f1ba9bad8e30": {"kind":"object","properties":[{"name":"members","type":"3d967c2f61ff14d4","optional":false},{"name":"pending","type":"aa93010d0e521ad7","optional":false}],"indices":[]},
+    "33de78facd863722": {"kind":"literal","value":"orchestration/pool-snapshot"},
+    "3d967c2f61ff14d4": {"kind":"array","element":"73a40db4bb644fb5"},
+    "4cd48f3e5108bd6e": {"kind":"primitive","type":"string"},
+    "73a40db4bb644fb5": {"kind":"object","properties":[{"name":"membershipId","type":"4cd48f3e5108bd6e","optional":false},{"name":"model","type":"4cd48f3e5108bd6e","optional":false},{"name":"provider","type":"4cd48f3e5108bd6e","optional":false}],"indices":[]},
+    "aa93010d0e521ad7": {"kind":"primitive","type":"boolean"},
+    "b6ae9be32d8f1971": {"kind":"object","properties":[{"name":"data","type":"0735f1ba9bad8e30","optional":false},{"name":"ignorable","type":"dacf3d5f3e4ff619","optional":true},{"name":"seq","type":"0657d3ca5ac4e7bf","optional":false},{"name":"time","type":"0657d3ca5ac4e7bf","optional":false},{"name":"type","type":"33de78facd863722","optional":false}],"indices":[]},
+    "dacf3d5f3e4ff619": {"kind":"literal","value":true}
+  }
+}

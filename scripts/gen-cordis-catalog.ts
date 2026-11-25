@@ -350,6 +350,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   RouteCapabilities: '../../packages/subagent/orchestration/README.md#use-this-package',
   OrchestrationActivationPreflight: '../../packages/subagent/orchestration/README.md#use-this-package',
   OrchestrationActivationResult: '../../packages/subagent/orchestration/README.md#use-this-package',
+  OrchestrationPoolActivationResult: '../../packages/subagent/orchestration/README.md#use-this-package',
   OrchestrationReviewId: '../../packages/subagent/orchestration/README.md#use-this-package',
   SessionEventInput: '../../packages/core/session/README.md#use-this-package',
   PromptEnhancementPreferences: '../../packages/context/prompt-enhancement/README.md#use-this-package',

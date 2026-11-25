@@ -1372,6 +1372,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       if (scenario.name === 'orchestration-mode') {
         const toolResults = logs.flatMap(log => records(log.content).filter(event => event.type === 'tool/result'
           || event.type === 'orchestration/mode' || event.type === 'orchestration/mode-request'
+          || event.type === 'orchestration/pool-snapshot'
           || event.type === 'plugin:orchestration/mode-request'))
         expect(logs, 'orchestration Sessions; tool results: ' + JSON.stringify(toolResults)).toHaveLength(3)
       }
@@ -1448,7 +1449,8 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expect(events.filter(event => event.type === 'tool-workflow/agent-start')).toHaveLength(3)
         expect(events.filter(event => event.type === 'turn/start')).toHaveLength(1)
         for (const child of ordered.slice(1)) {
-          expect(records(child.content).find(event => event.type === 'orchestration/mode')?.data).toEqual({ active: true })
+          expect(records(child.content).find(event => event.type === 'orchestration/pool-snapshot')?.data)
+            .toMatchObject({ pending: false })
         }
       }
       if (scenario.name === 'project-context') {
@@ -1502,7 +1504,10 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const parent = ordered[0]!
         const events = records(parent.content)
         expect(events.filter(event => event.type === 'orchestration/mode').map(event => event.data))
-          .toEqual([{ active: false }, { active: true }, { active: false }])
+          .toEqual([{ active: false }, { active: false }])
+        const snapshot = events.find(event => event.type === 'orchestration/pool-snapshot')
+        expect(snapshot?.data).toMatchObject({ pending: false,
+          members: expect.arrayContaining([expect.objectContaining({ provider: 'snapshot-workers', model: 'coder' })]) })
         const decisions = events.filter(event => event.type === 'orchestration/route' || event.type === 'plugin:orchestration/route')
         expect(decisions).toHaveLength(1)
         expect(decisions[0]?.data).toMatchObject({
@@ -1511,8 +1516,8 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           selected: { provider: 'snapshot-workers', model: 'coder' },
           reason: 'pool-order',
         })
-        expect(records(ordered[1]!.content).find(event => event.type === 'orchestration/mode')?.data)
-          .toEqual({ active: true })
+        expect(records(ordered[1]!.content).find(event => event.type === 'orchestration/pool-snapshot')?.data)
+          .toEqual(snapshot?.data)
         expect(records(ordered[2]!.content).find(event => event.type === 'orchestration/mode')?.data)
           .toEqual({ active: false })
         const parentContexts = assembledRuntimeContexts(parent)

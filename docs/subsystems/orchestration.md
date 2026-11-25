@@ -16,9 +16,9 @@ Eligible ready routes are ranked by task fit, then active assignments and stable
 
 ## Mode and authorization
 
-The committed per-session mode is logged and projected. Mid-turn selections apply at the next accepted non-aborted step. A fresh child snapshots its parent's committed mode before admission waits and records that selection before its first request. Changing the parent's mode later does not change existing children's modes.
+The committed per-session mode and selected pool are logged and projected. Mid-turn selections apply at the next accepted non-aborted step. A fresh child snapshots its parent's committed mode and pool before admission waits and records that selection before its first request. Changing the parent's mode later does not change existing children's modes.
 
-Existing recorded model permissions constrain routing, and historical absence permits only the parent route. The GUI reviews and durably authorizes additional routes for the current root Session; existing children keep their recorded grants. Pool changes alone do not widen permissions in existing sessions. A failed authorization checkpoint blocks new delegations until storage is retried.
+Existing recorded model permissions constrain routing, and historical absence permits only the parent route. Enabling the main conversation's switch durably authorizes the selected pool. Added routes require a new activation; removed routes are immediately ineligible for new work and recovery, including after re-addition within the same activation. Existing children keep their grants. Older active Sessions without a snapshot require off/on before new orchestrated work. A failed checkpoint blocks new delegations until storage is retried.
 
 The Host catalog endpoint returns `OrchestrationCatalog` grouped by live provider. The Web panel reads it through Remote and can save user-defined specialties for exact routes.
 
@@ -85,6 +85,12 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
  */
 @Remote({ name: 'activateReviewed', resources: { session: sessionId => sessionId } }) async activateReviewed(sessionId: SessionId, reviewId: OrchestrationReviewId, authorize: boolean): Promise<OrchestrationActivationResult>
 
+/** Enable a root conversation using the current pool as the owner's selection.
+ * @param sessionId - Conversation to activate.
+ * @returns Applied or queued selection, or an actionable setup failure.
+ */
+@Remote({ name: 'activatePool', resources: { session: sessionId => sessionId } }) async activatePool(sessionId: SessionId): Promise<OrchestrationPoolActivationResult>
+
 /** Retry a failed authorization checkpoint without writing another approval.
  * @param sessionId - Conversation whose checkpoint failed.
  * @returns Whether the Session's checkpoint is now durable.
@@ -124,7 +130,7 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
 @Remote('persistPoolConfiguration') async persistPoolConfiguration(pool: readonly PoolRoute[], capabilityOverrides: readonly RouteCapabilities[], revision: number): Promise<PoolConfigurationSaveResult>
 ```
 
-Types: [Agent](core.md) · [OrchestrationActivationPreflight](../../packages/subagent/orchestration/README.md#use-this-package) · [OrchestrationActivationResult](../../packages/subagent/orchestration/README.md#use-this-package) · [OrchestrationReviewId](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolConfiguration](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolConfigurationSaveResult](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolSaveResult](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolSettingsState](../../packages/subagent/orchestration/README.md#use-this-package) · [RouteCapabilities](../../packages/subagent/orchestration/README.md#use-this-package) · [SessionId](core.md)
+Types: [Agent](core.md) · [OrchestrationActivationPreflight](../../packages/subagent/orchestration/README.md#use-this-package) · [OrchestrationActivationResult](../../packages/subagent/orchestration/README.md#use-this-package) · [OrchestrationPoolActivationResult](../../packages/subagent/orchestration/README.md#use-this-package) · [OrchestrationReviewId](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolConfiguration](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolConfigurationSaveResult](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolSaveResult](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolSettingsState](../../packages/subagent/orchestration/README.md#use-this-package) · [RouteCapabilities](../../packages/subagent/orchestration/README.md#use-this-package) · [SessionId](core.md)
 
 Source: [`packages/subagent/orchestration/src/index.ts`](../../packages/subagent/orchestration/src/index.ts)
 <!-- END GENERATED cordis-surface -->

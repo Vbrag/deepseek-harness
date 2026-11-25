@@ -101,13 +101,8 @@ function registerUi(ctx: Context): void {
           const result = await commandCtx.remote.commands.execute(sessionId, `/orchestration ${active ? 'on' : 'off'}`, [])
           return result.ok && result.value?.result.kind === 'success'
         },
-        prepareActivation: async () => {
-          const result = await commandCtx.remote.orchestrations.prepareActivation(sessionId)
-          if (!result.ok) throw result.error
-          return result.value
-        },
-        activateReviewed: async (reviewId, authorize) => {
-          const result = await commandCtx.remote.orchestrations.activateReviewed(sessionId, reviewId, authorize)
+        activatePool: async () => {
+          const result = await commandCtx.remote.orchestrations.activatePool(sessionId)
           if (!result.ok) throw result.error
           return result.value
         },

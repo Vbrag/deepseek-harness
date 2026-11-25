@@ -31,7 +31,7 @@ export interface AdaptiveAdmission {
 }
 
 interface RoutingHost {
-  readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool' | 'userPoolConfigured' | 'userRouteCapabilities'>>
+  readonly config: Required<Omit<OrchestrationConfig, 'pool' | 'userPool' | 'userPoolConfigured' | 'userPoolMemberships' | 'userRouteCapabilities'>>
   modeOf(agent: Agent): boolean
   preparingEnabled(agent: Agent): boolean
   modeOfSession(session: Session): boolean

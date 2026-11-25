@@ -2868,6 +2868,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Applied, queued, stale, or failed admission.',
       },
       {
+        signature: '@Remote({ name: \'activatePool\', resources: { session: sessionId => sessionId } }) async activatePool(sessionId: SessionId): Promise<OrchestrationPoolActivationResult>',
+        description: 'Enable a root conversation using the current pool as the owner\'s selection.',
+        parameters: [{ name: 'sessionId', description: 'Conversation to activate.' }],
+        returns: 'Applied or queued selection, or an actionable setup failure.',
+      },
+      {
         signature: '@Remote({ name: \'retryActivationStorage\', resources: { session: sessionId => sessionId } }) async retryActivationStorage(sessionId: SessionId): Promise<boolean>',
         description: 'Retry a failed authorization checkpoint without writing another approval.',
         parameters: [{ name: 'sessionId', description: 'Conversation whose checkpoint failed.' }],
@@ -9356,6 +9362,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OrchestrationCatalogModel',
     declaration: 'export interface OrchestrationCatalogModel extends ModelCapability {\n    readonly provider: string;\n    readonly providerName: string;\n    readonly offlineCurated: boolean;\n}',
+  },
+  {
+    name: 'OrchestrationPoolActivationResult',
+    declaration: 'export type OrchestrationPoolActivationResult = {\n    readonly status: \'applied\' | \'queued\' | \'needs-pool\' | \'unavailable\' | \'durability\' | \'stale\' | \'failed\';\n};',
   },
   {
     name: 'OrchestrationReviewId',
