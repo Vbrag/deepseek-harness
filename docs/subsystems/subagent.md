@@ -559,7 +559,7 @@ interface SubagentModelRouter {
 
 ### Orchestration routing evidence
 
-The [orchestration plugin](../../packages/experimental/dsh-orchestration/README.md) records eligibility, assignment load, and queue state. Retained records may omit optional diagnostic fields; these diagnostic records grant no model permissions. Separate routing-state records recover assessed phase requests and their disposition; the runtime admits model changes only within the child's own running-model grant.
+The [orchestration plugin](../../packages/subagent/orchestration/README.md) records eligibility, assignment load, and queue state. Retained records may omit optional diagnostic fields; these diagnostic records grant no model permissions. Separate routing-state records recover assessed phase requests and their disposition; the runtime admits model changes only within the child's own running-model grant.
 
 ```ts type-equiv
 /** One exact registered LLM route eligible for orchestration. */

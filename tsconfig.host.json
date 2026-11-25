@@ -622,7 +622,7 @@
     { "path": "./packages/jobs/jobs-local" },
     { "path": "./packages/jobs/tool-jobs" },
     { "path": "./packages/team/agent-team" },
-    { "path": "./packages/experimental/dsh-orchestration" },
+    { "path": "./packages/subagent/orchestration" },
     { "path": "./packages/experimental/orchestration-profile" },
     { "path": "./packages/experimental/inspector-profile" },
     { "path": "./packages/experimental/liveshare-protocol/tsconfig.host.json" },

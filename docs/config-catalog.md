@@ -3044,7 +3044,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-orchestration`
 
 - `inject`: `llm` · `subagents` · `sessionProjections` · `agents` · `systemPrompt` · `sessions`
-- `source`: [`packages/experimental/dsh-orchestration/src/types.ts:60`](../packages/experimental/dsh-orchestration/src/types.ts)
+- `source`: [`packages/subagent/orchestration/src/types.ts:92`](../packages/subagent/orchestration/src/types.ts)
 
 ```ts config-catalog
 /** Validated deployment policy; session selections take precedence over defaults. */
@@ -3057,6 +3057,8 @@ export interface OrchestrationConfig {
   readonly userPoolConfigured?: boolean
   /** Exact-route specialties for models outside the curated gateway catalog. */
   readonly routeCapabilities?: RouteCapabilities[]
+  /** User-saved exact-route specialty overrides. */
+  readonly userRouteCapabilities?: RouteCapabilities[]
   /** Input-token allowance for child instructions, tool schemas, and request wrappers; defaults to 8192. */
   readonly contextOverheadTokens?: number
   /** Output-token allowance when the assessment omits outputTokens; defaults to 4096. */
@@ -3065,6 +3067,10 @@ export interface OrchestrationConfig {
   readonly availabilityPollMs?: number
   /** Initial mode logged for a session with no recorded selection; defaults to false. */
   readonly defaultToOrchestrator?: boolean
+  /** Record an inactive default and capture it for new children. */
+  readonly recordDisabledDefault?: boolean
+  /** Use the configured pool as authorization for new root Sessions. */
+  readonly seedPoolAsRootPolicy?: boolean
   /** Maximum child model changes per recovery episode; defaults to 2. Explicit phases start a new episode. */
   readonly maxAutomaticReassignments?: number
   /** Consecutive output-limit responses without text or tools before recovery; defaults to 2. */
@@ -5929,7 +5935,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-message-feedback` | — | [`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-model-selection` | — | [`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-open-in-app` | — | [`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts) |
-| `@deepseek-ai/dsh-client-ui-orchestration` | — | [`packages/experimental/client-ui-orchestration/src/index.ts`](../packages/experimental/client-ui-orchestration/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-orchestration` | — | [`packages/client/ui-orchestration/src/index.ts`](../packages/client/ui-orchestration/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-permission-presets` | — | [`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-plan` | — | [`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-plugin-market` | — | [`packages/client/ui-plugin-market/src/index.ts`](../packages/client/ui-plugin-market/src/index.ts) |

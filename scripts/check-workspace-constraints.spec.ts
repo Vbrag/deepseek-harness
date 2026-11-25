@@ -2,7 +2,7 @@
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import {
   isPublicExperimentalPackageDirectory,
@@ -12,6 +12,7 @@ import {
 } from './experimental-package-policy.ts'
 import {
   checkDshFamilyVersion,
+  checkHierarchyShape,
   checkWorkspaceManifest,
   checkWorkspaceProtocol,
   checkExperimentalDependencyIsolation,
@@ -33,6 +34,27 @@ const experimental = {
     publishConfig: { access: 'public' },
   },
 } satisfies WorkspaceManifest
+
+it('allows only the retained orchestration documentation at its historical package path', () => {
+  const tempRoot = resolve(tmpdir())
+  const workspace = resolve(mkdtempSync(join(tempRoot, 'dsh-historical-package-docs-')))
+  if (!workspace.startsWith(`${tempRoot}${sep}`)) throw new Error('Fixture must remain inside its temporary directory')
+  onTestFinished(() => { rmSync(workspace, { recursive: true, force: true }) })
+  const historical = join(workspace, 'packages', 'experimental', 'dsh-orchestration')
+  mkdirSync(historical, { recursive: true })
+  for (const file of ['README.md', 'README.zh.md', 'README.i18n.yaml']) writeFileSync(join(historical, file), '')
+  expect(checkHierarchyShape(workspace)).toEqual([])
+  mkdirSync(join(historical, 'lib'))
+  mkdirSync(join(historical, 'node_modules'))
+  expect(checkHierarchyShape(workspace)).toEqual([])
+  writeFileSync(join(historical, 'unexpected.ts'), '')
+  expect(checkHierarchyShape(workspace)).toEqual([expect.stringContaining('may contain only its paired README files')])
+  rmSync(join(historical, 'unexpected.ts'))
+  rmSync(join(historical, 'README.zh.md'))
+  expect(checkHierarchyShape(workspace)).toEqual([expect.stringContaining('may contain only its paired README files')])
+  mkdirSync(join(workspace, 'packages', 'experimental', 'unlisted'))
+  expect(checkHierarchyShape(workspace)).toContainEqual(expect.stringContaining('no package.json found'))
+})
 
 describe('workspace dependency ranges', () => {
   const dependency = { dir: 'packages/core/runtime', manifest: { name: '@deepseek-ai/dsh-runtime' } }

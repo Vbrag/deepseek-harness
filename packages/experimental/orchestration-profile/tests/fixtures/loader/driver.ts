@@ -52,8 +52,9 @@ try {
     const runToolPresent = ctx.tools.schemas(parent).some(tool => tool.name === 'run_orchestration')
     const persistedPool = [{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }]
     const poolState = ctx.orchestrations.getPoolSettingsState()
-    const persistAccepted = poolState.revision !== null
-      && (await ctx.orchestrations.persistPool(persistedPool, poolState.revision)).status === 'saved'
+    const persistResult = poolState.revision === null ? { status: 'unavailable' }
+      : await ctx.orchestrations.persistPool(persistedPool, poolState.revision)
+    const persistAccepted = persistResult.status === 'saved'
     const staleSave = poolState.revision === null ? 'unavailable'
       : (await ctx.orchestrations.persistPool([], poolState.revision)).status
     const beforeEmpty = ctx.orchestrations.getPoolSettingsState()
@@ -67,7 +68,8 @@ try {
     process.stdout.write(`${JSON.stringify({
       rootOutput, orchestrationsLoaded: ctx.get('orchestrations') !== undefined,
       runToolPresent, defaultOutput, codingOutput, visionOutput, mixedOutput,
-      persistAccepted, staleSave, emptySave, emptyPool, restoreSave, persistedPool: ctx.orchestrations.getPool(),
+      persistAccepted, persistResult, poolState,
+      staleSave, emptySave, emptyPool, restoreSave, persistedPool: ctx.orchestrations.getPool(),
       compactionConfig,
       parentId: parent.id,
       requests: (await readFile('model-requests.jsonl', 'utf8')).trimEnd().split('\n')

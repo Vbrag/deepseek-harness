@@ -2,7 +2,7 @@
 
 English | [中文](orchestration.zh.md)
 
-Orchestration mode assigns normal fresh subagents to permitted model routes using the task assessment, required inputs, context estimate, and available capacity. The lead agent retains the session model. Default mode preserves normal delegation. The [service reference](../../packages/experimental/dsh-orchestration/README.md) owns configuration; the [subagent runtime](subagent.md) owns admission, child execution, and teardown.
+Orchestration mode assigns normal fresh subagents to permitted model routes using the task assessment, required inputs, context estimate, and available capacity. The lead agent retains the session model. Default mode preserves normal delegation. The [service reference](../../packages/subagent/orchestration/README.md) owns configuration; the [subagent runtime](subagent.md) owns admission, child execution, and teardown.
 
 ## Task assessment and eligibility
 
@@ -18,9 +18,9 @@ Eligible ready routes are ranked by task fit, then active assignments and stable
 
 The committed per-session mode is logged and projected. Mid-turn selections apply at the next accepted non-aborted step. A fresh child snapshots its parent's committed mode before admission waits and records that selection before its first request. Changing the parent's mode later does not change existing children's modes.
 
-Existing recorded model permissions constrain routing, and historical absence permits only the parent route. The existing model-selection settings owner initializes fresh root permissions from an explicit setting or the router's selected pool. Pool changes do not widen permissions in existing sessions.
+Existing recorded model permissions constrain routing, and historical absence permits only the parent route. The GUI reviews and durably authorizes additional routes for the current root Session; existing children keep their recorded grants. Pool changes alone do not widen permissions in existing sessions. A failed authorization checkpoint blocks new delegations until storage is retried.
 
-The Host catalog endpoint returns `OrchestrationCatalog`: the provider id and its curated model capability records. The Web panel reads this through Remote rather than importing Host runtime values.
+The Host catalog endpoint returns `OrchestrationCatalog` grouped by live provider. The Web panel reads it through Remote and can save user-defined specialties for exact routes.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -66,6 +66,31 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
  */
 @Remote('getPoolSettingsState') getPoolSettingsState(): PoolSettingsState
 
+/** Read the active pool and user-assigned specialties at one revision.
+ * @returns Detached settings for the pool editor.
+ */
+@Remote('getPoolConfiguration') getPoolConfiguration(): PoolConfiguration
+
+/** Review the current pool and the Session's existing child-model permissions.
+ * @param sessionId - Conversation to activate.
+ * @returns A setup requirement or a one-use review of the exact routes.
+ */
+@Remote({ name: 'prepareActivation', resources: { session: sessionId => sessionId } }) async prepareActivation(sessionId: SessionId): Promise<OrchestrationActivationPreflight>
+
+/** Apply one reviewed activation without widening permissions without consent.
+ * @param sessionId - Conversation from the review.
+ * @param reviewId - One-use review identifier.
+ * @param authorize - Whether the user approved the displayed additional routes.
+ * @returns Applied, queued, stale, or failed admission.
+ */
+@Remote({ name: 'activateReviewed', resources: { session: sessionId => sessionId } }) async activateReviewed(sessionId: SessionId, reviewId: OrchestrationReviewId, authorize: boolean): Promise<OrchestrationActivationResult>
+
+/** Retry a failed authorization checkpoint without writing another approval.
+ * @param sessionId - Conversation whose checkpoint failed.
+ * @returns Whether the Session's checkpoint is now durable.
+ */
+@Remote({ name: 'retryActivationStorage', resources: { session: sessionId => sessionId } }) async retryActivationStorage(sessionId: SessionId): Promise<boolean>
+
 /** Permit a user to retry models after correcting an exhausted billing account. */
 @Remote('resetBillingHealth') resetBillingHealth(): void
 
@@ -89,9 +114,17 @@ select(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'n
  * @returns The applied pool or an actionable failure.
  */
 @Remote('persistPool') async persistPool(pool: readonly PoolRoute[], revision: number): Promise<PoolSaveResult>
+
+/** Persist a pool and exact-route specialty overrides against the settings revision.
+ * @param pool - Selected exact provider/model routes.
+ * @param capabilityOverrides - User-assigned specialties for exact routes.
+ * @param revision - Revision returned by {@link getPoolConfiguration}.
+ * @returns Confirmed configuration or an actionable stale/failed result.
+ */
+@Remote('persistPoolConfiguration') async persistPoolConfiguration(pool: readonly PoolRoute[], capabilityOverrides: readonly RouteCapabilities[], revision: number): Promise<PoolConfigurationSaveResult>
 ```
 
-Types: [Agent](core.md) · [PoolSaveResult](../../packages/experimental/dsh-orchestration/README.md#use-this-package) · [PoolSettingsState](../../packages/experimental/dsh-orchestration/README.md#use-this-package)
+Types: [Agent](core.md) · [OrchestrationActivationPreflight](../../packages/subagent/orchestration/README.md#use-this-package) · [OrchestrationActivationResult](../../packages/subagent/orchestration/README.md#use-this-package) · [OrchestrationReviewId](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolConfiguration](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolConfigurationSaveResult](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolSaveResult](../../packages/subagent/orchestration/README.md#use-this-package) · [PoolSettingsState](../../packages/subagent/orchestration/README.md#use-this-package) · [RouteCapabilities](../../packages/subagent/orchestration/README.md#use-this-package) · [SessionId](core.md)
 
-Source: [`packages/experimental/dsh-orchestration/src/index.ts`](../../packages/experimental/dsh-orchestration/src/index.ts)
+Source: [`packages/subagent/orchestration/src/index.ts`](../../packages/subagent/orchestration/src/index.ts)
 <!-- END GENERATED cordis-surface -->

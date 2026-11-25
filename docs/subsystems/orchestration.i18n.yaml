@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/orchestration.md
 /orchestration:
-  en: f90205c07ec339dc
-  zh: af438eab76ed6dd2
+  en: 6e0ba05c7973c973
+  zh: 2c4f640abe250a63
 /orchestration/task-assessment-and-eligibility:
   en: e69353447e7679c3
   zh: e1e55c0f01487047
@@ -12,5 +12,5 @@
   en: a957c63795f98214
   zh: d7a8da26209e143f
 /orchestration/mode-and-authorization:
-  en: 6c34e9efdadc9f1f
-  zh: 0f83d9d6ecb5f75e
+  en: 33046aa298dfec32
+  zh: 2b7ab70add093d42

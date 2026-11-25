@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Enable Orchestration mode to encourage useful parallel delegation and assign normal subagents to models suited to their tasks and available capacity. This optional experimental layer adds the mode control and shared model pool to a profile built on `dsh-base`. The lead agent stays on the session's selected model. Default mode retains normal delegation. The bundle requires a compatible host runtime and is absent from default profiles.
+Enable Orchestration mode to encourage useful parallel delegation and assign normal subagents to models suited to their tasks and available capacity. This optional experimental layer configures a Paderborn model pool and compaction defaults for a profile built on `dsh-base`. The lead agent stays on the session's selected model. Default mode retains normal delegation. The bundle requires a compatible host runtime and is absent from default profiles.
 
 ## Table of Contents
 
@@ -25,11 +25,11 @@ Enable Orchestration mode to encourage useful parallel delegation and assign nor
 <a id="use-this-package"></a>
 ## Use this package
 
-Apply this bundle after `dsh-base` in an opted-in profile. Its [patch](cordis.patch.yml) mounts the orchestration service with a seed model pool of the full Uni Paderborn chat set and the optional Web controls. Replace the service's `pool` through profile configuration or the Orchestration settings panel.
+Apply this bundle after `dsh-base` in an opted-in profile. Its [patch](cordis.patch.yml) configures the existing orchestration service with a seed model pool of the full Uni Paderborn chat set. Replace the service's `pool` through profile configuration or the Orchestration settings panel.
 
 The profile supplies exact `uni-paderborn` compaction defaults for `gwdg.glm-5.3-flash` and `hs-de.qwen3.8-27b`: `headroomTokens: 8192` and summary `maxTokens: 8192`. The global patch covers the base provider; its effect-owned runtime plugin fills absent fields in later scoped Web providers. Explicit top-level or exact-route Loader configuration takes priority. These summary limits do not set worker generation caps or task-assessment estimates.
 
-Select Orchestration from the conversation composer or use `/orchestration on`; use Default or `/orchestration off` to return to normal delegation. The normal subagent tools carry the task assessment and selected context. Required capabilities are enforced together: a coding task with visual verification needs both coding and image understanding. The [service reference](../dsh-orchestration/README.md) owns assessment fields and routing rules.
+Use the Orchestration switch in the conversation composer or `/orchestration on`; switch it off or use `/orchestration off` to return to normal delegation. The normal subagent tools carry the task assessment and selected context. Required capabilities are enforced together: a coding task with visual verification needs both coding and image understanding. The [service reference](../../subagent/orchestration/README.md) owns assessment fields and routing rules.
 
 -----
 
@@ -39,7 +39,7 @@ Select Orchestration from the conversation composer or use `/orchestration on`; 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The bundle inserts the orchestration service and Web panel alongside the existing subagent runtime and tools. The service supplies a model-routing policy through the runtime's registered extension. The normal activation manager owns child startup, cancellation, results, and teardown. The bundle does not add another task executor.
+The bundle configures the orchestration service alongside the existing subagent runtime and tools. The service supplies a model-routing policy through the runtime's registered extension. The normal activation manager owns child startup, cancellation, results, and teardown. The bundle does not add another task executor.
 
 </details>
 
@@ -48,9 +48,9 @@ The bundle inserts the orchestration service and Web panel alongside the existin
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Orchestration service](../dsh-orchestration/README.md) — mode, pool, task matching, and configuration.
+- [Orchestration service](../../subagent/orchestration/README.md) — mode, pool, task matching, and configuration.
 - [Normal subagent tools](../../subagent/tool-subagent/README.md) — delegation and context handoff.
-- [Web controls](../client-ui-orchestration/README.md) — mode selection and pool settings.
+- [Web controls](../../client/ui-orchestration/README.md) — mode selection and pool settings.
 
 -----
 
@@ -61,7 +61,7 @@ The bundle inserts the orchestration service and Web panel alongside the existin
 
 #### What the model sees
 
-The service encourages useful parallel delegation within existing limits and contributes routing guidance to normal `subagent` calls; the subagent tool owns the task assessment and selected image context. The [service reference](../dsh-orchestration/README.md#model-experience) describes the exact guidance.
+The service encourages useful parallel delegation within existing limits and contributes routing guidance to normal `subagent` calls; the subagent tool owns the task assessment and selected image context. The [service reference](../../subagent/orchestration/README.md#model-experience) describes the exact guidance.
 
 #### Token effect
 

@@ -561,7 +561,7 @@ interface SubagentModelRouter {
 
 ### 编排路由记录
 
-[编排插件](../../packages/experimental/dsh-orchestration/README.zh.md)记录候选资格、分配负载和队列状态。较早保留的记录可以没有可选诊断字段；这些诊断记录不授予模型权限。独立的路由状态记录恢复已评估阶段请求及其处置；运行时仅在子级自身的运行模型授权内准入模型切换。
+[编排插件](../../packages/subagent/orchestration/README.zh.md)记录候选资格、分配负载和队列状态。较早保留的记录可以没有可选诊断字段；这些诊断记录不授予模型权限。独立的路由状态记录恢复已评估阶段请求及其处置；运行时仅在子级自身的运行模型授权内准入模型切换。
 
 ```ts type-equiv
 /** One exact registered LLM route eligible for orchestration. */

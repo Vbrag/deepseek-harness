@@ -19,21 +19,22 @@
   config:
     root: !!js dshHomePath('sessions')
     compression: none
+- id: orchestration
+  config:
+    recordDisabledDefault: true
+    seedPoolAsRootPolicy: true
+    pool:
+      - provider: uni-paderborn
+        model: gwdg.deepseek-v4-flash-0731
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3-flash
+      - provider: uni-paderborn
+        model: hs-de.qwen3.8-27b
+      - provider: uni-paderborn
+        model: gwdg.gemma-4-31b-it
+      - provider: uni-paderborn
+        model: hs-de.openai-gpt-oss-120b
 - insert:
-    - id: orchestration
-      name: '../../../packages/experimental/dsh-orchestration/lib/index.js'
-      config:
-        pool:
-          - provider: uni-paderborn
-            model: gwdg.deepseek-v4-flash-0731
-          - provider: uni-paderborn
-            model: gwdg.glm-5.3-flash
-          - provider: uni-paderborn
-            model: hs-de.qwen3.8-27b
-          - provider: uni-paderborn
-            model: gwdg.gemma-4-31b-it
-          - provider: uni-paderborn
-            model: hs-de.openai-gpt-oss-120b
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
     - id: orchestration-workflow-fixture

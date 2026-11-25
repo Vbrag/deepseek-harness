@@ -104,6 +104,7 @@
     "@deepseek-ai/dsh-client-ui-message-feedback": "workspace:*",
     "@deepseek-ai/dsh-client-ui-model-selection": "workspace:*",
     "@deepseek-ai/dsh-client-ui-open-in-app": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-orchestration": "workspace:*",
     "@deepseek-ai/dsh-client-ui-permission-presets": "workspace:*",
     "@deepseek-ai/dsh-client-ui-plan": "workspace:*",
     "@deepseek-ai/dsh-client-ui-prompt-enhancement": "workspace:*",

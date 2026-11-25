@@ -1241,6 +1241,29 @@ announce(session: Session): void
 async flush(session: Session): Promise<boolean>
 
 /**
+ * Append a batch and require a durability checkpoint before admitting dependent work.
+ * A failed checkpoint remains guarded until {@link retryDurableAppend} succeeds or the Session is restored.
+ * @param session - live Session receiving the events.
+ * @param inputs - consecutive events to append as one batch.
+ * @returns when a persistence listener has confirmed the checkpoint.
+ */
+async appendDurably(session: Session, inputs: readonly SessionEventInput[]): Promise<void>
+
+/**
+ * Check whether an accepted append is awaiting or failed its durability checkpoint.
+ * @param session - live Session to inspect.
+ * @returns whether dependent work must remain blocked.
+ */
+durableAppendPending(session: Session): boolean
+
+/**
+ * Retry a failed durability checkpoint without appending the events again.
+ * @param session - live Session with an unresolved checkpoint.
+ * @returns true when no checkpoint remains unresolved.
+ */
+async retryDurableAppend(session: Session): Promise<boolean>
+
+/**
  * Look up a live session.
  * @param id - the session id to look up.
  * @returns the session, or undefined when no live session has that id.
@@ -1272,7 +1295,7 @@ list(): Session[]
 fork(source: SessionForkSource, boundary?: SessionSeq, childSessionId?: SessionId): Session
 ```
 
-Types: [CreateSessionOptions](persistence.zh.md) · [PrepareSessionOptions](persistence.zh.md) · [SessionId](core.zh.md)
+Types: [CreateSessionOptions](persistence.zh.md) · [PrepareSessionOptions](persistence.zh.md) · [SessionEventInput](../../packages/core/session/README.zh.md#use-this-package) · [SessionId](core.zh.md)
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 

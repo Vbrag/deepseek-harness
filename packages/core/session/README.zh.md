@@ -27,6 +27,8 @@ kind: "package-reference"
 
 在必须存在会话的任何地方挂载 `dsh-session`。它在内存中创建并持有事件溯源的 `Session` 实例；持久存储由订阅 `session/event` 流的持久化插件叠加。
 
+当后续工作必须等待持久化检查点时，使用 `ctx.sessions.appendDurably()`。它追加一个批次并等待刷新监听器；检查点失败或不可用时，`durableAppendPending()` 保持阻止状态，直到 `retryDurableAppend()` 成功或 Session 被恢复。重试仅刷新已接受的事件，不会再次追加。
+
 ### 创建与检查会话
 
 `SessionId` 是包根入口与 `/types` 导出的类型。使用 `dsh-brand` 的 `brandString<SessionId>(value)` 为已准入的字符串添加品牌；品牌转换不校验或生成 id。

@@ -10,7 +10,7 @@
       }
     },
     {
-      "type": "plugin:orchestration/route",
+      "type": "orchestration/route",
       "seq": 4,
       "time": 0,
       "data": {
@@ -29,8 +29,7 @@
         "reason": "pool-order",
         "inputTokens": 8292,
         "outputTokens": 100
-      },
-      "ignorable": true
+      }
     },
     {
       "type": "orchestration/mode",
@@ -58,7 +57,7 @@
       }
     },
     {
-      "type": "plugin:orchestration/routing-state",
+      "type": "orchestration/routing-state",
       "seq": 7,
       "time": 0,
       "data": {
@@ -87,8 +86,7 @@
         "tried": [],
         "emptyLimits": 0,
         "observedInputTokens": 0
-      },
-      "ignorable": true
+      }
     }
   ],
   "auditNotifications": [
@@ -106,7 +104,7 @@
     {
       "method": "session.event",
       "event": {
-        "type": "plugin:orchestration/route",
+        "type": "orchestration/route",
         "seq": 4,
         "time": 0,
         "data": {
@@ -125,8 +123,7 @@
           "reason": "pool-order",
           "inputTokens": 8292,
           "outputTokens": 100
-        },
-        "ignorable": true
+        }
       }
     },
     {
@@ -163,7 +160,7 @@
     {
       "method": "session.event",
       "event": {
-        "type": "plugin:orchestration/routing-state",
+        "type": "orchestration/routing-state",
         "seq": 7,
         "time": 0,
         "data": {
@@ -192,8 +189,7 @@
           "tried": [],
           "emptyLimits": 0,
           "observedInputTokens": 0
-        },
-        "ignorable": true
+        }
       }
     }
   ],

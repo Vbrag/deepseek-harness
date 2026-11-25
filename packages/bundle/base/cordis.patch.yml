@@ -382,6 +382,12 @@
     - id: subagent
       name: '@deepseek-ai/dsh-subagent'
 
+    - id: orchestration
+      name: '@deepseek-ai/dsh-orchestration'
+      config:
+        recordDisabledDefault: false
+        seedPoolAsRootPolicy: false
+
     - id: agent-team
       name: '@deepseek-ai/dsh-agent-team'
       config:

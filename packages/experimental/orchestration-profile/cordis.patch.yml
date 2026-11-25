@@ -17,62 +17,60 @@
       config:
         modelPolicies: *compaction-budgets
 
-    - id: orchestration
-      name: '@deepseek-ai/dsh-orchestration'
-      config:
-        # The default pool is the full gateway chat set; cursor over
-        # UPB_CHAT_ROUTE_MODELS in @deepseek-ai/dsh-llm-pi-ai.
-        pool:
-          - provider: uni-paderborn
-            model: hs-de.latest-basemodel
-          - provider: uni-paderborn
-            model: anthropic.latest-basemodel
-          - provider: uni-paderborn
-            model: anthropic.claude-fable-5-2
-          - provider: uni-paderborn
-            model: anthropic.claude-opus-5-5
-          - provider: uni-paderborn
-            model: anthropic.claude-sonnet-5-5
-          - provider: uni-paderborn
-            model: anthropic.claude-haiku-5-5
-          - provider: uni-paderborn
-            model: gwdg.deepseek-v4.1-flash-1017
-          - provider: uni-paderborn
-            model: gwdg.glm-5.3
-          - provider: uni-paderborn
-            model: gwdg.mistral-large-4-1t-a52b
-          - provider: uni-paderborn
-            model: gwdg.gemma-4-31b-it
-          - provider: uni-paderborn
-            model: gwdg.deepseek-v4-flash-0731
-          - provider: uni-paderborn
-            model: hs-de.openai-gpt-oss-120b
-          - provider: uni-paderborn
-            model: gwdg.glm-5.3-flash
-          - provider: uni-paderborn
-            model: hs-de.qwen3.8-27b
-          - provider: uni-paderborn
-            model: hs-de.qwen3.8-27b-no-think
-          - provider: uni-paderborn
-            model: gwdg.qwen3.6-35b-a3b
-          - provider: uni-paderborn
-            model: gwdg.qwen3.6-35b-a3b-no-think
-          - provider: uni-paderborn
-            model: gwdg.qwen3.5-397b-a17b
-          - provider: uni-paderborn
-            model: gwdg.qwen3.5-397b-a17b-no-think
-          - provider: uni-paderborn
-            model: gwdg.qwen3-30b-a3b-instruct-2507
-          - provider: uni-paderborn
-            model: hs-de.eurollm-22b-instruct-2512
-          - provider: uni-paderborn
-            model: gwdg.qwen3-coder-next
-          - provider: uni-paderborn
-            model: gwdg.qwen3-omni-30b-a3b-instruct
-          - provider: uni-paderborn
-            model: kiconnect.mistralai-mistral-small-4-119b-2603
-          - provider: uni-paderborn
-            model: gwdg.meta-llama-3.1-8b-instruct
-
-    - id: ui-orchestration
-      name: '@deepseek-ai/dsh-client-ui-orchestration'
+- id: orchestration
+  config:
+    recordDisabledDefault: true
+    seedPoolAsRootPolicy: true
+    # The default pool is the full gateway chat set; cursor over
+    # UPB_CHAT_ROUTE_MODELS in @deepseek-ai/dsh-llm-pi-ai.
+    pool:
+      - provider: uni-paderborn
+        model: hs-de.latest-basemodel
+      - provider: uni-paderborn
+        model: anthropic.latest-basemodel
+      - provider: uni-paderborn
+        model: anthropic.claude-fable-5-2
+      - provider: uni-paderborn
+        model: anthropic.claude-opus-5-5
+      - provider: uni-paderborn
+        model: anthropic.claude-sonnet-5-5
+      - provider: uni-paderborn
+        model: anthropic.claude-haiku-5-5
+      - provider: uni-paderborn
+        model: gwdg.deepseek-v4.1-flash-1017
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3
+      - provider: uni-paderborn
+        model: gwdg.mistral-large-4-1t-a52b
+      - provider: uni-paderborn
+        model: gwdg.gemma-4-31b-it
+      - provider: uni-paderborn
+        model: gwdg.deepseek-v4-flash-0731
+      - provider: uni-paderborn
+        model: hs-de.openai-gpt-oss-120b
+      - provider: uni-paderborn
+        model: gwdg.glm-5.3-flash
+      - provider: uni-paderborn
+        model: hs-de.qwen3.8-27b
+      - provider: uni-paderborn
+        model: hs-de.qwen3.8-27b-no-think
+      - provider: uni-paderborn
+        model: gwdg.qwen3.6-35b-a3b
+      - provider: uni-paderborn
+        model: gwdg.qwen3.6-35b-a3b-no-think
+      - provider: uni-paderborn
+        model: gwdg.qwen3.5-397b-a17b
+      - provider: uni-paderborn
+        model: gwdg.qwen3.5-397b-a17b-no-think
+      - provider: uni-paderborn
+        model: gwdg.qwen3-30b-a3b-instruct-2507
+      - provider: uni-paderborn
+        model: hs-de.eurollm-22b-instruct-2512
+      - provider: uni-paderborn
+        model: gwdg.qwen3-coder-next
+      - provider: uni-paderborn
+        model: gwdg.qwen3-omni-30b-a3b-instruct
+      - provider: uni-paderborn
+        model: kiconnect.mistralai-mistral-small-4-119b-2603
+      - provider: uni-paderborn
+        model: gwdg.meta-llama-3.1-8b-instruct

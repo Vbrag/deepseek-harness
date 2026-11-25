@@ -23,22 +23,23 @@
     toolName: subagent
     maxDepth: 1
 
+- id: orchestration
+  config:
+    recordDisabledDefault: true
+    seedPoolAsRootPolicy: true
+    pool:
+      - provider: deepseek-official
+        model: deepseek-v4-flash
+      - provider: snapshot-workers
+        model: coder
+    routeCapabilities:
+      - provider: deepseek-official
+        model: deepseek-v4-flash
+        capabilities: [allrounder]
+      - provider: snapshot-workers
+        model: coder
+        capabilities: [coding]
 - insert:
-    - id: orchestration
-      name: '../../../packages/experimental/dsh-orchestration/lib/index.js'
-      config:
-        pool:
-          - provider: deepseek-official
-            model: deepseek-v4-flash
-          - provider: snapshot-workers
-            model: coder
-        routeCapabilities:
-          - provider: deepseek-official
-            model: deepseek-v4-flash
-            capabilities: [allrounder]
-          - provider: snapshot-workers
-            model: coder
-            capabilities: [coding]
     - id: await-sdk-subagents
       name: '../../../packages/test-support/session-snapshot/tests/fixtures/subagent-settlement-barrier.ts'
     - id: orchestration-session-mode-fixture

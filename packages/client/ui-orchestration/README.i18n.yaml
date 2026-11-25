@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-orchestration/README.md
+/:
+  en: 2eb41a99404e51c9
+  zh: a3e5502815c5ca6a
+/deepseek-ai-dsh-client-ui-orchestration:
+  en: 5a90cc2e00f1a7a0
+  zh: 3acbc9274b00901f
+/deepseek-ai-dsh-client-ui-orchestration/summary:
+  en: 5e3dfb17c28a5aae
+  zh: 14bfbdf476c0a189
+/deepseek-ai-dsh-client-ui-orchestration/table-of-contents:
+  en: b563e4ec4727d0de
+  zh: 44ebe7ceeda3dff6
+/deepseek-ai-dsh-client-ui-orchestration/use-this-package:
+  en: 7454afa585206d07
+  zh: 0dc06c2f6d6f08ad
+/deepseek-ai-dsh-client-ui-orchestration/use-this-package/select-the-session-mode:
+  en: 0c7b8704129f72a6
+  zh: ce961d760971a570
+/deepseek-ai-dsh-client-ui-orchestration/use-this-package/pick-the-model-pool:
+  en: 8f73d2a21711cc57
+  zh: 7a75aa3beaddda7e
+/deepseek-ai-dsh-client-ui-orchestration/use-this-package/follow-model-changes:
+  en: 815584a32075245a
+  zh: b754d4e57d5e35b1
+/deepseek-ai-dsh-client-ui-orchestration/understand-the-implementation:
+  en: ca420761e192edbd
+  zh: 1f9f93406cde6da8
+/deepseek-ai-dsh-client-ui-orchestration/further-exploration:
+  en: fae78aaac6f72da4
+  zh: 1e19b0fb78a3f1ad
+/deepseek-ai-dsh-client-ui-orchestration/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-client-ui-orchestration/model-experience/pool-selection:
+  en: e8ce7ae892497596
+  zh: bd2eabb78b59511a
+/deepseek-ai-dsh-client-ui-orchestration/model-experience/pool-selection/what-the-model-sees:
+  en: cb8da75727b64a3d
+  zh: b713483d046990d6
+/deepseek-ai-dsh-client-ui-orchestration/model-experience/pool-selection/token-effect:
+  en: 9f3e45a0900ce3e2
+  zh: 87cbc3df5e3a8654
+/deepseek-ai-dsh-client-ui-orchestration/model-experience/pool-selection/kv-cache-effect:
+  en: 0c821db950d19d62
+  zh: b2b9f0d3370fb43d
+/deepseek-ai-dsh-client-ui-orchestration/known-limitations-and-deferred-work:
+  en: a46e7de0d2b0cac1
+  zh: 123930b0a4000601
+/deepseek-ai-dsh-client-ui-orchestration/known-limitations-and-deferred-work/dev-note:
+  en: 9263ed5541b5b32e
+  zh: f7584b7541a74449

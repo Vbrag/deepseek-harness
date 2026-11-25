@@ -1371,7 +1371,8 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       const { results, notifications, observedMethods, logs, initialWorkspace, finalWorkspace, cwd, modelRequests } = await runScenario(scenario)
       if (scenario.name === 'orchestration-mode') {
         const toolResults = logs.flatMap(log => records(log.content).filter(event => event.type === 'tool/result'
-          || event.type === 'orchestration/mode' || event.type === 'plugin:orchestration/mode-request'))
+          || event.type === 'orchestration/mode' || event.type === 'orchestration/mode-request'
+          || event.type === 'plugin:orchestration/mode-request'))
         expect(logs, 'orchestration Sessions; tool results: ' + JSON.stringify(toolResults)).toHaveLength(3)
       }
       const ordered = orderLogs(
@@ -1398,6 +1399,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           .toEqual({ provider: 'snapshot-phases', model: 'solver' })
         expect(child.filter(event => event.type === 'tool/call').map(event => event.data.name)).toEqual(['reassign_subagent'])
         const phases = child.flatMap((event) => {
+          if (event.type === 'orchestration/routing-state') return [event.data]
           const record = pluginRecordOf(event)
           return record?.type === 'plugin:orchestration/routing-state' ? [record.data] : []
         })
@@ -1420,6 +1422,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expect(ordered).toHaveLength(6)
         const events = parseSessionLog(ordered[0]!.content)
         const decisions = events.flatMap(event => {
+          if (event.type === 'orchestration/route') return [event.data]
           const record = pluginRecordOf(event)
           return record?.type === 'plugin:orchestration/route' ? [record.data] : []
         })
@@ -1500,7 +1503,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const events = records(parent.content)
         expect(events.filter(event => event.type === 'orchestration/mode').map(event => event.data))
           .toEqual([{ active: false }, { active: true }, { active: false }])
-        const decisions = events.filter(event => event.type === 'plugin:orchestration/route')
+        const decisions = events.filter(event => event.type === 'orchestration/route' || event.type === 'plugin:orchestration/route')
         expect(decisions).toHaveLength(1)
         expect(decisions[0]?.data).toMatchObject({
           childId: ordered[1]!.header.id,
@@ -1531,7 +1534,8 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expect(assembledTools(parent).map(tool => tool.name)).toContain('subagent')
         expect(assembledTools(parent).map(tool => tool.name)).not.toContain('run_orchestration')
         expect(notifications.some(notification => notification.method === 'session.event'
-          && notification.params.event.type === 'plugin:orchestration/route')).toBe(true)
+          && (notification.params.event.type === 'orchestration/route'
+            || notification.params.event.type === 'plugin:orchestration/route'))).toBe(true)
       }
       if (scenario.name === 'team-default-enabled') {
         const parent = ordered[0]!

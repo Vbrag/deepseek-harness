@@ -2850,6 +2850,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The current pool and null when settings are unavailable.',
       },
       {
+        signature: '@Remote(\'getPoolConfiguration\') getPoolConfiguration(): PoolConfiguration',
+        description: 'Read the active pool and user-assigned specialties at one revision.',
+        parameters: [],
+        returns: 'Detached settings for the pool editor.',
+      },
+      {
+        signature: '@Remote({ name: \'prepareActivation\', resources: { session: sessionId => sessionId } }) async prepareActivation(sessionId: SessionId): Promise<OrchestrationActivationPreflight>',
+        description: 'Review the current pool and the Session\'s existing child-model permissions.',
+        parameters: [{ name: 'sessionId', description: 'Conversation to activate.' }],
+        returns: 'A setup requirement or a one-use review of the exact routes.',
+      },
+      {
+        signature: '@Remote({ name: \'activateReviewed\', resources: { session: sessionId => sessionId } }) async activateReviewed(sessionId: SessionId, reviewId: OrchestrationReviewId, authorize: boolean): Promise<OrchestrationActivationResult>',
+        description: 'Apply one reviewed activation without widening permissions without consent.',
+        parameters: [{ name: 'sessionId', description: 'Conversation from the review.' }, { name: 'reviewId', description: 'One-use review identifier.' }, { name: 'authorize', description: 'Whether the user approved the displayed additional routes.' }],
+        returns: 'Applied, queued, stale, or failed admission.',
+      },
+      {
+        signature: '@Remote({ name: \'retryActivationStorage\', resources: { session: sessionId => sessionId } }) async retryActivationStorage(sessionId: SessionId): Promise<boolean>',
+        description: 'Retry a failed authorization checkpoint without writing another approval.',
+        parameters: [{ name: 'sessionId', description: 'Conversation whose checkpoint failed.' }],
+        returns: 'Whether the Session\'s checkpoint is now durable.',
+      },
+      {
         signature: '@Remote(\'resetBillingHealth\') resetBillingHealth(): void',
         description: 'Permit a user to retry models after correcting an exhausted billing account.',
         parameters: [],
@@ -2870,6 +2894,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Persist a pool against the revision read by the caller.',
         parameters: [{ name: 'pool', description: 'New default routes; existing Session authorization remains fixed.' }, { name: 'revision', description: 'Settings revision from the most recent read.' }],
         returns: 'The applied pool or an actionable failure.',
+      },
+      {
+        signature: '@Remote(\'persistPoolConfiguration\') async persistPoolConfiguration(pool: readonly PoolRoute[], capabilityOverrides: readonly RouteCapabilities[], revision: number): Promise<PoolConfigurationSaveResult>',
+        description: 'Persist a pool and exact-route specialty overrides against the settings revision.',
+        parameters: [{ name: 'pool', description: 'Selected exact provider/model routes.' }, { name: 'capabilityOverrides', description: 'User-assigned specialties for exact routes.' }, { name: 'revision', description: 'Revision returned by {@link getPoolConfiguration}.' }],
+        returns: 'Confirmed configuration or an actionable stale/failed result.',
       },
     ],
   },
@@ -4079,6 +4109,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'session', description: 'the session whose buffered events must reach durable storage.' }],
         returns: 'whether at least one durability listener participated, after every listener has settled successfully.',
         throws: ['the first registered listener failure after every listener settles.'],
+      },
+      {
+        signature: 'async appendDurably(session: Session, inputs: readonly SessionEventInput[]): Promise<void>',
+        description: 'Append a batch and require a durability checkpoint before admitting dependent work. A failed checkpoint remains guarded until retryDurableAppend succeeds or the Session is restored.',
+        parameters: [{ name: 'session', description: 'live Session receiving the events.' }, { name: 'inputs', description: 'consecutive events to append as one batch.' }],
+        returns: 'when a persistence listener has confirmed the checkpoint.',
+      },
+      {
+        signature: 'durableAppendPending(session: Session): boolean',
+        description: 'Check whether an accepted append is awaiting or failed its durability checkpoint.',
+        parameters: [{ name: 'session', description: 'live Session to inspect.' }],
+        returns: 'whether dependent work must remain blocked.',
+      },
+      {
+        signature: 'async retryDurableAppend(session: Session): Promise<boolean>',
+        description: 'Retry a failed durability checkpoint without appending the events again.',
+        parameters: [{ name: 'session', description: 'live Session with an unresolved checkpoint.' }],
+        returns: 'true when no checkpoint remains unresolved.',
       },
       {
         signature: 'get(id: SessionId): Session | undefined',
@@ -9290,6 +9338,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
+    name: 'OrchestrationActivationPreflight',
+    declaration: 'export type OrchestrationActivationPreflight = {\n    readonly status: \'needs-pool\' | \'unavailable\' | \'durability\' | \'child-restricted\';\n} | {\n    readonly status: \'ready\' | \'authorize\';\n    readonly reviewId: OrchestrationReviewId;\n    readonly pool: readonly PoolRoute[];\n    readonly additionalRoutes: readonly PoolRoute[];\n};',
+  },
+  {
+    name: 'OrchestrationActivationResult',
+    declaration: 'export type OrchestrationActivationResult = {\n    readonly status: \'applied\' | \'queued\';\n} | {\n    readonly status: \'stale\' | \'failed\' | \'authorization-required\';\n};',
+  },
+  {
     name: 'OrchestrationCatalog',
     declaration: 'export interface OrchestrationCatalog {\n    readonly groups: readonly OrchestrationCatalogGroup[];\n}',
   },
@@ -9300,6 +9356,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OrchestrationCatalogModel',
     declaration: 'export interface OrchestrationCatalogModel extends ModelCapability {\n    readonly provider: string;\n    readonly providerName: string;\n    readonly offlineCurated: boolean;\n}',
+  },
+  {
+    name: 'OrchestrationReviewId',
+    declaration: 'export type OrchestrationReviewId = Branded<\'OrchestrationReviewId\'>;',
   },
   {
     name: 'OTelEventRecord',
@@ -9528,6 +9588,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PluginVersionList',
     declaration: 'export type PluginVersionList = {\n    readonly status: \'listed\';\n    readonly installed: string;\n    readonly registry: Registry;\n    readonly attempts: readonly RegistryAttempt[];\n    readonly versions: readonly PluginVersion[];\n    readonly omitted: number;\n} | {\n    readonly status: \'refused\';\n    readonly problem: \'not-updatable\' | \'not-found\' | \'network\' | \'unknown\';\n    readonly reason: string;\n    readonly attempts: readonly RegistryAttempt[];\n};',
+  },
+  {
+    name: 'PoolConfiguration',
+    declaration: 'export interface PoolConfiguration extends PoolSettingsState {\n    readonly capabilityOverrides: readonly RouteCapabilities[];\n}',
+  },
+  {
+    name: 'PoolConfigurationSaveResult',
+    declaration: 'export type PoolConfigurationSaveResult = {\n    readonly status: \'saved\';\n    readonly configuration: PoolConfiguration;\n} | {\n    readonly status: \'stale\' | \'failed\';\n    readonly message: string;\n};',
   },
   {
     name: 'PoolRoute',
@@ -10052,6 +10120,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ReviewVerdict',
     declaration: 'export type ReviewVerdict = \'approved\' | \'changes-requested\' | \'commented\' | \'dismissed\';',
+  },
+  {
+    name: 'RouteCapabilities',
+    declaration: 'export interface RouteCapabilities extends PoolRoute {\n    readonly capabilities: readonly TaskDomain[];\n}',
   },
   {
     name: 'RpcId',

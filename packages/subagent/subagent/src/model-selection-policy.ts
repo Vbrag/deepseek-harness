@@ -11,6 +11,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** First authorized child-route list; absence permits only the current parent route. */
     'subagent/model-selection-policy': { allowedModels: SubagentModelRoute[] }
+    /** User-approved additions to the child routes permitted in this Session. */
+    'subagent/model-selection-policy-authorized': { allowedModels: SubagentModelRoute[] }
   }
 }
 
@@ -43,10 +45,21 @@ const schema = zod.array(zod.object({
 /** Shared host projection; production consumers read through SubagentRuntime. */
 export const subagentModelSelectionProjectionDefinition = {
   key: 'subagentModelSelectionPolicy',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: schema,
   init: () => null,
   apply: (policy, event) => {
+    if (event.type === 'subagent/model-selection-policy-authorized') {
+      assertAllowedModelRoutes(event.data.allowedModels)
+      if (event.data.allowedModels.length === 0) throw new Error('authorized model routes must not be empty')
+      const routes = [...policy ?? []]
+      const keys = new Set(routes.map(route => `${route.provider}\0${route.model}`))
+      for (const route of event.data.allowedModels) {
+        const key = `${route.provider}\0${route.model}`
+        if (!keys.has(key)) { routes.push(route); keys.add(key) }
+      }
+      return routes
+    }
     if (policy !== null || event.type !== 'subagent/model-selection-policy') return policy
     const { allowedModels } = event.data
     assertAllowedModelRoutes(allowedModels)

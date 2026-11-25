@@ -634,11 +634,15 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
 
 /**
  * Enforce `packages/<group>/<pkg>`: groups are open-named containers without a
- * package.json, and packages may be neither flat nor more deeply nested.
+ * package.json, and packages may be neither flat nor more deeply nested. The
+ * former orchestration path retains its bilingual reference for frozen guides;
+ * ignored build output from older checkouts may still be present.
+ * @param workspaceRoot - Repository root, or a fixture with a packages directory.
+ * @returns Hierarchy violations.
  */
-function checkHierarchyShape(): string[] {
+export function checkHierarchyShape(workspaceRoot = root): string[] {
   const errors: string[] = []
-  const packagesRoot = join(root, 'packages')
+  const packagesRoot = join(workspaceRoot, 'packages')
   for (const group of readdirSync(packagesRoot, { withFileTypes: true })) {
     if (!group.isDirectory()) continue
     const groupRel = join('packages', group.name)
@@ -650,6 +654,15 @@ function checkHierarchyShape(): string[] {
       if (!pkg.isDirectory()) continue
       if (localArtifactDirs.has(pkg.name)) continue
       const pkgRel = join(groupRel, pkg.name)
+      if (group.name === 'experimental' && pkg.name === 'dsh-orchestration') {
+        const entries = readdirSync(join(packagesRoot, group.name, pkg.name), { withFileTypes: true })
+          .filter(entry => !entry.isDirectory() || !['lib', 'node_modules'].includes(entry.name))
+        const allowed = new Set(['README.md', 'README.zh.md', 'README.i18n.yaml'])
+        if (entries.length !== allowed.size || entries.some(entry => !entry.isFile() || !allowed.has(entry.name))) {
+          errors.push(`${pkgRel}: the historical documentation directory may contain only its paired README files`)
+        }
+        continue
+      }
       if (!existsSync(join(packagesRoot, group.name, pkg.name, 'package.json'))) {
         errors.push(`${pkgRel}: expected a package here (no package.json found) — the hierarchy is exactly packages/<group>/<pkg>, no deeper nesting`)
       }

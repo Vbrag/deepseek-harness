@@ -12,7 +12,10 @@ import { capabilityOf, POOL_PROVIDER } from '@deepseek-ai/dsh-orchestration/capa
 describe('Orchestration profile bundle', () => {
   it('sets small-route compaction defaults while preserving later explicit Loader overrides', () => {
     const patches = yaml.load(readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')) as PatchOptions[]
-    const base = [{ id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' }]
+    const base = [
+      { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
+      { id: 'orchestration', name: '@deepseek-ai/dsh-orchestration' },
+    ]
     const warn = (message: string): never => { throw new Error(message) }
     const configured = applyPatches(base, patches, warn)
     expect(configured.data.find(entry => entry.id === 'compaction-basic')?.config).toEqual({ modelPolicies: [
@@ -45,18 +48,17 @@ describe('Orchestration profile bundle', () => {
     )
     expect(Array.isArray(parsed)).toBe(true)
     const patches = parsed as {
+      id?: string
+      config?: Record<string, unknown>
       insert?: { id?: string; name?: string; config?: Record<string, unknown> }[]
     }[]
     const inserted = patches.flatMap(patch => patch.insert ?? [])
-    expect(inserted.find(entry => entry.id === 'orchestration')).toMatchObject({
-      name: '@deepseek-ai/dsh-orchestration',
-    })
+    expect(inserted.some(entry => entry.id === 'orchestration')).toBe(false)
     expect(inserted.some(entry => entry.id === 'tool-orchestration')).toBe(false)
-    expect(inserted.find(entry => entry.id === 'ui-orchestration')).toMatchObject({
-      name: '@deepseek-ai/dsh-client-ui-orchestration',
-    })
+    expect(inserted.some(entry => entry.id === 'ui-orchestration')).toBe(false)
 
-    const orchestration = inserted.find(entry => entry.id === 'orchestration')
+    const orchestration = patches.find(entry => entry.id === 'orchestration')
+    expect(orchestration?.config).toMatchObject({ recordDisabledDefault: true, seedPoolAsRootPolicy: true })
     const pool = orchestration?.config?.pool as { provider: string; model: string }[] | undefined
     expect(pool).toBeDefined()
     expect(pool?.length).toBeGreaterThan(0)
@@ -66,9 +68,13 @@ describe('Orchestration profile bundle', () => {
     }
   })
 
-  it.each(['orchestration-profile', 'dsh-orchestration', 'client-ui-orchestration'])(
-    'rejects the old host before importing %s and admits the supported runtime', (directory) => {
-      const manifest = JSON.parse(readFileSync(new URL(`../../${directory}/package.json`, import.meta.url), 'utf8')) as object
+  it.each([
+    ['orchestration-profile', '../package.json'],
+    ['dsh-orchestration', '../../../subagent/orchestration/package.json'],
+    ['client-ui-orchestration', '../../../client/ui-orchestration/package.json'],
+  ])(
+    'rejects the old host before importing %s and admits the supported runtime', (_name, path) => {
+      const manifest = JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as object
       expect(evaluatePluginCompatibility(manifest, {}, '0.2.1-rc.2')?.requirements).toEqual({
         'engines.dsh': '>=0.2.2-rc.3',
       })

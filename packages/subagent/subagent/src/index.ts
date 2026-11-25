@@ -369,6 +369,10 @@ export class SubagentRuntime extends TypertRemoteService {
    * @returns detached permitted routes, or undefined to permit only the parent route.
    */
   modelSelectionPolicyOf(session: Session): readonly SubagentModelRoute[] | undefined {
+    if (this.ctx.get('sessions')?.durableAppendPending(session) === true) {
+      throw new SubagentError('Session authorization is awaiting a durable checkpoint; retry after storage is available',
+        'PERSISTENCE_UNAVAILABLE')
+    }
     if (this.modelPolicy === undefined) throw new Error('subagent model policy is not ready')
     return subagentModelSelectionPolicy(this.modelPolicy, session)
   }

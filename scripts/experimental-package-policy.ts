@@ -25,8 +25,6 @@ export const EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS: Readonly<Record<string, strin
   'packages/experimental/webhook-github': '@deepseek-ai/dsh-webhook-github',
   'packages/experimental/forge-gitlab': '@deepseek-ai/dsh-forge-gitlab',
   'packages/experimental/deepseek-chat-import': '@deepseek-ai/dsh-deepseek-chat-import',
-  'packages/experimental/client-ui-orchestration': '@deepseek-ai/dsh-client-ui-orchestration',
-  'packages/experimental/dsh-orchestration': '@deepseek-ai/dsh-orchestration',
   'packages/experimental/orchestration-profile': '@deepseek-ai/dsh-orchestration-profile',
 } satisfies Record<`packages/experimental/${string}`, `@deepseek-ai/dsh-${string}`>
 

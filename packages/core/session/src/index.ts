@@ -838,6 +838,7 @@ export class SessionStore extends Service {
   private store = new Map<SessionId, SessionEntry>()
   private counter = 0
   private readonly projections: SessionMessageProjection[] = []
+  private readonly durableAppends = new WeakMap<Session, 'pending' | 'uncertain'>()
 
   /** Borrowed definitions for detached replay; contributions live until their registering fibers unload. */
   get messageProjections(): readonly SessionMessageProjection[] {
@@ -1117,6 +1118,65 @@ export class SessionStore extends Service {
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (failure !== undefined) throw failure.reason
     return callbacks.length > 0
+  }
+
+  /**
+   * Append a batch and require a durability checkpoint before admitting dependent work.
+   * A failed checkpoint remains guarded until {@link retryDurableAppend} succeeds or the Session is restored.
+   * @param session - live Session receiving the events.
+   * @param inputs - consecutive events to append as one batch.
+   * @returns when a persistence listener has confirmed the checkpoint.
+   */
+  async appendDurably(session: Session, inputs: readonly SessionEventInput[]): Promise<void> {
+    this.liveEntryFor(session)
+    if (this.durableAppends.has(session)) throw new Error('A Session durability checkpoint is already unresolved')
+    this.durableAppends.set(session, 'pending')
+    try {
+      session.append(inputs)
+    } catch (error: unknown) {
+      this.durableAppends.delete(session)
+      throw error
+    }
+    try {
+      if (!await this.flush(session)) throw new Error('No Session durability listener is available')
+      this.durableAppends.delete(session)
+    } catch (error: unknown) {
+      this.durableAppends.set(session, 'uncertain')
+      throw error
+    }
+  }
+
+  /**
+   * Check whether an accepted append is awaiting or failed its durability checkpoint.
+   * @param session - live Session to inspect.
+   * @returns whether dependent work must remain blocked.
+   */
+  durableAppendPending(session: Session): boolean {
+    return this.durableAppends.has(session)
+  }
+
+  /**
+   * Retry a failed durability checkpoint without appending the events again.
+   * @param session - live Session with an unresolved checkpoint.
+   * @returns true when no checkpoint remains unresolved.
+   */
+  async retryDurableAppend(session: Session): Promise<boolean> {
+    this.liveEntryFor(session)
+    const state = this.durableAppends.get(session)
+    if (state === undefined) return true
+    if (state === 'pending') return false
+    this.durableAppends.set(session, 'pending')
+    try {
+      if (!await this.flush(session)) {
+        this.durableAppends.set(session, 'uncertain')
+        return false
+      }
+      this.durableAppends.delete(session)
+      return true
+    } catch (error: unknown) {
+      this.durableAppends.set(session, 'uncertain')
+      throw error
+    }
   }
 
   /** Return the exact live entry; detached/prepared objects reject. */

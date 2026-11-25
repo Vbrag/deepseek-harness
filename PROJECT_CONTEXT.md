@@ -1,7 +1,7 @@
 <!-- dsh:project-context:start -->
 # DeepSeek Harness project context
 
-Last reconciled with the checkout and conversation on 2026-11-24. This file records the project work, decisions, and verification limits; current source and Git state remain authoritative. DeepSeek Harness is a Cordis plugin-based agent harness. Read [AGENTS.md](AGENTS.md) and [docs/architecture.md](docs/architecture.md) before changing packages, and [docs/AGENTS.md](docs/AGENTS.md) before changing documentation.
+Last reconciled with the checkout and conversation on 2026-11-25. This file records the project work, decisions, and verification limits; current source and Git state remain authoritative. DeepSeek Harness is a Cordis plugin-based agent harness. Read [AGENTS.md](AGENTS.md) and [docs/architecture.md](docs/architecture.md) before changing packages, and [docs/AGENTS.md](docs/AGENTS.md) before changing documentation.
 
 ## Working constraints and repository state
 
@@ -21,7 +21,7 @@ The subsequent commits are:
 - Selection of the user-chosen model for the lead orchestrator.
 - A provisional Prompt Enhancement implementation, followed by the current completion work.
 
-These commits are provisional until the deferred tests, generated files, snapshots, translation records, and runtime checks below are completed. A recoverable merge backup and the detailed workstation-local verification log were recorded under the user's .codex/visualizations/2026/11/22/01a204cb-fcc1-7ea1-b33f-5e7618b3665a directory. The backup is named dsh-merge-backup-20261122T205716Z.zip; do not assume that directory exists on another machine.
+The merge and TPM changes were initially provisional while execution was restricted. Later work ran the checks recorded below; the active UPB profile has not been retested in the latest task. A recoverable merge backup and the detailed workstation-local verification log were recorded under the user's .codex/visualizations/2026/11/22/01a204cb-fcc1-7ea1-b33f-5e7618b3665a directory. The backup is named dsh-merge-backup-20261122T205716Z.zip; do not assume that directory exists on another machine.
 
 ## UPB gateway catalog and deployment profiles
 
@@ -49,7 +49,9 @@ Local children retain automatic routing and bounded failover. A child is limited
 
 After a lead failure, normal bounded same-model recovery and compaction can run. Billing exhaustion, irreducible oversized requests, and durability failures are not repeatedly retried. An unbounded provider retry policy is not delegated for lead failure. If recovery cannot continue, the lead records a blocked state and reports a correction or explicit model-selection action. The session and completed tool results remain available for an explicit retry; already completed tools must not be replayed. A prompt blocked by shared billing is recorded before dispatch, and a terminal preparation failure preserves claimed input. The loop's request-error payload excludes input already admitted during same-step repreparation.
 
-The session panel shows lead and child routing progress, the last-used model, and a pending explicit selection. It provides localized lead-blocked and billing-recovery guidance. The routing component is registered in conversation.session.panel.section as orchestration-routing; the old subagent footer slot was retired. Existing sessions and cached projections must be replayed safely; the orchestration routing projection is at state version 3. User-visible behavior and projection recovery remain unverified at runtime.
+The session panel shows lead and child routing progress, the last-used model, and a pending explicit selection. It provides localized lead-blocked and billing-recovery guidance. The routing component is registered in conversation.session.panel.section as orchestration-routing; the old subagent footer slot was retired. Existing sessions and cached projections must be replayed safely; the orchestration routing projection is at state version 4. Focused tests cover legacy routing records and older checkpoints.
+
+The base profile mounts the Orchestration service default-off and the Web application mounts its composer switch beside Prompt Enhancement. The switch controls the current conversation; first use opens the pool editor when needed. The user reviews and explicitly authorizes additional child routes before activation. These additions are durably checkpointed; failed checkpoints block new delegations until storage is retried. Existing child grants remain unchanged. The optional Paderborn profile configures the existing service and retains its gateway pool and compaction defaults. The service and Web client live under packages/subagent/orchestration and packages/client/ui-orchestration; the fork maintainer owns them.
 
 ## Billing and availability recovery
 
@@ -59,19 +61,19 @@ Orchestration keeps billing-health observations shared among concurrent agents w
 
 The prepared LLM call exposes detached billing facts from the same adapter generation used for dispatch. The lead's shared-budget admission and the recorded failure's billing scope use those captured facts when available, avoiding a later profile change changing the interpretation of an in-flight request. Unknown facts remain unknown. ORCHESTRATION_BILLING_UNAVAILABLE reports when shared billing health prevents the selected lead route from dispatching. Provider retries remain bounded for the lead; child alternatives remain subject to the configured reassignment limit and recorded permissions.
 
-Relevant owners are packages/llm/llm-pi-ai/src/stream.ts, config.ts, and adapter.ts; packages/llm/llm/src/index.ts; packages/experimental/dsh-orchestration/src/adaptive.ts and adaptive-state.ts; and the orchestration and subagent package READMEs.
+Relevant owners are packages/llm/llm-pi-ai/src/stream.ts, config.ts, and adapter.ts; packages/llm/llm/src/index.ts; packages/subagent/orchestration/src/adaptive.ts and adaptive-state.ts; and the orchestration and subagent package READMEs.
 
 ## Orchestration pool persistence and picker
 
-The source-level persistence path is: panel draft -> mounted orchestration Remote -> revision-checked settings update -> effective pool -> future routing. The user originally reported that Apply did not reliably update the effective configuration. The prior non-empty save failure's precise cause has not been reproduced against the currently active profile and overrides, so do not claim that the reported live defect has been conclusively verified.
+The persistence path is: panel draft -> mounted orchestration Remote -> revision-checked active-profile settings update -> confirmed effective pool and specialties -> future routing. An isolated Web profile reproduced a false failure after a successful write: the confirmation compared object key order. Structural comparison now confirms equivalent objects correctly. Higher-priority home patches and command-line overlays can refuse a profile write; the panel preserves the draft and reports the failure. The user's live profile was not changed.
 
 - pool is the shipped/default route list. userPool is a user-owned volatile settings override. userPoolConfigured distinguishes an explicitly saved empty override from an unset one: a legacy non-empty userPool remains valid, an unset empty override inherits the shipped default, and a configured empty pool stays empty.
 - getPoolSettingsState returns the effective pool and settings revision. persistPool validates routes, calls the active settings service with userPool and userPoolConfigured against that revision, then checks the effective pool before reporting saved. It returns saved, stale, or failed. A failed effective-value confirmation can occur after a settings write; inspect actual profile state before assuming rollback.
 - The picker refreshes the effective pool and catalog when opened, keeps draft selections on failed or rejected saves, reports stale revisions, and disables edits while saving. New catalog rows are not silently selected when an explicit override exists.
-- getCatalog uses providers from the union of the shipped pool and effective pool; when neither names a provider it can show all registered providers. This is broader than the older rule that considered only providers already in the effective pool. The catalog supplies choices; the effective pool and recorded child grants govern actual routing.
-- The settings panel can reset observed billing health after account correction. Reopening the panel, restarting with the real active profile, and verifying the persisted effective pool and routing behavior are still outstanding.
+- getCatalog lists models from all registered providers. Users can save specialties for exact routes; those overrides replace curated or deployment specialties and remain subject to actual modality limits. The effective pool and recorded child grants govern routing.
+- The settings panel can reset observed billing health after account correction. An isolated Web profile verified model selection, specialty persistence across restart, route review, activation, deactivation, and a narrow composer. It did not use an authenticated provider or change the user's live profile.
 
-Relevant owners are packages/experimental/dsh-orchestration/src/index.ts and types.ts, packages/experimental/client-ui-orchestration/src/client/OrchestrationPanel.tsx and mount.ts, and the settings/profile services. Do not write a shipped cordis.patch.yml in place of the user-owned settings mechanism.
+Relevant owners are packages/subagent/orchestration/src/index.ts and types.ts, packages/client/ui-orchestration/src/client/OrchestrationPanel.tsx and mount.ts, and the settings/profile services. Do not write a shipped cordis.patch.yml in place of the user-owned settings mechanism.
 
 ## TPM-aware context compaction
 
@@ -102,14 +104,14 @@ The host implementation is in packages/context/prompt-enhancement, and the compo
 - Instruction-discovery fixtures now isolate temporary workspaces even when the available temporary directory is inside this checkout. On this Windows host, two file-symlink cases are skipped when the account lacks permission; a separate pre-existing POSIX chmod case is also skipped.
 - The history checker validates each reconciliation predecessor, rejects unjoined forks and dependent parents, and locks all predecessors in later finalization checkpoints. Its focused tests cover both branch preservation and checkpoint tampering; V4 reader tests cover the affected message slots and representative sources from both branches.
 - The affected LLM runtime, pi-ai adapter, and DeepSeek provider suites passed 1,613 tests. Their Loader fixture uses current workspace manifests instead of installed package metadata from an enclosing checkout. The egress and billing-health helpers use the dedicated @deepseek-ai/dsh-llm/egress and @deepseek-ai/dsh-llm/billing-health entry points.
-- Workspace package constraints, NodeNext declarations, locale metadata, vendor rescoping, and the no-new-unknown-casts check pass. The wider plugin-entry check still reports eight pre-existing exports from the compaction image-offload and pi-ai plugin entries; resolving them requires coordinating their published consumers. Repository-wide lint still reports unrelated existing orchestration, compaction, and subagent issues; typed lint passes for the changed TypeScript files.
+- The earlier plugin-entry export and repository-wide lint issues were addressed in the subsequent lint and plugin-entry cleanup commit. Re-run the relevant gates after later source changes.
 - Ten untracked directories containing only leftover lib and node_modules artifacts were moved to .artifacts/hygiene-residue-20261124 inside this checkout. Restore a directory from that backup if an older local process still needs it.
-- The earlier orchestration and TPM changes still need their focused runtime, snapshot, SDK, and live-profile verification. The active UPB profile and the orchestration pool save path have not been rechecked in this task.
+- The orchestration-focused suite passed 200 tests, three keyless SDK/Session snapshots were refreshed, and 57 compatibility and adaptive-routing tests passed. The active UPB profile remains unverified in this task.
 - A prior push failed before typechecking when Git for Windows Bash could not create an MSYS named object. The present cause and reproducibility are unknown. The system Node v26.12.1 is outside this repository's declared engine range; the verification above used an isolated supported Node runtime.
 
 ## Next actions
 
-1. Continue the previously deferred orchestration, TPM compaction, SDK, and active-profile checks when that work is in scope.
+1. Verify the active UPB profile and provider behavior when live-profile testing is in scope.
 2. Investigate the prior Windows push-hook failure if it recurs. Do not push without a separate request.
 
 <!-- dsh:project-context:end -->

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
-import SessionStore, { appendPluginRecord, SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { WorkHandoffId, WorkHandoffView } from '@deepseek-ai/dsh-work-handoff'
@@ -18,7 +18,7 @@ const expectedPath = fileURLToPath(new URL('./expected/todo-handoff-projection.j
 const fakeRuntime = fileURLToPath(new URL('./fake-runtime.ts', import.meta.url))
 const auditTypes = new Set(['todo/policy', 'work-handoff/checkpoint', 'work-handoff/captured', 'work-handoff/saved',
   'project-context/status', 'project-context/document-observed', 'subagent/running-model-policy',
-  'plugin:orchestration/routing-state'])
+  'orchestration/routing-state'])
 
 function isAudit(event: unknown): event is { readonly type: string } {
   return typeof event === 'object' && event !== null && 'type' in event && typeof event.type === 'string'
@@ -62,7 +62,7 @@ it('preserves saved unfinished-work state in both event collections and the orig
       session.append('subagent/running-model-policy', { allowedModels: [
         { provider: 'snapshot-workers', model: 'visual' }, { provider: 'snapshot-workers', model: 'solver' },
       ] })
-      appendPluginRecord(session, 'plugin:orchestration/routing-state', {
+      session.append('orchestration/routing-state', {
         revision: 2, assessment: { requiredCapabilities: ['reasoning'], contextTokens: 4096, outputTokens: 8192 },
         request: null, route: { provider: 'snapshot-workers', model: 'solver' },
         previous: { provider: 'snapshot-workers', model: 'visual' }, status: 'idle',

@@ -24,23 +24,24 @@
     provider: spawn
     maxDepth: 0
     modelDiscovery: true
+- id: orchestration
+  required: true
+  config:
+    recordDisabledDefault: true
+    seedPoolAsRootPolicy: true
+    pool:
+      - provider: snapshot-phases
+        model: visual
+      - provider: snapshot-phases
+        model: solver
+    routeCapabilities:
+      - provider: snapshot-phases
+        model: visual
+        capabilities: [coding, vision]
+      - provider: snapshot-phases
+        model: solver
+        capabilities: [coding, reasoning]
 - insert:
-    - id: orchestration
-      name: '../../../packages/experimental/dsh-orchestration/lib/index.js'
-      required: true
-      config:
-        pool:
-          - provider: snapshot-phases
-            model: visual
-          - provider: snapshot-phases
-            model: solver
-        routeCapabilities:
-          - provider: snapshot-phases
-            model: visual
-            capabilities: [coding, vision]
-          - provider: snapshot-phases
-            model: solver
-            capabilities: [coding, reasoning]
     - id: orchestration-reassignment-fixture
       name: './routing-fixture.ts'
       required: true

@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 Mount `dsh-session` wherever a session must exist. It creates and holds event-sourced `Session` instances in memory; durable storage is layered on by a persistence plugin that subscribes to the `session/event` feed.
 
+Use `ctx.sessions.appendDurably()` when dependent work must wait for a persistence checkpoint. It appends one batch and waits for a flush listener; a failed or unavailable checkpoint remains guarded by `durableAppendPending()` until `retryDurableAppend()` succeeds or the Session is restored. A retry flushes the accepted events without appending them again.
+
 ### Create and inspect sessions
 
 `SessionId` is a type exported by the package root and `/types`. Apply it to an admitted string with `brandString<SessionId>(value)` from `dsh-brand`; branding does not validate or generate an id.

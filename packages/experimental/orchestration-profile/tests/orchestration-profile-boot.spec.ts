@@ -5,6 +5,29 @@ import { runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 
 const driver = fileURLToPath(new URL('./fixtures/loader/driver.ts', import.meta.url))
 const configPath = fileURLToPath(new URL('./fixtures/loader/composition.patch.yml', import.meta.url))
+const settingsDriver = fileURLToPath(new URL('./fixtures/loader/settings-driver.ts', import.meta.url))
+const settingsConfigPath = fileURLToPath(new URL('./fixtures/loader/settings-only.patch.yml', import.meta.url))
+
+it('persists pool and specialties through the base profile and keeps an explicit empty pool', { timeout: 90_000 }, async () => {
+  const { stdout } = await runLoaderSmoke({
+    label: 'orchestration pool settings', tempDirPrefix: 'dsh-orchestration-settings-',
+    binScript: settingsDriver, libBinScript: settingsDriver, configPath: settingsConfigPath,
+    tsconfigPath: fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url)), processTimeoutMs: 75_000,
+  })
+  const report = JSON.parse(stdout) as {
+    saved: { status: string }
+    stale: { status: string }
+    empty: { status: string }
+    current: { pool: object[]; capabilityOverrides: object[] }
+    final: { pool: object[] }
+  }
+  expect(report.saved.status).toBe('saved')
+  expect(report.stale.status).toBe('stale')
+  expect(report.current.pool).toEqual([{ provider: 'example', model: 'worker' }])
+  expect(report.current.capabilityOverrides).toEqual([{ provider: 'example', model: 'worker', capabilities: ['coding'] }])
+  expect(report.empty.status).toBe('saved')
+  expect(report.final.pool).toEqual([])
+})
 
 it('boots the profile and routes ordinary coding, vision, and mixed subagents only when enabled', { timeout: 90_000 }, async () => {
   const { stdout } = await runLoaderSmoke({
@@ -23,6 +46,8 @@ it('boots the profile and routes ordinary coding, vision, and mixed subagents on
     visionOutput: string
     mixedOutput: string
     persistAccepted: boolean
+    persistResult: unknown
+    poolState: unknown
     staleSave: string
     emptySave: string
     emptyPool: { provider: string; model: string }[]
@@ -39,15 +64,17 @@ it('boots the profile and routes ordinary coding, vision, and mixed subagents on
   expect(report.codingOutput).toBe('ran:gwdg.glm-5.3-flash')
   expect(report.visionOutput).toBe('ran:gwdg.gemma-4-31b-it')
   expect(report.mixedOutput).toBe('ran:gwdg.qwen3.5-397b-a17b')
-  // The pool persists to the user-owned `userPool` settings value (the shipped
-  // `pool` default stays a layer-provided fallback), so the write is accepted
-  // and the effective pool becomes the persisted selection.
-  expect(report.persistAccepted).toBe(true)
-  expect(report.staleSave).toBe('stale')
-  expect(report.emptySave).toBe('saved')
-  expect(report.emptyPool).toEqual([])
-  expect(report.restoreSave).toBe('saved')
-  expect(report.persistedPool).toEqual([{ provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' }])
+  // The test overlay owns the whole config, so profile edits must fail without changing the live pool.
+  expect(report.persistAccepted, JSON.stringify(report.persistResult)).toBe(false)
+  expect(report.staleSave).toBe('failed')
+  expect(report.emptySave).toBe('failed')
+  expect(report.restoreSave).toBe('failed')
+  expect(report.emptyPool).toEqual(report.persistedPool)
+  expect(report.persistedPool).toEqual([
+    { provider: 'orchestration-mock', model: 'gwdg.glm-5.3-flash' },
+    { provider: 'orchestration-mock', model: 'gwdg.gemma-4-31b-it' },
+    { provider: 'orchestration-mock', model: 'gwdg.qwen3.5-397b-a17b' },
+  ])
   expect(report.compactionConfig.modelPolicies).toEqual([
     { provider: 'uni-paderborn', model: 'gwdg.glm-5.3-flash', headroomTokens: 8192, maxTokens: 8192 },
     { provider: 'uni-paderborn', model: 'hs-de.qwen3.8-27b', headroomTokens: 8192, maxTokens: 8192 },

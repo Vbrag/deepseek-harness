@@ -1,0 +1,14 @@
+.control {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.notice {
+  color: var(--dsw-alias-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}

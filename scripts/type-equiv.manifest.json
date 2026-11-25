@@ -3282,22 +3282,22 @@
     {
       "doc": "docs/subsystems/subagent.md",
       "symbol": "PoolRoute",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+      "source": "packages/subagent/orchestration/src/types.ts"
     },
     {
       "doc": "docs/subsystems/subagent.md",
       "symbol": "OrchestrationRouteExclusion",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+      "source": "packages/subagent/orchestration/src/types.ts"
     },
     {
       "doc": "docs/subsystems/subagent.md",
       "symbol": "OrchestrationRouteAlternative",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+      "source": "packages/subagent/orchestration/src/types.ts"
     },
     {
       "doc": "docs/subsystems/subagent.md",
       "symbol": "OrchestrationRouteDecision",
-      "source": "packages/experimental/dsh-orchestration/src/types.ts"
+      "source": "packages/subagent/orchestration/src/types.ts"
     },
     {
       "doc": "docs/subsystems/subagent.md",

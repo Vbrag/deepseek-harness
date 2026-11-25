@@ -121,7 +121,7 @@
       }
     },
     {
-      "type": "plugin:orchestration/routing-state",
+      "type": "orchestration/routing-state",
       "seq": 10,
       "time": 0,
       "data": {
@@ -150,8 +150,7 @@
         "tried": [],
         "emptyLimits": 0,
         "observedInputTokens": 0
-      },
-      "ignorable": true
+      }
     }
   ],
   "auditNotifications": [
@@ -298,7 +297,7 @@
     {
       "method": "session.event",
       "event": {
-        "type": "plugin:orchestration/routing-state",
+        "type": "orchestration/routing-state",
         "seq": 10,
         "time": 0,
         "data": {
@@ -327,8 +326,7 @@
           "tried": [],
           "emptyLimits": 0,
           "observedInputTokens": 0
-        },
-        "ignorable": true
+        }
       }
     }
   ],
